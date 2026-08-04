@@ -1,0 +1,11 @@
+{
+  "name": "vrdct",
+  "version": "0.0.1",
+  "description": "The neutral resolver — re-execution decides the payout. Verifiable claims resolve on-chain-state prediction markets and agent-payment escrow.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "demo": "node demo.mjs"
+  },
+  "keywords": ["re-execution", "resolver", "prediction-markets", "solana", "verifiable-claims", "oracle-free"]
+}
