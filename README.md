@@ -31,8 +31,13 @@ editing the engine. This is `1 engine × N surfaces`.
 
 Each surface is a pluggable module — `{ type, invariant, reexec(inputs), checks(claim) }`:
 
-- `reserve-solvency` — is a protocol's recomputed backing ≥ its liability? *(included)*
-- *closed-market-liquidation-soundness, depeg, exploit, agent-escrow — the roadmap.*
+- `reserve-solvency` — is a protocol's recomputed backing ≥ its liability? *(Redde lineage)*
+- `closed-market-liquidation-soundness` — does a venue liquidate tokenized equities against a price
+  that updated while the underlying market was closed, with no guard? *(Vesper lineage)*
+- *depeg, exploit, agent-escrow — the roadmap.*
+
+`node demo.mjs` builds one of each and resolves both through the same engine — different surfaces,
+one resolver.
 
 ## Run
 
