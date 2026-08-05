@@ -135,3 +135,48 @@ must gate on the event.
 - [ ] F4 — one line, either in the account or in README.
 - [ ] `npm run test:canonical`, `npm run test:integration` (repeat it a few times), `node demo.mjs`,
       and `client/bond-live.mjs` all green; corpus `inputs_hash` unchanged.
+
+---
+
+## Re-review — `575d945`
+
+**APPROVE.** All four items closed, re-verified by re-running the checks that found them.
+
+- **F1** — the `settle_by` guard is gone from `settle`; a completed Feed settles whenever the market
+  is `CHALLENGED`. The regression test is the right one: `feeds_are_isolated_and_completed_feed_
+  settles_after_deadline` builds the market with `settle_by = -1`, so the deadline is already past
+  when the completed Feed settles. The H6 assertion it grew out of survived the rename — the feeder
+  balance check at `state_machine.rs:414` is still there.
+- **F2** — `send()` now uses `get_new_latest_blockhash()`. **5 consecutive runs, 4/4 green each
+  time**, versus the pass-then-fail I reproduced before. The double-close guard was removed rather
+  than tested, which is the right call: once `close` deletes the account the second attempt cannot
+  deserialize, and the test now asserts the deletion directly instead of asserting an error that a
+  duplicate-transaction cache was producing.
+- **F3** — Honest scope now says it plainly: expiry is a 100% slash, the resolver carries a liveness
+  obligation, and — the part that matters — *"a false challenger can receive the pot if expiry lands
+  first, even where a completed Feed would prove the resolver right."* Stating it was one of the two
+  options the review allowed.
+- **F4** — `by_reexecution` is persisted on `Market`, written on all three terminal paths and
+  initialised at open; `SPACE` is 265 and still exact.
+
+Verified end to end on my own SBPFv3 build, deployed by me: both markets settle with opposite
+winners, `completed-feed feeder +0.2 SOL`, corpus `inputs_hash` unchanged. `test:canonical` (160
+vectors, 19 Rust tests) and `demo.mjs` green.
+
+Also checked the build split, since it could have re-introduced the deploy failure that started this
+work: `test:integration` now emits SBPFv0 to `target/program-test-deploy` while `target/deploy` keeps
+the v3 artifact Agave 4.x requires. Confirmed both on disk (`e_flags 0x0` and `0x3`) and by
+redeploying afterwards.
+
+Carried forward, not blocking:
+
+- The post-deadline race is more asymmetric than the README sentence suggests. A losing challenger is
+  watching the clock and will call `expire_challenged` the moment it passes; a feeder finishing at
+  that boundary probably loses. F1 removed the *guaranteed* loss of a completed proof, not the racy
+  one. Closing it properly needs expiry to be conditional on no completed Feed existing, which the
+  program cannot check — so it is a design problem for a later task, not a defect here.
+- Integration tests execute an SBPFv0 build of the same source that ships as v3. Same Rust, different
+  target; worth remembering if a v3-only codegen issue ever appears.
+- 002's R3 (the consensus encoder still hard-codes its surfaces) is still open.
+
+Merged to `main`.
