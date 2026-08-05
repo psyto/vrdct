@@ -3,7 +3,7 @@
 //! computed by the JS claim type. Keeping it in the repository makes JS↔Rust consensus drift fail
 //! in `cargo test`, rather than only in a one-off audit harness.
 
-use super::{cmls, solvency, Fold};
+use super::{cmls, solvency, Fold, CHUNK_RECORDS};
 
 const VECTORS: &str = include_str!("../../../../tests/parity-vectors.txt");
 
@@ -29,7 +29,14 @@ fn js_generated_canonical_vectors_match_rust_reexecution() {
         let mut fold = Fold::default();
         let actual = match fields[0] {
             "CMLS" => {
-                cmls::fold_chunk(&mut fold, &bytes).expect("JS CMLS bytes must fold in Rust");
+                let chunk_len = cmls::RECORD_SIZE * CHUNK_RECORDS as usize;
+                for chunk in bytes.chunks(chunk_len) {
+                    cmls::fold_chunk(&mut fold, chunk).expect("JS CMLS bytes must fold in Rust");
+                }
+                if fields[1] == "multi-chunk-201" {
+                    assert_eq!(bytes.len(), cmls::RECORD_SIZE * 201);
+                    assert_eq!(fold.count, 201);
+                }
                 cmls::verdict(&fold)
             }
             "SOLVENCY" => {
@@ -41,5 +48,5 @@ fn js_generated_canonical_vectors_match_rust_reexecution() {
         assert_eq!(actual, expected, "parity mismatch for {}", fields[1]);
         vectors += 1;
     }
-    assert_eq!(vectors, 159, "fixture coverage changed unexpectedly");
+    assert_eq!(vectors, 160, "fixture coverage changed unexpectedly");
 }

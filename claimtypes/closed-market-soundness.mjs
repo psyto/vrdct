@@ -80,4 +80,4 @@ export function build({ subject, window, observations }) {
   return buildClaim({ type, subject, inputs: { trusted: { market_id: 'US_EQUITIES_REGULAR' }, oracle_inputs: [], window, observed: { source: 'getSignaturesForAddress', account: subject.priceAccount, count: observations.length, observations } } });
 }
 
-registerClaimType({ type, invariant, reexec, checks });
+registerClaimType({ type, invariant, canonicalInputs, reexec, checks });

@@ -79,4 +79,4 @@ export function build({ subject, window, quantities }) {
   return buildClaim({ type, subject, inputs: { trusted: { chain: subject.chain }, oracle_inputs: [], window, observed: { source: 'chain re-computation', quantities } } });
 }
 
-registerClaimType({ type, invariant, reexec, checks });
+registerClaimType({ type, invariant, canonicalInputs, reexec, checks });

@@ -4,6 +4,7 @@
 // The engine is claim-type-AGNOSTIC: each claim_type is a pluggable module that supplies
 //   • type       — the claim_type string
 //   • invariant  — { id, statement }
+//   • canonicalInputs(inputs) -> typed inputs (or throws)  (the consensus input boundary)
 //   • reexec(inputs) -> { computation, verdict }   (the deterministic core)
 //   • checks(claim, recomputed) -> [[label, ok, detail], ...]   (extra per-type verify checks)
 // New surfaces (closed-market soundness, reserve solvency, depeg, exploit, agent-escrow) are added
@@ -15,7 +16,9 @@ export const CLAIM_SCHEMA = 'vrdct.claim/v0';
 
 const REGISTRY = new Map();
 export function registerClaimType(mod) {
-  if (!mod?.type || typeof mod.reexec !== 'function') throw new Error('claim-type needs { type, reexec }');
+  if (!mod?.type || typeof mod.reexec !== 'function' || typeof mod.canonicalInputs !== 'function') {
+    throw new Error('claim-type needs { type, canonicalInputs, reexec }');
+  }
   REGISTRY.set(mod.type, mod);
   return mod;
 }
@@ -34,7 +37,7 @@ export function buildClaim({ type, subject, inputs }) {
   if (!mod) throw new Error(`unknown claim_type: ${type} (register it first)`);
   // Reject malformed raw inputs at construction. `reexec` repeats this through the same parser so
   // verification cannot bypass the claim-type's consensus input domain.
-  mod.canonicalInputs?.(inputs);
+  mod.canonicalInputs(inputs);
   const { computation, verdict } = mod.reexec(inputs);
   const claim = {
     schema: CLAIM_SCHEMA, claim_type: type, subject,

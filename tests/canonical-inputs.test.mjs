@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { encodeRecords } from '../core/encode.mjs';
+import { encodeRecords, inputsCommitment } from '../core/encode.mjs';
 import * as cmls from '../claimtypes/closed-market-soundness.mjs';
 import * as solvency from '../claimtypes/solvency.mjs';
+import { registerClaimType } from '../core/claim.mjs';
 import { verify } from '../core/verify.mjs';
 
 const solvencyInputs = (staleRecords = 0, overrides = {}) => ({
@@ -32,6 +33,32 @@ test('every P0 staleRecords coercion input is rejected by re-execution and encod
   delete missing.inputs.observed.quantities.staleRecords;
   assert.throws(() => solvency.reexec(missing.inputs), /staleRecords/);
   assert.throws(() => encodeRecords(missing), /staleRecords/);
+});
+
+test('verify reports every malformed P0 staleRecords input without throwing', () => {
+  for (const value of ['0', 0.5, 2 ** 32, Number.NaN, -1, 2 ** 53, '1e3', true, null, []]) {
+    const claim = solvency.build({ subject: {}, window: {}, quantities: { virtualValue: '100', liability: '100', inv2b_ok: true, staleRecords: 0 } });
+    claim.inputs.observed.quantities.staleRecords = value;
+    let result;
+    assert.doesNotThrow(() => { result = verify(claim); });
+    assert.equal(result.ok, false);
+    assert.equal(result.verdict, null);
+    assert.ok(result.checks.some(([label, ok, detail]) => label === 'canonical inputs rejected' && ok === false && detail.includes('staleRecords')));
+  }
+});
+
+test('verify keeps its result contract for malformed non-input claim fields', () => {
+  const claim = solvency.build({ subject: {}, window: {}, quantities: { virtualValue: '100', liability: '100', inv2b_ok: true, staleRecords: 0 } });
+  delete claim.computation;
+  let result;
+  assert.doesNotThrow(() => { result = verify(claim); });
+  assert.equal(result.ok, false);
+  assert.equal(result.verdict, null);
+  assert.equal(result.checks[0][0], 'malformed claim');
+});
+
+test('claim-types must supply a canonical parser when registered', () => {
+  assert.throws(() => registerClaimType({ type: 'missing-canonical-inputs', reexec: () => ({ computation: {}, verdict: { flag: 'GREEN' } }) }), /canonicalInputs/);
 });
 
 test('solvency parser accepts only specified u128 and tri-state shapes', () => {
@@ -63,8 +90,18 @@ test('CMLS keeps valid duplicate timestamps canonical and encodable', () => {
   assert.equal(encodeRecords(claim).nRecords, 2);
 });
 
+test('CMLS 201-record vector crosses the canonical 200-record chunk boundary', () => {
+  const observations = Array.from({ length: 201 }, (_, i) => ({ blockTime: 1785600000 + i * 60 }));
+  const commitment = inputsCommitment(cmlsClaim(observations));
+  assert.equal(commitment.nRecords, 201);
+  assert.equal(commitment.chunks.length, 2);
+  assert.equal(commitment.chunks[0].length, 200 * 4);
+  assert.equal(commitment.chunks[1].length, 4);
+});
+
 test('committed corpus remains a valid, reproducible canonical claim', () => {
   const claim = JSON.parse(readFileSync(new URL('../corpus/jupiter-spyx-cmls.claim.json', import.meta.url)));
   assert.equal(verify(claim).ok, true);
   assert.equal(encodeRecords(claim).nRecords, claim.inputs.observed.observations.length);
+  assert.equal(inputsCommitment(claim).inputsHash.toString('hex'), '2f224c44f93a8e2c2840c75c2a86872ce3b73336ffcec047654d8d0e2deffccd');
 });
