@@ -107,3 +107,37 @@ vector of 201 records would close it.
 - [ ] `npm run test:canonical` and `node demo.mjs` still green; corpus `inputs_hash` still `2f224c44f93a8e2c…`.
 
 R3 is not required to merge.
+
+---
+
+## Re-review — `b9aaf0d`
+
+**APPROVE.** All three required items are closed, re-verified by running the same probes that found
+them rather than by reading the diff:
+
+```
+R1  verify -> ok=false | check: canonical inputs rejected | observations[0].blockTime must be a safe u32 integer
+R2  register rejected -> claim-type needs { type, canonicalInputs, reexec }
+R4  160 committed parity vectors (multi-chunk-201 folds across the 200-record boundary in Rust)
+```
+
+- `npm run test:canonical` and `node demo.mjs` green; corpus `inputs_hash` still `2f224c44f93a8e2c…`.
+- R1's downstream damage is repaired too, which is the part that mattered: `core/bond.mjs :: settle`
+  on a claim whose inputs don't re-execute now returns `SLASHED` (resolver −1, challenger +0.9,
+  treasury +0.1) instead of throwing. That is the semantic the bond model was written for.
+- Pinning the corpus `inputs_hash` inside the test suite is better than what the review asked for —
+  it turns a thing I was checking by hand into a regression guard.
+- The second `try`/`catch` around `checks`/`claimId` was not requested and is correct: `verify(null)`
+  and a claim missing `computation` now report rather than crash.
+
+Non-blocking, carried forward rather than fixed here:
+
+- `verify` now swallows *every* exception from `reexec`, so a genuine bug inside a claim-type
+  surfaces as `ok: false` with the message in a check row rather than as a crash. Right trade for a
+  verifier facing adversarial input; worth remembering when debugging a new surface.
+- The parity fixture proves fold/verdict agreement, not **digest-chain** agreement — the chain lives
+  in `lib.rs` and is exercised only by `client/bond-live.mjs`, which needs a validator and is not in
+  `test:canonical`. Not a defect; a coverage boundary to close when 003 touches the program.
+- R3 (the consensus encoder still hard-codes its surfaces) stands as a design note for a later task.
+
+Merged to `main`.
