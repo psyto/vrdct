@@ -62,6 +62,7 @@ fn market(
         state,
         settled_flag: 0,
         resolved: 0,
+        by_reexecution: 0,
     }
 }
 
@@ -100,7 +101,9 @@ async fn send(
     instruction: Instruction,
     signers: &[&Keypair],
 ) -> Result<(), solana_program_test::BanksClientError> {
-    let bh = ctx.banks_client.get_latest_blockhash().await.unwrap();
+    // A cached blockhash can make an otherwise identical transaction hit banks-client's
+    // duplicate cache, masking a second close as a cached success.
+    let bh = ctx.get_new_latest_blockhash().await.unwrap();
     let mut tx = Transaction::new_with_payer(&[instruction], Some(&ctx.payer.pubkey()));
     let mut all = vec![&ctx.payer];
     all.extend_from_slice(signers);
@@ -273,7 +276,7 @@ async fn expiry_and_uncontested_are_terminal_exits() {
 
 #[tokio::test]
 #[ignore = "requires the BPF artifact; run npm run test:integration"]
-async fn feeds_are_isolated_and_settle_pays_the_feeder_not_the_caller() {
+async fn feeds_are_isolated_and_completed_feed_settles_after_deadline() {
     let resolver = Keypair::new();
     let challenger = Keypair::new();
     let feeder = Keypair::new();
@@ -289,7 +292,7 @@ async fn feeds_are_isolated_and_settle_pays_the_feeder_not_the_caller() {
         resolver.pubkey(),
         challenger.pubkey(),
         STATE_CHALLENGED,
-        i64::MAX,
+        -1, // A completed Feed remains valid after the expiry deadline.
     );
     m.inputs_hash = digest;
     let mut pt = ProgramTest::new(
@@ -491,7 +494,8 @@ async fn settle_rejects_foreign_feed_and_market_closes_only_once_settled() {
     )
     .await
     .is_err());
-    // `m2` is settled, so exactly one close succeeds; a second call cannot resurrect or close it again.
+    // `m2` is settled, so exactly one close succeeds; a fresh transaction cannot close its
+    // deleted account again.
     send(
         &mut ctx,
         ix(

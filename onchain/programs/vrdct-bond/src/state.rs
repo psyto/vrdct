@@ -4,9 +4,6 @@ use anchor_lang::prelude::*;
 pub const STATE_OPEN: u8 = 0;
 pub const STATE_CHALLENGED: u8 = 1;
 pub const STATE_SETTLED: u8 = 2;
-/// Tombstone written before Anchor returns account rent; makes a repeat close reject even if a
-/// validator retains the zero-lamport account until cleanup.
-pub const STATE_CLOSED: u8 = 3;
 
 /// A market whose payout is controlled by an on-chain-STATE condition.
 ///
@@ -54,10 +51,12 @@ pub struct Market {
     pub settled_flag: u8,
     /// 1 = YES, 0 = NO (valid once settled)
     pub resolved: u8,
+    /// 1 when `settled_flag` came from on-chain re-execution; 0 for optimistic or expiry paths.
+    pub by_reexecution: u8,
 }
 
 impl Market {
-    // 8 disc + 1 + 32*2 + 1 + 4*2 + 32 + 1 + 32 + 1 + 8 + 32 + 1 + 8 + 32 + 8*4 + 1*3
+    // 8 disc + 1 + 32*2 + 1 + 4*2 + 32 + 1 + 32 + 1 + 8 + 32 + 1 + 8 + 32 + 8*4 + 1*4
     pub const SPACE: usize = 8
         + 1
         + 32
@@ -78,6 +77,7 @@ impl Market {
         + 8
         + 8
         + 8
+        + 1
         + 1
         + 1
         + 1;

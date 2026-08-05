@@ -43,9 +43,8 @@ one resolver.
 
 The engine above is offline. `onchain/programs/vrdct-bond` is the Solana program that puts **money**
 behind it: two sides post real bonds behind opposing assertions about an on-chain-state condition,
-and **the program re-executes the condition itself** to decide who is paid. There is no admin key,
-vote, oracle account, **or privileged treasury address** anywhere in it — the only thing that can
-name a winner is the re-execution.
+and **the program re-executes the condition itself** to decide a challenged payout. There is no
+admin key, vote, oracle account, **or privileged treasury address** anywhere in it.
 
 The claim-types are ported to Rust (`reexec/campana.rs`, `cmls.rs`, `solvency.rs`) as byte-for-byte
 twins of the JS core, so an on-chain settlement and an offline `verify` cannot disagree.
@@ -70,7 +69,7 @@ challenge    assert a different flag over the same pinned inputs, match the bond
 open_feed    create a feeder-owned re-execution attempt (one PDA per market × feeder)
 feed         re-execute a canonical chunk into that Feed PDA (permissionless)
 settle       digest must close → program derives the verdict → correct side captures; its feeder earns 10%
-expire_challenged  after the settlement deadline, pay the challenger if no feed can close the commitment
+expire_challenged  after the settlement deadline, pay the challenger unless a completed Feed settles first
 ```
 
 ### Run it
@@ -127,11 +126,19 @@ Two residual trusts, both named rather than hidden:
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
 
 A challenged commitment that cannot be reproduced does not lock either bond: after its fixed
-settlement deadline, anyone can resolve it against the resolver and make the challenger whole.
+settlement deadline, anyone can expire it against the resolver. Expiry sends the challenger the
+**entire pot** (a 100% slash of the resolver bond), so the resolver has a liveness obligation to
+get a committed Feed completed and settled within that window. A completed Feed is never discarded
+by the clock: after the deadline, `settle` and permissionless `expire_challenged` race, and the
+first terminal transaction wins. This means a false challenger can receive the pot if expiry lands
+first, even where a completed Feed would prove the resolver right.
+
 Each feeder's digest and fold live in a separate PDA, so another passer-by cannot reset a completed
 feed or take its reward; the reward always goes to that feed's recorded feeder, never a privileged
-or caller-selected address. The 2026 calendar is valid only for 2026 timestamps, which the JS and
-Rust parsers both reject outside its half-open range.
+or caller-selected address. A settled `Market.by_reexecution` is `1` only when its stored verdict
+came from on-chain re-execution (`0` for optimistic or expiry settlement). The 2026 calendar is
+valid only for 2026 timestamps, which the JS and Rust parsers both reject outside its half-open
+range.
 
 And the on-chain half has run only against a local validator so far, with a 2026-pinned NYSE
 calendar compiled into the program. Devnet, a governed calendar, and a live market are next.

@@ -20,8 +20,6 @@ pub enum VrdctError {
     ChallengeWindowOutOfBounds,
     #[msg("the challenged market has not reached its settlement deadline")]
     SettlementDeadlineOpen,
-    #[msg("the challenged market's settlement deadline has passed")]
-    SettlementDeadlineClosed,
     #[msg("a challenge must assert a different verdict than the resolver")]
     ChallengeMustDiffer,
     #[msg("the challenge bond must at least match the resolver's bond")]
@@ -48,6 +46,4 @@ pub enum VrdctError {
     MarketDefinitionMismatch,
     #[msg("feed account is not owned by this market and feeder")]
     FeedMismatch,
-    #[msg("account has already been closed")]
-    AlreadyClosed,
 }

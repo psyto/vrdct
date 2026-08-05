@@ -168,6 +168,7 @@ pub mod vrdct_bond {
         m.state = STATE_OPEN;
         m.settled_flag = 0;
         m.resolved = 0;
+        m.by_reexecution = 0;
 
         emit!(MarketOpened {
             market: m.key(),
@@ -292,7 +293,6 @@ pub mod vrdct_bond {
         ) = {
             let m = &ctx.accounts.market;
             require!(m.state == STATE_CHALLENGED, VrdctError::WrongState);
-            require!(now <= m.settle_by, VrdctError::SettlementDeadlineClosed);
             (
                 m.claim_type,
                 m.inputs_hash,
@@ -350,6 +350,7 @@ pub mod vrdct_bond {
         m.state = STATE_SETTLED;
         m.settled_flag = truth;
         m.resolved = yes_from(yes_when, truth);
+        m.by_reexecution = 1;
         m.settled_ts = now;
         emit!(MarketSettled {
             market: m.key(),
@@ -385,6 +386,7 @@ pub mod vrdct_bond {
         m.state = STATE_SETTLED;
         m.settled_flag = flag;
         m.resolved = yes_from(yes_when, flag);
+        m.by_reexecution = 0;
         m.settled_ts = now;
         emit!(MarketSettled {
             market: m.key(),
@@ -412,6 +414,7 @@ pub mod vrdct_bond {
         m.state = STATE_SETTLED;
         m.settled_flag = flag;
         m.resolved = yes_from(yes_when, flag);
+        m.by_reexecution = 0;
         m.settled_ts = now;
         emit!(MarketSettled {
             market: m.key(),
@@ -432,16 +435,6 @@ pub mod vrdct_bond {
             ctx.accounts.market.state == STATE_SETTLED,
             VrdctError::WrongState
         );
-        // Anchor's `close` transfers lamports but the runtime may retain a zero-lamport account
-        // until the next cleanup. Reject that tombstone so this transition is observably once-only.
-        require!(
-            ctx.accounts.market.to_account_info().lamports() > 0,
-            VrdctError::AlreadyClosed
-        );
-        ctx.accounts.market.state = STATE_CLOSED;
-        // `close` can run before Anchor's normal account-exit phase. Persist the tombstone before
-        // rent leaves, so a retained zero-lamport account cannot be closed idempotently.
-        ctx.accounts.market.exit(ctx.program_id)?;
         Ok(())
     }
 }
