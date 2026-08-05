@@ -8,6 +8,7 @@
   "scripts": {
     "build": "anchor build && anchor build --no-idl -- --arch v3",
     "test:unit": "cargo test -p vrdct-bond",
+    "test:integration": "cargo build-sbf --manifest-path programs/vrdct-bond/Cargo.toml --arch v0 --sbf-out-dir target/program-test-deploy && BPF_OUT_DIR=$PWD/target/program-test-deploy cargo test -p vrdct-bond --test state_machine -- --ignored",
     "bond": "node client/bond-live.mjs"
   },
   "dependencies": {

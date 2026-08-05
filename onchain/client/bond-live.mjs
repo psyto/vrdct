@@ -23,7 +23,7 @@ import '../../claimtypes/closed-market-soundness.mjs'; // register
 import * as solvency from '../../claimtypes/solvency.mjs';
 import { verify } from '../../core/verify.mjs';
 import { resolve } from '../../core/resolution.mjs';
-import { inputsCommitment, marketId, yesWhenMask, FLAG_ID, FLAG_NAME } from '../../core/encode.mjs';
+import { inputsCommitment, marketId, marketDefinitionHash, yesWhenMask, FLAG_ID, FLAG_NAME } from '../../core/encode.mjs';
 
 const RPC = process.env.RPC || 'http://127.0.0.1:8899';
 // Mirrors `declare_id!` in programs/vrdct-bond/src/lib.rs. Override if you deploy under your own.
@@ -51,14 +51,19 @@ const send = (tx, signers) => sendAndConfirmTransaction(conn, tx, signers, { com
 function decodeMarket(data) {
   const pk = (o) => new PublicKey(data.subarray(o, o + 32));
   return {
-    claimType: data[41], nRecords: data.readUInt32LE(46), yesWhen: data[82],
-    resolver: pk(83), resolverFlag: data[115], resolverBond: data.readBigUInt64LE(116),
-    challenger: pk(124), challengerFlag: data[156], challengeBond: data.readBigUInt64LE(157),
-    state: data[221], settledFlag: data[222], resolved: data[223],
-    feedDigest: Buffer.from(data.subarray(224, 256)),
+    claimType: data[73], nRecords: data.readUInt32LE(78), yesWhen: data[114],
+    resolver: pk(115), resolverFlag: data[147], resolverBond: data.readBigUInt64LE(148),
+    challenger: pk(156), challengerFlag: data[188], challengeBond: data.readBigUInt64LE(189),
+    state: data[261], settledFlag: data[262], resolved: data[263],
+  };
+}
+
+function decodeFeed(data) {
+  return {
+    digest: Buffer.from(data.subarray(73, 105)), count: data.readUInt32LE(105),
     fold: {
-      count: data.readUInt32LE(256), openN: data.readUInt32LE(260), closedN: data.readUInt32LE(264),
-      maxGap: data.readBigInt64LE(268),
+      count: data.readUInt32LE(109), openN: data.readUInt32LE(113), closedN: data.readUInt32LE(117),
+      maxGap: data.readBigInt64LE(121),
     },
   };
 }
@@ -71,12 +76,19 @@ async function fundedKeypair(sol = 10) {
 
 // ── One full market: open → challenge → stream the re-execution → settle ────────────────────────
 async function runMarket({ label, question, claim, yesWhen, resolverAsserts, challengerAsserts, actors, tamperWith }) {
-  const { resolver, challenger, cranker, treasury } = actors;
+  const { resolver, challenger, cranker } = actors;
   const commit = inputsCommitment(claim);
-  // The market id is the hash of the question — the question IS the address. The run tag is only
-  // so repeated demo runs against a long-lived validator don't collide on the same PDA.
+  // `marketId` remains the discoverable question label. The PDA is a hash of the entire definition,
+  // so no party can squat the question address with another commitment or challenge window.
   const id = marketId(`${question}\n#${resolver.publicKey.toBase58().slice(0, 8)}`);
-  const [market] = PublicKey.findProgramAddressSync([Buffer.from('market'), id], PROGRAM_ID);
+  const windowSecs = 3600;
+  const definition = marketDefinitionHash({
+    marketId: id, claimTypeId: commit.claimTypeId, calendarVersion: commit.calendarVersion,
+    nRecords: commit.nRecords, inputsHash: commit.inputsHash, yesWhen: yesWhenMask(yesWhen),
+    bond: BOND, challengeWindowSecs: windowSecs,
+  });
+  const [market] = PublicKey.findProgramAddressSync([Buffer.from('market'), definition], PROGRAM_ID);
+  const [feed] = PublicKey.findProgramAddressSync([Buffer.from('feed'), market.toBuffer(), cranker.publicKey.toBuffer()], PROGRAM_ID);
 
   // What the offline engine says. The program must land on exactly this, from the same bytes.
   const engine = verify(claim);
@@ -92,15 +104,15 @@ async function runMarket({ label, question, claim, yesWhen, resolverAsserts, cha
   const before = {
     resolver: await conn.getBalance(resolver.publicKey),
     challenger: await conn.getBalance(challenger.publicKey),
-    treasury: await conn.getBalance(treasury.publicKey),
+    cranker: await conn.getBalance(cranker.publicKey),
   };
 
   // 1) open — the resolver commits to the inputs and puts lamports behind an assertion.
   await send(new Transaction().add(ix('open_market', [
-    id, u8(commit.claimTypeId), u32(commit.calendarVersion), u32(commit.nRecords),
+    definition, id, u8(commit.claimTypeId), u32(commit.calendarVersion), u32(commit.nRecords),
     commit.inputsHash, u8(yesWhenMask(yesWhen)), u8(FLAG_ID[resolverAsserts]),
-    u64(BOND), i64(3600),
-  ], [rw(resolver.publicKey, true), rw(market), ro(treasury.publicKey), ro(SystemProgram.programId)])), [resolver]);
+    u64(BOND), i64(windowSecs),
+  ], [rw(resolver.publicKey, true), rw(market), ro(SystemProgram.programId)])), [resolver]);
   console.log(`  → open       resolver asserts ${resolverAsserts}, bonds ${SOL(BOND)} SOL`);
 
   // 2) challenge — someone who re-executed offline and got a different answer takes the other side.
@@ -108,12 +120,17 @@ async function runMarket({ label, question, claim, yesWhen, resolverAsserts, cha
     [rw(challenger.publicKey, true), rw(market), ro(SystemProgram.programId)])), [challenger]);
   console.log(`  → challenge  challenger asserts ${challengerAsserts}, bonds ${SOL(BOND)} SOL`);
 
+  const openFeed = () => send(new Transaction().add(ix('open_feed', [], [
+    rw(cranker.publicKey, true), ro(market), rw(feed), ro(SystemProgram.programId),
+  ])), [cranker]);
+  await openFeed();
+
   const feedChunks = async (chunks, note) => {
     const t = Date.now();
     for (let i = 0; i < chunks.length; i++) {
       await send(new Transaction()
         .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }))
-        .add(ix('feed', [vecU8(chunks[i])], [ro(cranker.publicKey, true), rw(market)])), [cranker]);
+        .add(ix('feed', [vecU8(chunks[i])], [ro(cranker.publicKey, true), ro(market), rw(feed)])), [cranker]);
       if (chunks.length > 1 && process.stdout.isTTY) process.stdout.write(`\r  → feed       ${note} ${i + 1}/${chunks.length} chunks`);
     }
     return ((Date.now() - t) / 1000).toFixed(1);
@@ -121,7 +138,7 @@ async function runMarket({ label, question, claim, yesWhen, resolverAsserts, cha
   const trySettle = () => send(new Transaction()
     .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }))
     .add(ix('settle', [], [
-      rw(cranker.publicKey, true), rw(market), rw(resolver.publicKey), rw(challenger.publicKey), rw(treasury.publicKey),
+      ro(cranker.publicKey, true), rw(market), rw(resolver.publicKey), rw(challenger.publicKey), rw(cranker.publicKey), rw(feed),
     ])), [cranker]);
 
   // 2.5) the adversarial case: a feeder streams a DIFFERENT input set — one whose verdict would
@@ -135,14 +152,15 @@ async function runMarket({ label, question, claim, yesWhen, resolverAsserts, cha
     const bound = rejected?.includes('does not match the committed inputs_hash');
     console.log(`  → forge      a feeder streams inputs whose verdict would be ${tamperWith.verdict.flag}, not ${claim.verdict.flag}`);
     console.log(`  ${bound ? '\x1b[32m✓' : '\x1b[31m✗'} rejected   settle refused — the forged chain head is not the committed inputs_hash\x1b[0m`);
-    await send(new Transaction().add(ix('reset_feed', [], [ro(cranker.publicKey, true), rw(market)])), [cranker]);
+    await send(new Transaction().add(ix('close_feed', [], [rw(cranker.publicKey, true), ro(market), rw(feed)])), [cranker]);
+    await openFeed();
     if (!bound) return { parity: false, winner: null, truth: null };
   }
 
   // 3) feed — the re-execution itself, on-chain, permissionless, in canonical chunks.
   const secs = await feedChunks(commit.chunks, 're-executing on-chain…');
-  const fed = decodeMarket((await conn.getAccountInfo(market)).data);
-  const chainMatches = fed.feedDigest.equals(commit.inputsHash);
+  const fed = decodeFeed((await conn.getAccountInfo(feed)).data);
+  const chainMatches = fed.digest.equals(commit.inputsHash);
   if (process.stdout.isTTY && commit.chunks.length > 1) process.stdout.write('\r\x1b[K');
   console.log(`  → feed       ${fed.fold.count} records re-executed on-chain in ${commit.chunks.length} tx (${secs}s) · digest ${chainMatches ? 'closes the commitment ✓' : 'MISMATCH ✗'}`);
   if (claim.claim_type === 'closed-market-liquidation-soundness') {
@@ -157,14 +175,14 @@ async function runMarket({ label, question, claim, yesWhen, resolverAsserts, cha
   const after = {
     resolver: await conn.getBalance(resolver.publicKey),
     challenger: await conn.getBalance(challenger.publicKey),
-    treasury: await conn.getBalance(treasury.publicKey),
+    cranker: await conn.getBalance(cranker.publicKey),
   };
   const d = (k) => { const v = (after[k] - before[k]) / LAMPORTS_PER_SOL; return `${v >= 0 ? '+' : ''}${v.toFixed(4)}`; };
 
   const truth = FLAG_NAME[m.settledFlag];
   const winner = m.settledFlag === m.resolverFlag ? 'resolver' : m.settledFlag === m.challengerFlag ? 'challenger' : 'cranker';
   console.log(`  → settle     \x1b[1mre-executed on-chain: ${truth}\x1b[0m → market resolves ${m.resolved ? 'YES' : 'NO'} · ${winner} captures the stake`);
-  console.log(`               resolver ${d('resolver')} SOL   challenger ${d('challenger')} SOL   treasury ${d('treasury')} SOL`);
+  console.log(`               resolver ${d('resolver')} SOL   challenger ${d('challenger')} SOL   completed-feed feeder ${d('cranker')} SOL`);
 
   const parity = truth === claim.verdict.flag && (m.resolved === 1) === (offchain.resolved === 'YES');
   console.log(`  ${parity ? '\x1b[32m✓' : '\x1b[31m✗'} parity     on-chain re-execution == offline verify (${truth} == ${claim.verdict.flag})\x1b[0m`);
@@ -187,8 +205,7 @@ console.log(`\n\x1b[1mVrdct — on-chain bond & settlement\x1b[0m   re-execution
 console.log(`  program ${PROGRAM_ID.toBase58()}  ·  ${RPC}`);
 
 const actors = {
-  resolver: await fundedKeypair(), challenger: await fundedKeypair(),
-  cranker: await fundedKeypair(), treasury: await fundedKeypair(1),
+  resolver: await fundedKeypair(), challenger: await fundedKeypair(), cranker: await fundedKeypair(),
 };
 
 // MARKET A — the real corpus claim. The resolver is WRONG and re-execution slashes them.

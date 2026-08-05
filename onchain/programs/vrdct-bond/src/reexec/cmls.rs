@@ -12,7 +12,7 @@
 //!
 //! Record: `u32 LE` unix blockTime, ascending. 4 bytes — valid through 2106.
 
-use super::campana::is_regular_open;
+use super::campana::{is_regular_open, is_valid_2026_timestamp};
 use super::{Fold, FLAG_RED, FLAG_UNKNOWN, FLAG_YELLOW};
 use crate::errors::VrdctError;
 use anchor_lang::prelude::*;
@@ -26,6 +26,7 @@ pub fn fold_chunk(fold: &mut Fold, chunk: &[u8]) -> Result<()> {
     require!(chunk.len() % RECORD_SIZE == 0, VrdctError::MalformedChunk);
     for rec in chunk.chunks_exact(RECORD_SIZE) {
         let ts = u32::from_le_bytes([rec[0], rec[1], rec[2], rec[3]]) as i64;
+        require!(is_valid_2026_timestamp(ts), VrdctError::CalendarOutOfRange);
         if fold.count > 0 {
             // The canonical observation set is sorted by (slot, sig); out-of-order records would
             // make `max_gap` depend on submission order, so they are rejected outright.
@@ -102,6 +103,16 @@ mod tests {
     fn out_of_order_rejected() {
         let mut f = Fold::default();
         let bytes: Vec<u8> = [1785_600_060u32, 1785_600_000u32]
+            .iter()
+            .flat_map(|t| t.to_le_bytes())
+            .collect();
+        assert!(fold_chunk(&mut f, &bytes).is_err());
+    }
+
+    #[test]
+    fn calendar_boundary_is_rejected() {
+        let mut f = Fold::default();
+        let bytes: Vec<u8> = [1_767_225_599u32, 1_767_225_600u32]
             .iter()
             .flat_map(|t| t.to_le_bytes())
             .collect();

@@ -8,12 +8,18 @@ pub enum VrdctError {
     UnknownFlag,
     #[msg("calendar version not pinned in this program")]
     UnsupportedCalendar,
+    #[msg("timestamp lies outside the pinned calendar's validity range")]
+    CalendarOutOfRange,
     #[msg("market is not in the required state")]
     WrongState,
     #[msg("the challenge window has closed")]
     ChallengeWindowClosed,
     #[msg("the challenge window is still open")]
     ChallengeWindowOpen,
+    #[msg("challenge window is outside the program's safe bounds")]
+    ChallengeWindowOutOfBounds,
+    #[msg("the challenged market has not reached its settlement deadline")]
+    SettlementDeadlineOpen,
     #[msg("a challenge must assert a different verdict than the resolver")]
     ChallengeMustDiffer,
     #[msg("the challenge bond must at least match the resolver's bond")]
@@ -36,4 +42,8 @@ pub enum VrdctError {
     Overflow,
     #[msg("n_records must be non-zero")]
     NoRecords,
+    #[msg("market definition does not bind the requested PDA")]
+    MarketDefinitionMismatch,
+    #[msg("feed account is not owned by this market and feeder")]
+    FeedMismatch,
 }

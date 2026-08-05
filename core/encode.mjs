@@ -43,6 +43,26 @@ export function marketId(question) {
   return sha256(Buffer.from(question, 'utf8'));
 }
 
+/// Hash the complete, bounded economic definition of a market. This is the PDA seed used by the
+/// program; `marketId` alone is only a discoverable question label and cannot be squatted.
+/// Mirrors `market_definition_hash` in `onchain/programs/vrdct-bond/src/lib.rs` exactly.
+export function marketDefinitionHash({ marketId: id, claimTypeId, calendarVersion, nRecords, inputsHash, yesWhen, bond, challengeWindowSecs }) {
+  if (!Buffer.isBuffer(id) || id.length !== 32) throw new Error('marketId must be 32 bytes');
+  if (!Buffer.isBuffer(inputsHash) || inputsHash.length !== 32) throw new Error('inputsHash must be 32 bytes');
+  const u64 = Buffer.alloc(8);
+  u64.writeBigUInt64LE(BigInt(bond));
+  const i64 = Buffer.alloc(8);
+  i64.writeBigInt64LE(BigInt(challengeWindowSecs));
+  const u32 = Buffer.alloc(4);
+  u32.writeUInt32LE(calendarVersion);
+  const records = Buffer.alloc(4);
+  records.writeUInt32LE(nRecords);
+  return sha256(
+    Buffer.from('vrdct:market:v1', 'utf8'), id, Buffer.from([claimTypeId]), u32, records,
+    inputsHash, Buffer.from([yesWhen]), u64, i64,
+  );
+}
+
 const u128le = (v) => {
   const b = Buffer.alloc(16);
   let x = v;

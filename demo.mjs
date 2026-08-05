@@ -34,5 +34,5 @@ line(3, `resolve "Does the venue liquidate soundly across the closed window?" �
 // ── The bond hook (on the solvency resolution) ────────────────────────────────
 const s = settle(sol, { resolverBond: 1.0, challengeBond: 1.0 });
 console.log(`\nBOND · a challenger disputes the honest solvency resolution → ${s.outcome}`);
-console.log(`       balances: resolver ${s.balances.resolver >= 0 ? '+' : ''}${s.balances.resolver}, challenger ${s.balances.challenger}, treasury +${s.balances.treasury}`);
+console.log(`       balances: resolver ${s.balances.resolver >= 0 ? '+' : ''}${s.balances.resolver}, challenger ${s.balances.challenger}, cranker +${s.balances.cranker}`);
 console.log(`\n  Two unrelated surfaces, one engine, each resolution reproducible; the correct side captures the stake.\n`);

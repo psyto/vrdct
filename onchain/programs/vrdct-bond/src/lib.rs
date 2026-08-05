@@ -1,33 +1,6 @@
-//! # Vrdct — on-chain bond & settlement
-//!
-//! **Re-execution decides the payout.** This program is the on-chain half of the thesis in the
-//! repo root: a market poses a boolean on-chain-STATE condition, two sides post real lamports
-//! behind opposing assertions about it, and the *program itself re-executes the condition* to
-//! decide who is paid. No token vote. No committee. No price oracle. No admin key — there is no
-//! authority anywhere in this file that can name a winner.
-//!
-//! ## The mechanism
-//!
-//! 1. `open_market` — a resolver commits to a claim's **inputs** (`inputs_hash`, the head of a
-//!    canonical hash chain), asserts the flag re-execution will produce, and posts a bond.
-//! 2. `challenge` — anyone who re-executed offline and got a *different* flag posts a matching
-//!    bond behind their own assertion. Now the market has two sides and a real counterparty.
-//! 3. `feed` — anyone streams the committed input records. Each chunk is folded into the running
-//!    verdict state and into the running digest. This is the re-execution, on-chain, in the open.
-//! 4. `settle` — pays out **only** if the streamed digest equals the committed `inputs_hash` and
-//!    every committed record was folded. The winner is whoever asserted the flag the program just
-//!    re-executed. The loser is slashed; the treasury takes 10%, mirroring `core/bond.mjs`.
-//!
-//! Feeding a different input set produces a different digest, so it can never settle. That is what
-//! makes streaming safe: the payout is a pure function of inputs fixed *before* any money moved.
-//!
-//! ## Honest scope
-//!
-//! The settlement *logic* is trustless — anyone re-runs `feed` and gets the same verdict. The
-//! residual trust is the same one the README names: a claim's **inputs**. `inputs_hash` pins them,
-//! it does not source them. And an unchallenged false assertion settles optimistically at the end
-//! of its window — the usual optimistic-oracle assumption that challenging a false claim is
-//! profitable. Both are stated, not hidden.
+//! Vrdct's lamport-custody program. Re-execution decides a challenged payout; no account in this
+//! program is privileged. Market addresses bind the complete definition, and re-execution progress
+//! belongs to a feeder-specific PDA rather than a globally resettable market field.
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
@@ -43,16 +16,48 @@ use state::*;
 
 declare_id!("7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS");
 
-/// Treasury cut on a slash, in basis points. Mirrors `CUT = 0.10` in `core/bond.mjs`.
+/// Slash reward paid to the feeder who closes the committed input chain.
 pub const CUT_BPS: u64 = 1_000;
+/// One hour gives a watching challenger a realistic chance to submit one transaction, while the
+/// seven-day ceiling prevents a resolver from turning a small bond into an unbounded lock.
+pub const MIN_CHALLENGE_WINDOW_SECS: i64 = 60 * 60;
+pub const MAX_CHALLENGE_WINDOW_SECS: i64 = 7 * 24 * 60 * 60;
+/// A challenged commitment has one further day to be completed before it resolves against its
+/// resolver. This is a program constant, not an opener-selected term.
+pub const SETTLEMENT_WINDOW_SECS: i64 = 24 * 60 * 60;
 
-/// h_0 of the input hash chain: sha256 over the canonical header.
-/// `[claim_type u8][calendar_version u32 LE][n_records u32 LE]`
-fn header_digest(claim_type: u8, calendar_version: u32, n_records: u32) -> [u8; 32] {
+/// h_0 of the canonical input chain: `[claim_type u8][calendar_version u32 LE][n_records u32 LE]`.
+pub fn header_digest(claim_type: u8, calendar_version: u32, n_records: u32) -> [u8; 32] {
     hashv(&[
         &[claim_type],
         &calendar_version.to_le_bytes(),
         &n_records.to_le_bytes(),
+    ])
+    .to_bytes()
+}
+
+/// The complete, bounded definition used as the market PDA seed. `market_id` remains a readable
+/// question hash, but cannot by itself reserve address space. Mirrors `marketDefinitionHash` in JS.
+pub fn market_definition_hash(
+    market_id: &[u8; 32],
+    claim_type: u8,
+    calendar_version: u32,
+    n_records: u32,
+    inputs_hash: &[u8; 32],
+    yes_when: u8,
+    bond: u64,
+    challenge_window_secs: i64,
+) -> [u8; 32] {
+    hashv(&[
+        b"vrdct:market:v1",
+        market_id,
+        &[claim_type],
+        &calendar_version.to_le_bytes(),
+        &n_records.to_le_bytes(),
+        inputs_hash,
+        &[yes_when],
+        &bond.to_le_bytes(),
+        &challenge_window_secs.to_le_bytes(),
     ])
     .to_bytes()
 }
@@ -62,7 +67,6 @@ fn cut_of(amount: u64) -> u64 {
     amount / 10_000 * CUT_BPS + (amount % 10_000) * CUT_BPS / 10_000
 }
 
-/// Move lamports out of the program-owned market account.
 fn move_lamports(from: &AccountInfo, to: &AccountInfo, amount: u64) -> Result<()> {
     if amount == 0 {
         return Ok(());
@@ -71,7 +75,10 @@ fn move_lamports(from: &AccountInfo, to: &AccountInfo, amount: u64) -> Result<()
         .lamports()
         .checked_sub(amount)
         .ok_or(VrdctError::Overflow)?;
-    let t = to.lamports().checked_add(amount).ok_or(VrdctError::Overflow)?;
+    let t = to
+        .lamports()
+        .checked_add(amount)
+        .ok_or(VrdctError::Overflow)?;
     **from.try_borrow_mut_lamports()? = f;
     **to.try_borrow_mut_lamports()? = t;
     Ok(())
@@ -85,10 +92,10 @@ fn yes_from(yes_when: u8, flag: u8) -> u8 {
 pub mod vrdct_bond {
     use super::*;
 
-    /// Open a market: commit to the inputs, assert a verdict, post a bond.
     #[allow(clippy::too_many_arguments)]
     pub fn open_market(
         ctx: Context<OpenMarket>,
+        definition_hash: [u8; 32],
         market_id: [u8; 32],
         claim_type: u8,
         calendar_version: u32,
@@ -106,6 +113,25 @@ pub mod vrdct_bond {
         require!(asserted_flag <= FLAG_MAX, VrdctError::UnknownFlag);
         require!(bond > 0, VrdctError::ZeroBond);
         require!(n_records > 0, VrdctError::NoRecords);
+        require!(
+            (MIN_CHALLENGE_WINDOW_SECS..=MAX_CHALLENGE_WINDOW_SECS)
+                .contains(&challenge_window_secs),
+            VrdctError::ChallengeWindowOutOfBounds
+        );
+        require!(
+            definition_hash
+                == market_definition_hash(
+                    &market_id,
+                    claim_type,
+                    calendar_version,
+                    n_records,
+                    &inputs_hash,
+                    yes_when,
+                    bond,
+                    challenge_window_secs,
+                ),
+            VrdctError::MarketDefinitionMismatch
+        );
         if claim_type == CT_CMLS {
             require!(
                 calendar_version == reexec::campana::CAL_2026_VERSION,
@@ -113,21 +139,13 @@ pub mod vrdct_bond {
             );
         }
 
-        // The bond is real custody: lamports leave the resolver and sit in the market PDA.
-        system_program::transfer(
-            CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                system_program::Transfer {
-                    from: ctx.accounts.resolver.to_account_info(),
-                    to: ctx.accounts.market.to_account_info(),
-                },
-            ),
-            bond,
-        )?;
-
         let now = Clock::get()?.unix_timestamp;
+        let challenge_until = now
+            .checked_add(challenge_window_secs)
+            .ok_or(VrdctError::Overflow)?;
         let m = &mut ctx.accounts.market;
         m.bump = ctx.bumps.market;
+        m.definition_hash = definition_hash;
         m.market_id = market_id;
         m.claim_type = claim_type;
         m.calendar_version = calendar_version;
@@ -140,17 +158,17 @@ pub mod vrdct_bond {
         m.challenger = Pubkey::default();
         m.challenger_flag = 0;
         m.challenge_bond = 0;
-        m.treasury = ctx.accounts.treasury.key();
+        m.rent_payer = ctx.accounts.resolver.key();
         m.opened_ts = now;
-        m.challenge_until = now
-            .checked_add(challenge_window_secs)
+        m.challenge_until = challenge_until;
+        m.settle_by = challenge_until
+            .checked_add(SETTLEMENT_WINDOW_SECS)
             .ok_or(VrdctError::Overflow)?;
         m.settled_ts = 0;
         m.state = STATE_OPEN;
         m.settled_flag = 0;
         m.resolved = 0;
-        m.feed_digest = header_digest(claim_type, calendar_version, n_records);
-        m.fold = Default::default();
+        m.by_reexecution = 0;
 
         emit!(MarketOpened {
             market: m.key(),
@@ -161,10 +179,19 @@ pub mod vrdct_bond {
             n_records,
             inputs_hash,
         });
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                system_program::Transfer {
+                    from: ctx.accounts.resolver.to_account_info(),
+                    to: ctx.accounts.market.to_account_info(),
+                },
+            ),
+            bond,
+        )?;
         Ok(())
     }
 
-    /// Take the other side: assert a different flag over the same pinned inputs, post a bond.
     pub fn challenge(ctx: Context<Challenge>, asserted_flag: u8, bond: u64) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         {
@@ -178,7 +205,6 @@ pub mod vrdct_bond {
             );
             require!(bond >= m.resolver_bond, VrdctError::ChallengeBondTooSmall);
         }
-
         system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
@@ -189,82 +215,88 @@ pub mod vrdct_bond {
             ),
             bond,
         )?;
-
         let m = &mut ctx.accounts.market;
         m.challenger = ctx.accounts.challenger.key();
         m.challenger_flag = asserted_flag;
         m.challenge_bond = bond;
         m.state = STATE_CHALLENGED;
-
         emit!(MarketChallenged {
             market: m.key(),
             challenger: m.challenger,
             asserted_flag,
-            bond,
+            bond
         });
         Ok(())
     }
 
-    /// Re-execute one canonical chunk of the committed inputs. Permissionless — anyone can crank.
-    pub fn feed(ctx: Context<Feed>, chunk: Vec<u8>) -> Result<()> {
-        let m = &mut ctx.accounts.market;
+    /// Start a feeder-owned re-execution attempt. Another feeder receives a different PDA.
+    pub fn open_feed(ctx: Context<OpenFeed>) -> Result<()> {
+        let m = &ctx.accounts.market;
         require!(m.state != STATE_SETTLED, VrdctError::WrongState);
+        let f = &mut ctx.accounts.feed;
+        f.bump = ctx.bumps.feed;
+        f.market = m.key();
+        f.feeder = ctx.accounts.feeder.key();
+        f.digest = header_digest(m.claim_type, m.calendar_version, m.n_records);
+        f.count = 0;
+        f.fold = Default::default();
+        Ok(())
+    }
 
+    /// Re-execute one canonical chunk into the caller's Feed PDA only.
+    pub fn feed(ctx: Context<FeedChunk>, chunk: Vec<u8>) -> Result<()> {
+        let m = &ctx.accounts.market;
+        require!(m.state != STATE_SETTLED, VrdctError::WrongState);
+        let f = &mut ctx.accounts.feed;
         let rec = record_size(m.claim_type).ok_or(VrdctError::UnknownClaimType)?;
-        require!(!chunk.is_empty(), VrdctError::MalformedChunk);
-        require!(chunk.len() % rec == 0, VrdctError::MalformedChunk);
-
-        // Canonical chunking is part of the commitment: every chunk is CHUNK_RECORDS records
-        // except the last, which is the remainder. Any other split hashes to something else, so
-        // the chain could not close — this check just fails it early and loudly.
+        require!(
+            !chunk.is_empty() && chunk.len() % rec == 0,
+            VrdctError::MalformedChunk
+        );
         let fed = (chunk.len() / rec) as u32;
         let remaining = m
             .n_records
-            .checked_sub(m.fold.count)
+            .checked_sub(f.count)
             .ok_or(VrdctError::TooManyRecords)?;
         require!(remaining > 0, VrdctError::TooManyRecords);
-        let expected = core::cmp::min(CHUNK_RECORDS, remaining);
-        require!(fed == expected, VrdctError::NonCanonicalChunk);
-
-        reexec::fold_chunk(m.claim_type, &mut m.fold, &chunk)?;
-        m.feed_digest = hashv(&[&m.feed_digest, &chunk]).to_bytes();
+        require!(
+            fed == core::cmp::min(CHUNK_RECORDS, remaining),
+            VrdctError::NonCanonicalChunk
+        );
+        reexec::fold_chunk(m.claim_type, &mut f.fold, &chunk)?;
+        f.count = f.fold.count;
+        f.digest = hashv(&[&f.digest, &chunk]).to_bytes();
         Ok(())
     }
 
-    /// Discard a partial/garbage feed and start the chain over from h_0. Permissionless: a feeder
-    /// who streams the wrong records can only waste their own fees, never poison a settlement.
-    pub fn reset_feed(ctx: Context<Feed>) -> Result<()> {
-        let m = &mut ctx.accounts.market;
-        require!(m.state != STATE_SETTLED, VrdctError::WrongState);
-        m.fold = Default::default();
-        m.feed_digest = header_digest(m.claim_type, m.calendar_version, m.n_records);
+    /// A feeder can discard only its own partial work, close its PDA, and start again.
+    pub fn close_feed(_ctx: Context<CloseFeed>) -> Result<()> {
+        // This stays available after the market's terminal payout so non-winning feeders do not
+        // strand their own rent. It never touches the Market or another feeder's state.
         Ok(())
     }
 
-    /// Settle by re-execution. The program computes the verdict itself and pays the side that
-    /// asserted it. Permissionless — the cranker has no discretion, only the ability to finish.
+    /// Close a valid feeder commitment and pay the correct side. The caller can be anyone, but the
+    /// reward always belongs to the feeder that paid to construct and completed this Feed PDA.
     pub fn settle(ctx: Context<Settle>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
         let market_ai = ctx.accounts.market.to_account_info();
-        let (claim_type, fold, inputs_hash, digest, n_records) = {
+        let (
+            claim_type,
+            inputs_hash,
+            n_records,
+            resolver_bond,
+            challenge_bond,
+            resolver_flag,
+            challenger_flag,
+            yes_when,
+        ) = {
             let m = &ctx.accounts.market;
             require!(m.state == STATE_CHALLENGED, VrdctError::WrongState);
             (
                 m.claim_type,
-                m.fold,
                 m.inputs_hash,
-                m.feed_digest,
                 m.n_records,
-            )
-        };
-        require!(fold.count == n_records, VrdctError::IncompleteFeed);
-        require!(digest == inputs_hash, VrdctError::InputsHashMismatch);
-
-        // The verdict. Nobody supplies it; the program derives it from the pinned inputs.
-        let truth = reexec::verdict(claim_type, &fold)?;
-
-        let (resolver_bond, challenge_bond, resolver_flag, challenger_flag, yes_when) = {
-            let m = &ctx.accounts.market;
-            (
                 m.resolver_bond,
                 m.challenge_bond,
                 m.resolver_flag,
@@ -272,64 +304,102 @@ pub mod vrdct_bond {
                 m.yes_when,
             )
         };
-
-        let (winner_ai, winner_key, payout, treasury_cut) = if resolver_flag == truth {
-            let c = cut_of(challenge_bond);
+        let feed = &ctx.accounts.feed;
+        require!(
+            feed.count == n_records && feed.fold.count == n_records,
+            VrdctError::IncompleteFeed
+        );
+        require!(feed.digest == inputs_hash, VrdctError::InputsHashMismatch);
+        let truth = reexec::verdict(claim_type, &feed.fold)?;
+        let pot = resolver_bond
+            .checked_add(challenge_bond)
+            .ok_or(VrdctError::Overflow)?;
+        let (winner_ai, winner_key, payout, cranker_reward) = if resolver_flag == truth {
+            let reward = cut_of(challenge_bond);
             (
                 ctx.accounts.resolver.to_account_info(),
                 ctx.accounts.resolver.key(),
-                resolver_bond + challenge_bond - c,
-                c,
+                pot.checked_sub(reward).ok_or(VrdctError::Overflow)?,
+                reward,
             )
         } else if challenger_flag == truth {
-            let c = cut_of(resolver_bond);
+            let reward = cut_of(resolver_bond);
             (
                 ctx.accounts.challenger.to_account_info(),
                 ctx.accounts.challenger.key(),
-                resolver_bond + challenge_bond - c,
-                c,
+                pot.checked_sub(reward).ok_or(VrdctError::Overflow)?,
+                reward,
             )
         } else {
-            // Both sides asserted a flag the re-execution did not produce. Neither earned the pot;
-            // it goes to whoever actually proved it — the cranker who streamed the inputs.
-            let pot = resolver_bond + challenge_bond;
-            let c = cut_of(pot);
+            let reward = cut_of(pot);
             (
-                ctx.accounts.cranker.to_account_info(),
-                ctx.accounts.cranker.key(),
-                pot - c,
-                c,
+                ctx.accounts.feed_feeder.to_account_info(),
+                ctx.accounts.feed_feeder.key(),
+                pot.checked_sub(reward).ok_or(VrdctError::Overflow)?,
+                reward,
             )
         };
-
         move_lamports(&market_ai, &winner_ai, payout)?;
         move_lamports(
             &market_ai,
-            &ctx.accounts.treasury.to_account_info(),
-            treasury_cut,
+            &ctx.accounts.feed_feeder.to_account_info(),
+            cranker_reward,
         )?;
 
         let m = &mut ctx.accounts.market;
         m.state = STATE_SETTLED;
         m.settled_flag = truth;
         m.resolved = yes_from(yes_when, truth);
-        m.settled_ts = Clock::get()?.unix_timestamp;
-
+        m.by_reexecution = 1;
+        m.settled_ts = now;
         emit!(MarketSettled {
             market: m.key(),
             settled_flag: truth,
             resolved: m.resolved,
             winner: winner_key,
             payout,
-            treasury_cut,
+            cranker_reward,
             by_reexecution: true,
         });
         Ok(())
     }
 
-    /// No one took the other side before the window closed: the assertion stands optimistically
-    /// and the resolver's bond is returned. Nothing was re-executed on-chain here — the event says
-    /// so (`by_reexecution: false`), because a settlement nobody contested is a weaker fact.
+    /// The only timed exit from CHALLENGED. If no feeder can close the resolver's commitment by
+    /// `settle_by`, the resolver bears that failure and the challenger receives the full pot.
+    pub fn expire_challenged(ctx: Context<ExpireChallenged>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let market_ai = ctx.accounts.market.to_account_info();
+        let (pot, flag, yes_when) = {
+            let m = &ctx.accounts.market;
+            require!(m.state == STATE_CHALLENGED, VrdctError::WrongState);
+            require!(now > m.settle_by, VrdctError::SettlementDeadlineOpen);
+            (
+                m.resolver_bond
+                    .checked_add(m.challenge_bond)
+                    .ok_or(VrdctError::Overflow)?,
+                m.challenger_flag,
+                m.yes_when,
+            )
+        };
+        move_lamports(&market_ai, &ctx.accounts.challenger.to_account_info(), pot)?;
+        let m = &mut ctx.accounts.market;
+        m.state = STATE_SETTLED;
+        m.settled_flag = flag;
+        m.resolved = yes_from(yes_when, flag);
+        m.by_reexecution = 0;
+        m.settled_ts = now;
+        emit!(MarketSettled {
+            market: m.key(),
+            settled_flag: flag,
+            resolved: m.resolved,
+            winner: m.challenger,
+            payout: pot,
+            cranker_reward: 0,
+            by_reexecution: false,
+        });
+        Ok(())
+    }
+
     pub fn claim_uncontested(ctx: Context<ClaimUncontested>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let market_ai = ctx.accounts.market.to_account_info();
@@ -339,43 +409,43 @@ pub mod vrdct_bond {
             require!(now > m.challenge_until, VrdctError::ChallengeWindowOpen);
             (m.resolver_bond, m.resolver_flag, m.yes_when)
         };
-
         move_lamports(&market_ai, &ctx.accounts.resolver.to_account_info(), bond)?;
-
         let m = &mut ctx.accounts.market;
         m.state = STATE_SETTLED;
         m.settled_flag = flag;
         m.resolved = yes_from(yes_when, flag);
+        m.by_reexecution = 0;
         m.settled_ts = now;
-
         emit!(MarketSettled {
             market: m.key(),
             settled_flag: flag,
             resolved: m.resolved,
             winner: m.resolver,
             payout: bond,
-            treasury_cut: 0,
+            cranker_reward: 0,
             by_reexecution: false,
         });
+        Ok(())
+    }
+
+    /// Return market rent after any terminal path. Re-opening needs the same complete definition,
+    /// therefore produces the same re-execution result; freeing this PDA is not a replay hazard.
+    pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {
+        require!(
+            ctx.accounts.market.state == STATE_SETTLED,
+            VrdctError::WrongState
+        );
         Ok(())
     }
 }
 
 #[derive(Accounts)]
-#[instruction(market_id: [u8; 32])]
+#[instruction(definition_hash: [u8; 32])]
 pub struct OpenMarket<'info> {
     #[account(mut)]
     pub resolver: Signer<'info>,
-    #[account(
-        init,
-        payer = resolver,
-        space = Market::SPACE,
-        seeds = [b"market", market_id.as_ref()],
-        bump
-    )]
+    #[account(init, payer = resolver, space = Market::SPACE, seeds = [b"market", definition_hash.as_ref()], bump)]
     pub market: Account<'info, Market>,
-    /// CHECK: recipient of the slash cut only; recorded on the market at open time.
-    pub treasury: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -383,42 +453,89 @@ pub struct OpenMarket<'info> {
 pub struct Challenge<'info> {
     #[account(mut)]
     pub challenger: Signer<'info>,
-    #[account(mut, seeds = [b"market", market.market_id.as_ref()], bump = market.bump)]
+    #[account(mut, seeds = [b"market", market.definition_hash.as_ref()], bump = market.bump)]
     pub market: Account<'info, Market>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct Feed<'info> {
-    pub cranker: Signer<'info>,
-    #[account(mut, seeds = [b"market", market.market_id.as_ref()], bump = market.bump)]
+pub struct OpenFeed<'info> {
+    #[account(mut)]
+    pub feeder: Signer<'info>,
+    #[account(seeds = [b"market", market.definition_hash.as_ref()], bump = market.bump)]
     pub market: Account<'info, Market>,
+    #[account(init, payer = feeder, space = Feed::SPACE, seeds = [b"feed", market.key().as_ref(), feeder.key().as_ref()], bump)]
+    pub feed: Account<'info, Feed>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct FeedChunk<'info> {
+    pub feeder: Signer<'info>,
+    #[account(seeds = [b"market", market.definition_hash.as_ref()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    #[account(mut, seeds = [b"feed", market.key().as_ref(), feeder.key().as_ref()], bump = feed.bump,
+        constraint = feed.market == market.key() @ VrdctError::FeedMismatch,
+        constraint = feed.feeder == feeder.key() @ VrdctError::FeedMismatch)]
+    pub feed: Account<'info, Feed>,
+}
+
+#[derive(Accounts)]
+pub struct CloseFeed<'info> {
+    #[account(mut)]
+    pub feeder: Signer<'info>,
+    #[account(seeds = [b"market", market.definition_hash.as_ref()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    #[account(mut, close = feeder, seeds = [b"feed", market.key().as_ref(), feeder.key().as_ref()], bump = feed.bump,
+        constraint = feed.market == market.key() @ VrdctError::FeedMismatch,
+        constraint = feed.feeder == feeder.key() @ VrdctError::FeedMismatch)]
+    pub feed: Account<'info, Feed>,
 }
 
 #[derive(Accounts)]
 pub struct Settle<'info> {
-    #[account(mut)]
     pub cranker: Signer<'info>,
-    #[account(mut, seeds = [b"market", market.market_id.as_ref()], bump = market.bump)]
+    #[account(mut, seeds = [b"market", market.definition_hash.as_ref()], bump = market.bump)]
     pub market: Account<'info, Market>,
-    /// CHECK: address is pinned to the market's recorded resolver.
+    /// CHECK: pinned to the market's resolver.
     #[account(mut, address = market.resolver)]
     pub resolver: UncheckedAccount<'info>,
-    /// CHECK: address is pinned to the market's recorded challenger.
+    /// CHECK: pinned to the market's challenger.
     #[account(mut, address = market.challenger)]
     pub challenger: UncheckedAccount<'info>,
-    /// CHECK: address is pinned to the market's recorded treasury.
-    #[account(mut, address = market.treasury)]
-    pub treasury: UncheckedAccount<'info>,
+    /// CHECK: the recipient of Feed rent and reward; pinned to the Feed itself.
+    #[account(mut, address = feed.feeder)]
+    pub feed_feeder: UncheckedAccount<'info>,
+    #[account(mut, close = feed_feeder, seeds = [b"feed", market.key().as_ref(), feed_feeder.key().as_ref()], bump = feed.bump,
+        constraint = feed.market == market.key() @ VrdctError::FeedMismatch)]
+    pub feed: Account<'info, Feed>,
+}
+
+#[derive(Accounts)]
+pub struct ExpireChallenged<'info> {
+    #[account(mut, seeds = [b"market", market.definition_hash.as_ref()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    /// CHECK: pinned to the market's challenger.
+    #[account(mut, address = market.challenger)]
+    pub challenger: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct ClaimUncontested<'info> {
-    #[account(mut, seeds = [b"market", market.market_id.as_ref()], bump = market.bump)]
+    #[account(mut, seeds = [b"market", market.definition_hash.as_ref()], bump = market.bump)]
     pub market: Account<'info, Market>,
-    /// CHECK: address is pinned to the market's recorded resolver.
+    /// CHECK: pinned to the market's resolver.
     #[account(mut, address = market.resolver)]
     pub resolver: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CloseMarket<'info> {
+    #[account(mut, close = rent_payer, seeds = [b"market", market.definition_hash.as_ref()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    /// CHECK: recorded at market creation; receives only rent on close.
+    #[account(mut, address = market.rent_payer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[cfg(test)]
@@ -428,23 +545,56 @@ mod tests {
     #[test]
     fn cut_is_ten_percent() {
         assert_eq!(cut_of(1_000_000_000), 100_000_000);
-        assert_eq!(cut_of(0), 0);
-        assert_eq!(cut_of(7), 0); // sub-basis-point dust stays with the winner
+        assert_eq!(cut_of(7), 0);
         assert_eq!(cut_of(u64::MAX / 2), (u64::MAX / 2) / 10);
     }
 
     #[test]
-    fn yes_when_bitmask() {
-        let green_only = 1u8 << reexec::FLAG_GREEN;
-        assert_eq!(yes_from(green_only, reexec::FLAG_GREEN), 1);
-        assert_eq!(yes_from(green_only, reexec::FLAG_RED), 0);
+    fn market_address_binds_every_term() {
+        let args = (
+            [1; 32],
+            1,
+            202601,
+            3,
+            [2; 32],
+            2,
+            1_000,
+            MIN_CHALLENGE_WINDOW_SECS,
+        );
+        let h = market_definition_hash(
+            &args.0, args.1, args.2, args.3, &args.4, args.5, args.6, args.7,
+        );
+        assert_ne!(
+            h,
+            market_definition_hash(
+                &args.0,
+                args.1,
+                args.2,
+                args.3,
+                &args.4,
+                args.5,
+                args.6 + 1,
+                args.7
+            )
+        );
+        assert_ne!(
+            h,
+            market_definition_hash(
+                &args.0,
+                args.1,
+                args.2,
+                args.3,
+                &args.4,
+                args.5,
+                args.6,
+                args.7 + 1
+            )
+        );
     }
 
     #[test]
-    fn header_digest_is_stable() {
-        let a = header_digest(1, 202601, 3789);
-        let b = header_digest(1, 202601, 3789);
-        assert_eq!(a, b);
-        assert_ne!(a, header_digest(1, 202601, 3790));
+    fn yes_when_bitmask() {
+        assert_eq!(yes_from(1 << reexec::FLAG_GREEN, reexec::FLAG_GREEN), 1);
+        assert_eq!(yes_from(1 << reexec::FLAG_GREEN, reexec::FLAG_RED), 0);
     }
 }

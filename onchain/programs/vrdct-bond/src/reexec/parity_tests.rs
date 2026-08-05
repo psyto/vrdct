@@ -4,6 +4,8 @@
 //! in `cargo test`, rather than only in a one-off audit harness.
 
 use super::{cmls, solvency, Fold, CHUNK_RECORDS};
+use crate::header_digest;
+use solana_sha256_hasher::hashv;
 
 const VECTORS: &str = include_str!("../../../../tests/parity-vectors.txt");
 
@@ -23,11 +25,17 @@ fn js_generated_canonical_vectors_match_rust_reexecution() {
             continue;
         }
         let fields: Vec<_> = line.split('|').collect();
-        assert_eq!(fields.len(), 4, "invalid parity vector at line {}", line_no + 1);
+        assert_eq!(
+            fields.len(),
+            5,
+            "invalid parity vector at line {}",
+            line_no + 1
+        );
         let expected = fields[2].parse::<u8>().expect("fixture contains a flag id");
         let bytes = decode_hex(fields[3]);
+        let expected_digest = decode_hex(fields[4]);
         let mut fold = Fold::default();
-        let actual = match fields[0] {
+        let (actual, claim_type) = match fields[0] {
             "CMLS" => {
                 let chunk_len = cmls::RECORD_SIZE * CHUNK_RECORDS as usize;
                 for chunk in bytes.chunks(chunk_len) {
@@ -37,15 +45,31 @@ fn js_generated_canonical_vectors_match_rust_reexecution() {
                     assert_eq!(bytes.len(), cmls::RECORD_SIZE * 201);
                     assert_eq!(fold.count, 201);
                 }
-                cmls::verdict(&fold)
+                (cmls::verdict(&fold), 1)
             }
             "SOLVENCY" => {
-                solvency::fold_chunk(&mut fold, &bytes).expect("JS solvency bytes must fold in Rust");
-                solvency::verdict(&fold)
+                solvency::fold_chunk(&mut fold, &bytes)
+                    .expect("JS solvency bytes must fold in Rust");
+                (solvency::verdict(&fold), 2)
             }
             other => panic!("unknown parity vector kind {other}"),
         };
         assert_eq!(actual, expected, "parity mismatch for {}", fields[1]);
+        let record_size = match claim_type {
+            1 => cmls::RECORD_SIZE,
+            2 => solvency::RECORD_SIZE,
+            _ => unreachable!(),
+        };
+        let mut digest = header_digest(claim_type, 202601, fold.count);
+        for chunk in bytes.chunks(record_size * CHUNK_RECORDS as usize) {
+            digest = hashv(&[&digest, chunk]).to_bytes();
+        }
+        assert_eq!(
+            digest.as_slice(),
+            expected_digest.as_slice(),
+            "digest-chain mismatch for {}",
+            fields[1]
+        );
         vectors += 1;
     }
     assert_eq!(vectors, 160, "fixture coverage changed unexpectedly");
