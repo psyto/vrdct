@@ -23,6 +23,8 @@ export const CLAIM_TYPE_ID = {
 /// Verdict flags — mirror `reexec::FLAG_*`.
 export const FLAG_ID = { UNKNOWN: 0, GREEN: 1, YELLOW: 2, RED: 3, STALE: 4 };
 export const FLAG_NAME = ['UNKNOWN', 'GREEN', 'YELLOW', 'RED', 'STALE'];
+/// Source descriptor kinds — mirror `state::SOURCE_*`.
+export const SOURCE_KIND = { UNSOURCED: 0, SOLANA_ACCOUNT_SIGNATURES: 1 };
 
 /// Records per chunk — mirrors `reexec::CHUNK_RECORDS`. Part of the hash chain, so it is consensus.
 export const CHUNK_RECORDS = 200;
@@ -46,20 +48,28 @@ export function marketId(question) {
 /// Hash the complete, bounded economic definition of a market. This is the PDA seed used by the
 /// program; `marketId` alone is only a discoverable question label and cannot be squatted.
 /// Mirrors `market_definition_hash` in `onchain/programs/vrdct-bond/src/lib.rs` exactly.
-export function marketDefinitionHash({ marketId: id, claimTypeId, calendarVersion, nRecords, inputsHash, yesWhen, bond, challengeWindowSecs }) {
+export function marketDefinitionHash({ marketId: id, claimTypeId, calendarVersion, nRecords, inputsHash, source, yesWhen, bond, challengeWindowSecs }) {
   if (!Buffer.isBuffer(id) || id.length !== 32) throw new Error('marketId must be 32 bytes');
   if (!Buffer.isBuffer(inputsHash) || inputsHash.length !== 32) throw new Error('inputsHash must be 32 bytes');
+  if (!source || !Number.isInteger(source.kind) || source.kind < SOURCE_KIND.UNSOURCED || source.kind > SOURCE_KIND.SOLANA_ACCOUNT_SIGNATURES) {
+    throw new Error('source.kind must be a known source descriptor kind');
+  }
+  if (!Buffer.isBuffer(source.account) || source.account.length !== 32) throw new Error('source.account must be 32 bytes');
   const u64 = Buffer.alloc(8);
   u64.writeBigUInt64LE(BigInt(bond));
   const i64 = Buffer.alloc(8);
   i64.writeBigInt64LE(BigInt(challengeWindowSecs));
+  const fromTs = Buffer.alloc(8);
+  fromTs.writeBigInt64LE(BigInt(source.fromTs));
+  const toTs = Buffer.alloc(8);
+  toTs.writeBigInt64LE(BigInt(source.toTs));
   const u32 = Buffer.alloc(4);
   u32.writeUInt32LE(calendarVersion);
   const records = Buffer.alloc(4);
   records.writeUInt32LE(nRecords);
   return sha256(
     Buffer.from('vrdct:market:v1', 'utf8'), id, Buffer.from([claimTypeId]), u32, records,
-    inputsHash, Buffer.from([yesWhen]), u64, i64,
+    inputsHash, Buffer.from([source.kind]), source.account, fromTs, toTs, Buffer.from([yesWhen]), u64, i64,
   );
 }
 

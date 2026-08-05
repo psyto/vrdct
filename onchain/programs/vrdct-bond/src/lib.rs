@@ -11,7 +11,7 @@ pub mod reexec;
 pub mod state;
 
 use errors::VrdctError;
-use reexec::{record_size, CHUNK_RECORDS, CT_CMLS, FLAG_MAX};
+use reexec::{record_size, CHUNK_RECORDS, CT_CMLS, CT_SOLVENCY, FLAG_MAX};
 use state::*;
 
 declare_id!("7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS");
@@ -44,10 +44,14 @@ pub fn market_definition_hash(
     calendar_version: u32,
     n_records: u32,
     inputs_hash: &[u8; 32],
+    source: &state::Source,
     yes_when: u8,
     bond: u64,
     challenge_window_secs: i64,
 ) -> [u8; 32] {
+    let source_kind = [source.kind];
+    let source_from_ts = source.from_ts.to_le_bytes();
+    let source_to_ts = source.to_ts.to_le_bytes();
     hashv(&[
         b"vrdct:market:v1",
         market_id,
@@ -55,11 +59,49 @@ pub fn market_definition_hash(
         &calendar_version.to_le_bytes(),
         &n_records.to_le_bytes(),
         inputs_hash,
+        &source_kind,
+        source.account.as_ref(),
+        &source_from_ts,
+        &source_to_ts,
         &[yes_when],
         &bond.to_le_bytes(),
         &challenge_window_secs.to_le_bytes(),
     ])
     .to_bytes()
+}
+
+fn validate_source(claim_type: u8, source: &state::Source) -> Result<()> {
+    require!(
+        source.kind == SOURCE_UNSOURCED || source.kind == SOURCE_SOLANA_ACCOUNT_SIGNATURES,
+        VrdctError::UnknownSourceKind
+    );
+    match claim_type {
+        CT_CMLS => {
+            require!(
+                source.kind == SOURCE_SOLANA_ACCOUNT_SIGNATURES,
+                VrdctError::CmlsSourceRequired
+            );
+            require!(
+                source.account != Pubkey::default(),
+                VrdctError::SourceAccountRequired
+            );
+            require!(
+                source.from_ts < source.to_ts,
+                VrdctError::InvalidSourceWindow
+            );
+        }
+        CT_SOLVENCY => {
+            require!(
+                source.kind == SOURCE_UNSOURCED
+                    && source.account == Pubkey::default()
+                    && source.from_ts == 0
+                    && source.to_ts == 0,
+                VrdctError::SolvencyMustBeUnsourced
+            );
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// 10% of `amount`, overflow-free for the whole u64 range.
@@ -101,6 +143,7 @@ pub mod vrdct_bond {
         calendar_version: u32,
         n_records: u32,
         inputs_hash: [u8; 32],
+        source: state::Source,
         yes_when: u8,
         asserted_flag: u8,
         bond: u64,
@@ -113,6 +156,7 @@ pub mod vrdct_bond {
         require!(asserted_flag <= FLAG_MAX, VrdctError::UnknownFlag);
         require!(bond > 0, VrdctError::ZeroBond);
         require!(n_records > 0, VrdctError::NoRecords);
+        validate_source(claim_type, &source)?;
         require!(
             (MIN_CHALLENGE_WINDOW_SECS..=MAX_CHALLENGE_WINDOW_SECS)
                 .contains(&challenge_window_secs),
@@ -126,6 +170,7 @@ pub mod vrdct_bond {
                     calendar_version,
                     n_records,
                     &inputs_hash,
+                    &source,
                     yes_when,
                     bond,
                     challenge_window_secs,
@@ -151,6 +196,7 @@ pub mod vrdct_bond {
         m.calendar_version = calendar_version;
         m.n_records = n_records;
         m.inputs_hash = inputs_hash;
+        m.source = source;
         m.yes_when = yes_when;
         m.resolver = ctx.accounts.resolver.key();
         m.resolver_flag = asserted_flag;
@@ -542,6 +588,22 @@ pub struct CloseMarket<'info> {
 mod tests {
     use super::*;
 
+    const DEFINITION_VECTORS: &str = include_str!("../../../tests/market-definition-vectors.txt");
+
+    fn decode_hex(s: &str) -> Vec<u8> {
+        assert_eq!(s.len() % 2, 0, "hex vector must have an even length");
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("fixture contains valid hex"))
+            .collect()
+    }
+
+    fn decode_32(s: &str) -> [u8; 32] {
+        decode_hex(s)
+            .try_into()
+            .expect("fixture contains a 32-byte hex value")
+    }
+
     #[test]
     fn cut_is_ten_percent() {
         assert_eq!(cut_of(1_000_000_000), 100_000_000);
@@ -551,18 +613,25 @@ mod tests {
 
     #[test]
     fn market_address_binds_every_term() {
+        let source = state::Source {
+            kind: SOURCE_SOLANA_ACCOUNT_SIGNATURES,
+            account: Pubkey::new_from_array([3; 32]),
+            from_ts: 100,
+            to_ts: 200,
+        };
         let args = (
             [1; 32],
             1,
             202601,
             3,
             [2; 32],
+            source,
             2,
             1_000,
             MIN_CHALLENGE_WINDOW_SECS,
         );
         let h = market_definition_hash(
-            &args.0, args.1, args.2, args.3, &args.4, args.5, args.6, args.7,
+            &args.0, args.1, args.2, args.3, &args.4, &args.5, args.6, args.7, args.8,
         );
         assert_ne!(
             h,
@@ -572,29 +641,94 @@ mod tests {
                 args.2,
                 args.3,
                 &args.4,
-                args.5,
-                args.6 + 1,
-                args.7
-            )
-        );
-        assert_ne!(
-            h,
-            market_definition_hash(
-                &args.0,
-                args.1,
-                args.2,
-                args.3,
-                &args.4,
-                args.5,
+                &args.5,
                 args.6,
-                args.7 + 1
+                args.7 + 1,
+                args.8
             )
         );
+        assert_ne!(
+            h,
+            market_definition_hash(
+                &args.0,
+                args.1,
+                args.2,
+                args.3,
+                &args.4,
+                &args.5,
+                args.6,
+                args.7,
+                args.8 + 1
+            )
+        );
+        for source in [
+            state::Source {
+                account: Pubkey::new_from_array([4; 32]),
+                ..args.5
+            },
+            state::Source {
+                from_ts: 101,
+                ..args.5
+            },
+            state::Source {
+                to_ts: 201,
+                ..args.5
+            },
+        ] {
+            assert_ne!(
+                h,
+                market_definition_hash(
+                    &args.0, args.1, args.2, args.3, &args.4, &source, args.6, args.7, args.8,
+                )
+            );
+        }
     }
 
     #[test]
     fn yes_when_bitmask() {
         assert_eq!(yes_from(1 << reexec::FLAG_GREEN, reexec::FLAG_GREEN), 1);
         assert_eq!(yes_from(1 << reexec::FLAG_GREEN, reexec::FLAG_RED), 0);
+    }
+
+    #[test]
+    fn js_generated_definition_hashes_match_rust() {
+        let mut vectors = 0usize;
+        for (line_no, line) in DEFINITION_VECTORS.lines().enumerate() {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let fields: Vec<_> = line.split('|').collect();
+            assert_eq!(
+                fields.len(),
+                14,
+                "invalid definition vector at line {}",
+                line_no + 1
+            );
+            let source = state::Source {
+                kind: fields[6].parse().expect("fixture source kind"),
+                account: Pubkey::new_from_array(decode_32(fields[7])),
+                from_ts: fields[8].parse().expect("fixture source from_ts"),
+                to_ts: fields[9].parse().expect("fixture source to_ts"),
+            };
+            let actual = market_definition_hash(
+                &decode_32(fields[1]),
+                fields[2].parse().expect("fixture claim type"),
+                fields[3].parse().expect("fixture calendar version"),
+                fields[4].parse().expect("fixture record count"),
+                &decode_32(fields[5]),
+                &source,
+                fields[10].parse().expect("fixture yes_when"),
+                fields[11].parse().expect("fixture bond"),
+                fields[12].parse().expect("fixture challenge window"),
+            );
+            assert_eq!(
+                actual,
+                decode_32(fields[13]),
+                "definition hash mismatch for {}",
+                fields[0]
+            );
+            vectors += 1;
+        }
+        assert_eq!(vectors, 2, "fixture coverage changed unexpectedly");
     }
 }

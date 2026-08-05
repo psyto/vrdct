@@ -5,6 +5,28 @@ pub const STATE_OPEN: u8 = 0;
 pub const STATE_CHALLENGED: u8 = 1;
 pub const STATE_SETTLED: u8 = 2;
 
+pub const SOURCE_UNSOURCED: u8 = 0;
+pub const SOURCE_SOLANA_ACCOUNT_SIGNATURES: u8 = 1;
+
+/// Public provenance statement for a market's committed records. This is not re-executed on-chain:
+/// it gives an off-chain challenger the exact account and half-open window to reconstruct before
+/// they put up a bond.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Source {
+    /// 0 = UNSOURCED, 1 = SOLANA_ACCOUNT_SIGNATURES.
+    pub kind: u8,
+    /// For kind 1, successful signatures on this account make up the record set.
+    pub account: Pubkey,
+    /// For kind 1, lower bound passed to `core/rpc.mjs::fetchObservations`.
+    pub from_ts: i64,
+    /// For kind 1, upper bound passed to `core/rpc.mjs::fetchObservations`.
+    pub to_ts: i64,
+}
+
+impl Source {
+    pub const SPACE: usize = 1 + 32 + 8 + 8;
+}
+
 /// A market whose payout is controlled by an on-chain-STATE condition.
 ///
 /// The market never stores an *answer* — it stores a **commitment to the inputs** (`inputs_hash`)
@@ -25,6 +47,8 @@ pub struct Market {
     pub n_records: u32,
     /// h_N of the canonical input hash chain
     pub inputs_hash: [u8; 32],
+    /// Where a challenger can independently reconstruct the pinned input set.
+    pub source: Source,
     /// bitmask over flags: the market resolves YES iff `(yes_when >> flag) & 1`
     pub yes_when: u8,
 
@@ -56,7 +80,7 @@ pub struct Market {
 }
 
 impl Market {
-    // 8 disc + 1 + 32*2 + 1 + 4*2 + 32 + 1 + 32 + 1 + 8 + 32 + 1 + 8 + 32 + 8*4 + 1*4
+    // 8 disc + 1 + 32*2 + 1 + 4*2 + 32 + (1 + 32 + 8 + 8) + 1 + 32 + 1 + 8 + 32 + 1 + 8 + 32 + 8*4 + 1*4
     pub const SPACE: usize = 8
         + 1
         + 32
@@ -65,6 +89,10 @@ impl Market {
         + 4
         + 4
         + 32
+        + 1
+        + 32
+        + 8
+        + 8
         + 1
         + 32
         + 1
