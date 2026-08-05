@@ -1,0 +1,13 @@
+{
+  "schema": "vrdct.resolution/v0",
+  "market": "Does Jupiter Lend liquidate SPYx soundly across the closed-market weekend window — does a market-status guard prevent liquidation against a price the regulated US market never printed?",
+  "resolved": "NO",
+  "reproduces": true,
+  "basis": {
+    "claim_id": "vc_3335896202488ea74af4f06e48d7bdf94261ed06",
+    "claim_type": "closed-market-liquidation-soundness",
+    "verdict": "RED"
+  },
+  "settlement": "bond: the side matching this re-executed outcome captures the stake; a false resolver is slashable.",
+  "reproduce": "node verify.mjs <claim.json>"
+}
