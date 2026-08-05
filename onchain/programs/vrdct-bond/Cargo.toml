@@ -1,0 +1,29 @@
+[package]
+name = "vrdct-bond"
+version = "0.1.0"
+description = "Vrdct — on-chain bond & settlement. Re-execution decides the payout."
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "vrdct_bond"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+anchor-lang = "0.32.1"
+# sha256 for the input hash chain — anchor 0.32's `solana_program` shim no longer re-exports it,
+# and on-chain this compiles down to the sol_sha256 syscall.
+solana-sha256-hasher = "2.3.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

@@ -1,0 +1,39 @@
+use anchor_lang::prelude::*;
+
+#[error_code]
+pub enum VrdctError {
+    #[msg("unknown claim_type — register the surface first")]
+    UnknownClaimType,
+    #[msg("unknown verdict flag")]
+    UnknownFlag,
+    #[msg("calendar version not pinned in this program")]
+    UnsupportedCalendar,
+    #[msg("market is not in the required state")]
+    WrongState,
+    #[msg("the challenge window has closed")]
+    ChallengeWindowClosed,
+    #[msg("the challenge window is still open")]
+    ChallengeWindowOpen,
+    #[msg("a challenge must assert a different verdict than the resolver")]
+    ChallengeMustDiffer,
+    #[msg("the challenge bond must at least match the resolver's bond")]
+    ChallengeBondTooSmall,
+    #[msg("bond must be non-zero")]
+    ZeroBond,
+    #[msg("chunk is malformed for this claim_type")]
+    MalformedChunk,
+    #[msg("chunk is not the canonical size — the hash chain is order- and size-sensitive")]
+    NonCanonicalChunk,
+    #[msg("records must be fed in non-decreasing timestamp order")]
+    RecordsOutOfOrder,
+    #[msg("more records fed than the market committed to")]
+    TooManyRecords,
+    #[msg("not every committed record has been re-executed yet")]
+    IncompleteFeed,
+    #[msg("the re-executed input digest does not match the committed inputs_hash")]
+    InputsHashMismatch,
+    #[msg("arithmetic overflow")]
+    Overflow,
+    #[msg("n_records must be non-zero")]
+    NoRecords,
+}
