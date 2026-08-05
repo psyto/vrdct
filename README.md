@@ -102,6 +102,7 @@ the market.
 
 ```bash
 node demo.mjs   # build a solvency claim → verify → resolve a market → settle the bond, offline
+npm run test:canonical  # canonical-input schema regressions + JS-generated Rust parity vectors
 ```
 
 ## Where the lane is open

@@ -5,7 +5,9 @@
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
-    "demo": "node demo.mjs"
+    "demo": "node demo.mjs",
+    "generate:parity-vectors": "node tests/generate-parity-vectors.mjs --write",
+    "test:canonical": "node --test tests/canonical-inputs.test.mjs && node tests/generate-parity-vectors.mjs --check && (cd onchain && cargo test -p vrdct-bond)"
   },
   "keywords": ["re-execution", "resolver", "prediction-markets", "solana", "verifiable-claims", "oracle-free"]
 }
