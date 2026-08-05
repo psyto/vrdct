@@ -73,8 +73,28 @@ Guidance, not a hard boundary. The quality control is the cross-review.
 - Never weaken a stated honest-scope caveat without saying so in the same change.
 - Commit identity: `psyto <saito.hiroyuki@gmail.com>`.
 
-## Debt carried into this contract
+## Debt carried into this contract — settled
 
 `7b0af34` (the on-chain bond program, `onchain/`) was written by **CC solo, before this contract
-existed**, and landed on `main` unreviewed. Under the cross-pass rule CC cannot review it. It is the
-audit target of `docs/tasks/001-onchain-bond-adversarial-audit.md`.
+existed**, and landed on `main` unreviewed. Under the cross-pass rule CC could not review it, so it
+became the audit target of `docs/tasks/001-onchain-bond-adversarial-audit.md`. That debt is now paid:
+
+| Task | Work | Reviewer | Outcome |
+| --- | --- | --- | --- |
+| 001 | Codex adversarially audits `7b0af34` | — (the task *is* the review) | `CHANGES`; one **P0** and three P1s |
+| 002 | Codex: canonical input parsing | CC | `CHANGES` → fixed → `APPROVE` |
+| 003 | Codex: program hardening | CC | `CHANGES` → fixed → `APPROVE` |
+
+What the loop actually caught, recorded here because it is the argument for keeping it:
+
+- **001** — a `staleRecords` coercion split the JS and Rust verdicts, so an honest challenger who
+  re-executed offline and bonded on the right answer would have been paid *against*. CC's own
+  end-to-end demo had passed on the same commit.
+- **002** — CC's first review found the fix was **opt-in**: a claim-type registered without a parser
+  rebuilt the same bug in six lines, on the exact path the README tells you to add surfaces. Also
+  that `verify()` had started throwing on adversarial input instead of returning a verdict.
+- **003** — CC found a settlement deadline that discarded a *completed* re-execution, making a clock
+  the decider in a program whose first line says re-execution decides; and a custody test that was
+  non-deterministic (reproduced pass-then-fail) and therefore proved nothing.
+
+Both directions produced findings. Neither agent's "it's green" survived the other reading it.

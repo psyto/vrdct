@@ -23,18 +23,27 @@ of the market captures the stake.
 ## The engine (`core/`)
 
 `claim` (verifiable-claim schema + a claim-type registry) · `verify` (re-execute + content-hash) ·
-`resolution` (claim verdict → market YES/NO) · `bond` (correct side captures; false resolver slashed).
+`resolution` (claim verdict → market YES/NO) · `bond` (correct side captures, the loser is slashed,
+whoever completed the re-execution earns 10%) · `encode` (the canonical input commitment, shared
+byte-for-byte with the on-chain program). Zero dependencies.
 The engine is **claim-type-agnostic** — new surfaces are added by registering a module, never by
 editing the engine. This is `1 engine × N surfaces`.
 
 ## Claim-types (`claimtypes/`)
 
-Each surface is a pluggable module — `{ type, invariant, reexec(inputs), checks(claim) }`:
+Each surface is a pluggable module —
+`{ type, invariant, canonicalInputs(inputs), reexec(inputs), checks(claim) }`:
 
 - `reserve-solvency` — is a protocol's recomputed backing ≥ its liability? *(Redde lineage)*
 - `closed-market-liquidation-soundness` — does a venue liquidate tokenized equities against a price
   that updated while the underlying market was closed, with no guard? *(Vesper lineage)*
 - *depeg, exploit, agent-escrow — the roadmap.*
+
+`canonicalInputs` is **required** by the registry and is the only reader of a claim's raw JSON: both
+re-execution and the on-chain encoder consume its typed output, so the two cannot disagree about
+what a claim says. It rejects whatever it cannot represent exactly instead of coercing. That is not
+hygiene — it is the fix for a bug that would have paid the wrong side of a real market
+(`reviews/001-onchain-bond-adversarial-audit.md`).
 
 `node demo.mjs` builds one of each and resolves both through the same engine — different surfaces,
 one resolver.
@@ -63,6 +72,11 @@ inputs_hash = h_N        ← pinned at open_market, before any money moves
 set — even a well-formed one whose verdict would flip the payout — lands on a different chain head
 and simply cannot settle.
 
+A market's address is the hash of its **whole definition** — question, input commitment, verdict
+mapping, bond, and challenge window — so nobody can reserve a question's address under terms of
+their own, and each feeder's re-execution progress lives in its own PDA, so a passer-by cannot reset
+or hijack someone else's.
+
 ```
 open_market  commit to inputs_hash and bounded terms, assert a flag, post a bond
 challenge    assert a different flag over the same pinned inputs, match the bond
@@ -75,16 +89,20 @@ expire_challenged  after the settlement deadline, pay the challenger unless a co
 ### Run it
 
 ```bash
-solana-test-validator -r                       # terminal 1
 cd onchain
 npm install
-anchor build && anchor build --no-idl -- --arch v3   # Agave 4.x rejects SBPFv0
+npm run build             # anchor build, then rebuild as SBPFv3 — Agave 4.x rejects SBPFv0
+npm run test:unit         # the pure re-execution + the JS-generated parity vectors, host-side
+npm run test:integration  # BPF ProgramTest over the custody state machine
+
+solana-test-validator -r  # separate terminal
 solana program deploy target/deploy/vrdct_bond.so \
   --program-id target/deploy/vrdct_bond-keypair.json
-cargo test -p vrdct-bond                       # the pure re-execution, host-side
-npm run test:integration                        # BPF ProgramTest custody-state transitions
-node client/bond-live.mjs                      # two markets, real lamports, opposite winners
+npm run bond              # two markets, real lamports, opposite winners
 ```
+
+`test:integration` emits its own SBPFv0 artifact to `target/program-test-deploy` because
+`solana-program-test` cannot execute v3; `target/deploy` keeps the v3 binary you actually deploy.
 
 What that last command does, on a live validator:
 
@@ -118,27 +136,43 @@ deterministically — the slice a price feed can't reach and a vote shouldn't de
 The resolution **logic** is trustless re-execution, now on-chain: anyone re-runs `feed` and the
 program lands on the same verdict, and real lamports move on it.
 
-Two residual trusts, both named rather than hidden:
+Three residual assumptions, all named rather than hidden:
 
 1. **Inputs.** `inputs_hash` *pins* a claim's inputs; it does not *source* them. Closing that gap
    means an on-chain recorder root, or N-of-M attestation for historical data.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
+   A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain
+   re-execution, and `0` for the optimistic and expiry paths; anything integrating with this must
+   read that field rather than the flag alone.
+3. **Expiry, and the race at its edge.** A challenged commitment that cannot be reproduced does not
+   lock either bond: after a fixed settlement deadline anyone can expire it against the resolver.
+   Expiry sends the challenger the **entire pot** — a 100% slash — so the resolver carries a
+   liveness obligation to get a Feed completed and settled inside that window. A completed Feed is
+   never discarded by the clock (`settle` has no deadline), but after the deadline it *races* a
+   permissionless `expire_challenged`, and the first terminal transaction wins. A false challenger
+   who is watching the clock can therefore still take the pot from a resolver whose completed Feed
+   would have proven them right. Removing that race needs expiry to be conditional on no completed
+   Feed existing, which the program cannot check; it is open, not solved.
 
-A challenged commitment that cannot be reproduced does not lock either bond: after its fixed
-settlement deadline, anyone can expire it against the resolver. Expiry sends the challenger the
-**entire pot** (a 100% slash of the resolver bond), so the resolver has a liveness obligation to
-get a committed Feed completed and settled within that window. A completed Feed is never discarded
-by the clock: after the deadline, `settle` and permissionless `expire_challenged` race, and the
-first terminal transaction wins. This means a false challenger can receive the pot if expiry lands
-first, even where a completed Feed would prove the resolver right.
+The 2026 calendar is valid only for 2026 timestamps, which the JS and Rust parsers both reject
+outside its half-open range — so the holiday table cannot silently classify a window it does not
+describe.
 
-Each feeder's digest and fold live in a separate PDA, so another passer-by cannot reset a completed
-feed or take its reward; the reward always goes to that feed's recorded feeder, never a privileged
-or caller-selected address. A settled `Market.by_reexecution` is `1` only when its stored verdict
-came from on-chain re-execution (`0` for optimistic or expiry settlement). The 2026 calendar is
-valid only for 2026 timestamps, which the JS and Rust parsers both reject outside its half-open
-range.
+And the on-chain half has run only against a local validator so far, with that 2026 NYSE calendar
+compiled into the program. Devnet, a governed calendar, and a live market are next.
 
-And the on-chain half has run only against a local validator so far, with a 2026-pinned NYSE
-calendar compiled into the program. Devnet, a governed calendar, and a live market are next.
+## How this repo is built
+
+Two agents cross-review each other: Claude Code takes the architecture, product shape, task briefs,
+and the final safety pass; Codex takes tightly-scoped implementation and adversarial audits.
+**Whoever writes a change does not review it.** The contract is [`AGENTS.md`](./AGENTS.md), the
+briefs are in [`docs/tasks/`](./docs/tasks), the reviews are in [`reviews/`](./reviews).
+
+That log is kept because a passing demo is not evidence. The first version of the on-chain program
+was written in one sitting, ran green end-to-end on a live validator, and was declared working — and
+the independent audit that followed found a **P0**: two readers of the same claim JSON coerced one
+field differently, so a challenger who re-executed offline, got the right answer, and bonded on it
+would have lost their money on-chain. Everything after that — the canonical parser, the committed
+JS↔Rust parity vectors, the per-feeder feed accounts, the settlement deadline, the removal of the
+treasury — came out of reviews that the author of the code was not allowed to write.
