@@ -121,7 +121,8 @@ the market.
 ## Run (offline engine)
 
 ```bash
-node demo.mjs   # build a solvency claim → verify → resolve a market → settle the bond, offline
+node demo.mjs           # build a solvency claim → verify → resolve a market → settle the bond, offline
+node reconstruct.mjs    # re-derive the reference claim's inputs from mainnet, check the commitment
 npm run test:canonical  # canonical-input schema regressions + JS-generated Rust parity vectors
 ```
 
@@ -138,8 +139,20 @@ program lands on the same verdict, and real lamports move on it.
 
 Three residual assumptions, all named rather than hidden:
 
-1. **Inputs.** `inputs_hash` *pins* a claim's inputs; it does not *source* them. Closing that gap
-   means an on-chain recorder root, or N-of-M attestation for historical data.
+1. **Inputs.** `inputs_hash` *pins* a claim's inputs. Whether it also **sources** them depends on the
+   claim-type, and for `closed-market-liquidation-soundness` it now does: the input set is a pure
+   function of `(price account, window)` — every successful signature on that account in that range,
+   ordered by `(slot, sig)` — so anyone with an RPC rebuilds it and checks the commitment without
+   being handed anything.
+
+   Measured, not asserted: `node reconstruct.mjs corpus/jupiter-spyx-cmls.claim.json` re-fetches the
+   reference claim from mainnet and lands on the identical 3,789-observation set and the identical
+   `inputs_hash`. **The bound is RPC retention** — reconstruction works while the RPC still serves
+   signature history for the window, which is why a market's challenge window is short and why an
+   old claim degrades back to "pinned but unsourced".
+
+   `reserve-solvency` is still genuinely in the unsourced case; closing it means an on-chain
+   recorder root, or N-of-M attestation for historical data.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
    A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain
