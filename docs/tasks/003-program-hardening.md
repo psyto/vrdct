@@ -82,21 +82,41 @@ frees the address, and reopening requires the identical full definition, which w
 identical verdict — so reuse is not a replay hazard. Say that out loud in a comment; it is the kind
 of reasoning a future reader will otherwise have to redo.
 
-### H6 (P2, audit) — the resolver picks the "treasury"
+### H6 (P1, audit) — the resolver picks the "treasury" → **pay the cranker instead**
 
 The README says the treasury takes 10%. As implemented, one disputant nominates that address and can
-nominate itself. The code is not wrong so much as **the documentation is false**, which is worse.
+nominate itself, so it collects the cut whether it wins or loses. The code is not wrong so much as
+**the documentation is false**, which is worse.
 
-**Decision for this task:** pin the recipient to a program constant, remove `treasury` from
-`open_market`'s inputs, and update README to state plainly that this is the single privileged address
-in the program and that it **cannot influence any verdict**.
+**Decision (Hiro, 2026-08-05): remove the treasury entirely and pay the 10% to the cranker who
+completed the re-execution.** Not a pinned constant — gone. Two things follow, and both are the
+point:
 
-**Open question for Hiro — do not decide this yourself.** The alternative is to pay the 10% to the
-**cranker** who completed the re-execution instead of to a treasury. That would give the program
-*zero* privileged addresses (a materially stronger version of the thesis) and would pay for the work
-of streaming 19 transactions — which today nobody is compensated for at all. The cost is that it
-removes the monetization hook `core/bond.mjs` was written around. That is a business call, not an
-engineering one. Implement the pinned-constant version; leave a TODO naming the alternative.
+- The program ends up with **zero privileged addresses**. Not "one address that cannot influence a
+  verdict" — none at all. Every pubkey it touches is either a disputant or someone who did work.
+  That is a materially stronger version of the thesis and it should be stated in README as such.
+- Streaming the reference claim costs **19 transactions that nobody is paid for today**. This makes
+  cranking a paid job, which is also the answer to "who actually submits the feed" — a question the
+  current design leaves to goodwill.
+
+The cost, accepted knowingly: `core/bond.mjs` was written around a treasury cut as the monetization
+hook. That hook is being given up.
+
+**Implementation detail you must get right:** the reward goes to **the feeder whose `Feed` account
+closed the commitment**, not to whoever calls `settle`. With per-feeder feed accounts (H2) those are
+separable, and paying the caller would let a free-rider watch for a completed `Feed` and collect
+another party's reward with one transaction. Pay `feed.feeder`. Apply the same rule to the existing
+"both sides asserted wrongly → the pot goes to the cranker" branch.
+
+**Also in scope for H6:**
+
+- `core/bond.mjs` must mirror the new split (`cranker` replaces `treasury` in the returned balances),
+  and `demo.mjs`'s output line with it. The offline reference model and the program must not describe
+  different economics.
+- Rename the `MarketSettled` event field `treasury_cut` to something truthful.
+- README: the `settle` summary line, the Market A/B walkthrough bullets (`treasury +0.2 SOL`), and
+  the "no admin key, no vote, no oracle account" sentence all need updating — the last one gets
+  *stronger*, so say so rather than leaving it as-is.
 
 ### H7 (P2, CC-found) — the calendar is pinned but its validity range is not
 
@@ -125,7 +145,14 @@ report it — that would mean the reference resolution is outside its own calend
   against the resolver; a second feeder cannot disturb the first feeder's stream; `settle` rejects a
   `Feed` account belonging to another market; `close_market` only after `SETTLED` and only once.
 - `claim_uncontested` gets its first test — it currently has none.
+- H6: the reward lands on `feed.feeder`, and a caller who did not feed cannot collect it.
 - H7: a claim straddling the calendar boundary fails to build (JS) and fails to fold (Rust).
+- **Close the coverage boundary 002 left.** The committed parity fixture proves JS↔Rust agreement on
+  the *fold and verdict*, but not on the **digest chain** — `h_{i+1} = sha256(h_i ‖ chunk_i)` lives
+  in `lib.rs` and is exercised only by `client/bond-live.mjs`, which needs a validator and is not in
+  `npm run test:canonical`. Since you are already in `lib.rs`, add a host-side test that recomputes
+  the chain over the committed vectors and matches the JS `inputsCommitment` head. Extend the fixture
+  with the expected `inputs_hash` per vector if that is the cleanest way.
 - `node onchain/client/bond-live.mjs` still runs green end-to-end on a local validator.
 
 ## Acceptance criteria
