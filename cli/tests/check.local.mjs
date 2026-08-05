@@ -29,11 +29,29 @@ async function funded(sol = 3) {
   return keypair;
 }
 
-async function fetchEventually(source) {
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function latestChainTime() {
+  const slot = await conn.getSlot('finalized');
+  const timestamp = await conn.getBlockTime(slot);
+  assert.notEqual(timestamp, null, `validator returned no blockTime for finalized slot ${slot}`);
+  return timestamp;
+}
+
+async function waitForChainTimeAfter(previous) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const current = await latestChainTime();
+    if (current > previous) return current;
+    await pause(250);
+  }
+  throw new Error(`validator blockTime did not advance after ${previous}; source windows must come from chain time, not Date.now()`);
+}
+
+async function fetchEventually(source, minimum) {
   for (let attempt = 0; attempt < 40; attempt++) {
     const observations = await fetchObservations(RPC, source.account.toBase58(), { from: source.fromTs, to: source.toTs });
-    if (observations.length >= 2) return observations;
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    if (observations.length >= minimum) return observations;
+    await pause(400);
   }
   return [];
 }
@@ -74,12 +92,20 @@ function runCheck(market) {
 if (!(await conn.getAccountInfo(PROGRAM_ID))?.executable) throw new Error(`program ${PROGRAM_ID} is not deployed at ${RPC}`);
 const resolver = await funded();
 const sourceSigner = await funded();
+const beforeFirstSourceTx = await latestChainTime();
 await sendAndConfirmTransaction(conn, new Transaction().add(SystemProgram.transfer({ fromPubkey: sourceSigner.publicKey, toPubkey: resolver.publicKey, lamports: 1 })), [sourceSigner], { commitment: 'confirmed' });
+const beforeSecondSourceTx = await waitForChainTimeAfter(beforeFirstSourceTx);
+await sendAndConfirmTransaction(conn, new Transaction().add(SystemProgram.transfer({ fromPubkey: sourceSigner.publicKey, toPubkey: resolver.publicKey, lamports: 1 })), [sourceSigner], { commitment: 'confirmed' });
+await waitForChainTimeAfter(beforeSecondSourceTx);
 
-const now = Math.floor(Date.now() / 1000);
-const source = { kind: SOURCE_KIND.SOLANA_ACCOUNT_SIGNATURES, account: sourceSigner.publicKey, fromTs: now - 3600, toTs: now + 3600 };
-const observations = await fetchEventually(source);
-assert.ok(observations.length >= 2, `local source ${source.account.toBase58()} window ${source.fromTs}-${source.toTs} must finalize both observations`);
+const chainNow = await latestChainTime();
+const broadSource = { kind: SOURCE_KIND.SOLANA_ACCOUNT_SIGNATURES, account: sourceSigner.publicKey, fromTs: chainNow - 3600, toTs: chainNow + 3600 };
+const allObservations = await fetchEventually(broadSource, 3);
+assert.ok(allObservations.length >= 3, `local source ${sourceSigner.publicKey.toBase58()} must finalize its airdrop and two chain-timed transfers`);
+const timestamps = [...new Set(allObservations.map((o) => o.blockTime))].sort((a, b) => a - b);
+assert.ok(timestamps.length >= 2, `source records must span chain blockTimes for a non-empty strict-subset fixture: ${timestamps.join(', ')}`);
+const source = { kind: SOURCE_KIND.SOLANA_ACCOUNT_SIGNATURES, account: sourceSigner.publicKey, fromTs: timestamps[0], toTs: timestamps.at(-1) };
+const observations = await fetchEventually(source, allObservations.length);
 const claim = claimFor(source, observations);
 assert.deepEqual(inputsCommitment(claim).inputsHash, inputsCommitment(claimFor(source, await fetchObservations(RPC, source.account.toBase58(), { from: source.fromTs, to: source.toTs }))).inputsHash, 'fresh source rebuild must be stable before opening');
 const truth = FLAG_ID[claim.verdict.flag];
@@ -87,22 +113,30 @@ const wrong = truth === FLAG_ID.RED ? FLAG_ID.GREEN : FLAG_ID.RED;
 
 const liar = await openMarket(resolver, claim, source, wrong);
 const honest = await openMarket(resolver, claim, source, truth);
-const last = Math.max(...observations.map((o) => o.blockTime));
-const mismatch = await openMarket(resolver, claim, { ...source, fromTs: last + 1, toTs: last + 2 }, truth);
+const mismatch = await openMarket(resolver, claim, { ...source, fromTs: timestamps[0] - 1, toTs: timestamps[0] }, truth);
+const empty = await openMarket(resolver, claim, { ...source, fromTs: timestamps.at(-1) + 1, toTs: timestamps.at(-1) + 2 }, truth);
 
 const liarResult = runCheck(liar);
 assert.equal(liarResult.status, 0, liarResult.stdout + liarResult.stderr);
 assert.match(liarResult.stdout, /resolver is wrong/);
 assert.match(liarResult.stdout, /commitment MATCHES/);
+assert.match(liarResult.stdout, /settle_by .*chain time/);
+assert.match(liarResult.stdout, /If no Feed settles before this deadline, expiry can pay the challenger the full/);
 
 const honestResult = runCheck(honest);
 assert.equal(honestResult.status, 0, honestResult.stdout + honestResult.stderr);
 assert.match(honestResult.stdout, /resolver is right/);
 assert.match(honestResult.stdout, /commitment MATCHES/);
+assert.match(honestResult.stdout, /If a completed Feed settles first/);
+assert.match(honestResult.stdout, /If no Feed settles before this deadline, expiry can pay the challenger the full/);
 
 const mismatchResult = runCheck(mismatch);
 assert.equal(mismatchResult.status, 1, mismatchResult.stdout + mismatchResult.stderr);
 assert.match(mismatchResult.stderr, /DO NOT BOND/);
-assert.match(mismatchResult.stderr, /REBUILD MISMATCH|returned no observations/);
+assert.match(mismatchResult.stderr, /REBUILD MISMATCH/);
 
-console.log('vrdct check local: wrong resolver, honest resolver, and rebuild mismatch all verified');
+const emptyResult = runCheck(empty);
+assert.equal(emptyResult.status, 1, emptyResult.stdout + emptyResult.stderr);
+assert.match(emptyResult.stderr, /returned no observations/);
+
+console.log('vrdct check local: wrong resolver, honest resolver, non-empty rebuild mismatch, and empty source all verified');

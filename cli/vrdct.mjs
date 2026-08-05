@@ -30,6 +30,11 @@ const ro = (pubkey, isSigner = false) => ({ pubkey, isSigner, isWritable: false 
 const short = (v) => `${v.slice(0, 6)}…${v.slice(-4)}`;
 const sol = (lamports) => `${(Number(lamports) / 1_000_000_000).toFixed(4)} SOL`;
 const iso = (ts) => new Date(Number(ts) * 1000).toISOString().replace('.000', '');
+const duration = (seconds) => {
+  if (seconds <= 0n) return 'deadline passed';
+  const h = seconds / 3600n, m = seconds % 3600n / 60n, s = seconds % 60n;
+  return `${h}h ${m}m ${s}s left`;
+};
 
 function fatal(message, code = 2) {
   console.error(`vrdct: ${message}`);
@@ -82,14 +87,29 @@ function cutOf(amount) {
   return amount / 10_000n * 1_000n + amount % 10_000n * 1_000n / 10_000n;
 }
 
+async function settlementTiming(market) {
+  try {
+    const slot = await conn.getSlot('confirmed');
+    const timestamp = await conn.getBlockTime(slot);
+    if (timestamp == null) throw new Error(`no blockTime for slot ${slot}`);
+    const chainNow = BigInt(timestamp);
+    return `settle_by ${iso(market.settleBy)} (${duration(market.settleBy - chainNow)}; chain time ${iso(chainNow)})`;
+  } catch (error) {
+    return `settle_by ${iso(market.settleBy)} (chain time unavailable: ${error.message})`;
+  }
+}
+
 function takeOtherSideValue(market, truth) {
   const bond = market.resolverBond;
+  const challengeBond = market.state === 1 ? market.challengeBond : bond;
+  const pot = bond + challengeBond;
   const reward = cutOf(bond);
+  const expiry = `If no Feed settles before this deadline, expiry can pay the challenger the full ${sol(pot)} pot. After the deadline, a completed Feed and expiry race; the first terminal transaction wins.`;
   if (truth !== market.resolverFlag) {
-    const challengerPayout = bond + bond - reward;
-    return `⚠ the resolver is wrong. Challenging with ${sol(bond)} pays ${sol(challengerPayout)} to the challenger; completing the Feed earns ${sol(reward)} (total received ${sol(challengerPayout + reward)}).`;
+    const challengerPayout = pot - reward;
+    return `⚠ the resolver is wrong. If a completed Feed settles first, the challenger receives ${sol(challengerPayout)} and its feeder earns ${sol(reward)}. ${expiry}`;
   }
-  return `✓ the resolver is right. Taking the opposite side with ${sol(bond)} loses that bond; completing the Feed only earns ${sol(cutOf(bond))}, for a net ${sol(bond - cutOf(bond))} loss.`;
+  return `✓ the resolver is right. If a completed Feed settles first, taking the opposite side with ${sol(challengeBond)} loses that bond; its feeder earns ${sol(cutOf(challengeBond))}, for a net ${sol(challengeBond - cutOf(challengeBond))} loss. ${expiry}`;
 }
 
 async function check(address) {
@@ -127,9 +147,11 @@ async function check(address) {
     return 1;
   }
   const truth = FLAG_ID[claim.verdict.flag];
+  const timing = await settlementTiming(market);
   console.log(`rebuild  ${observations.length} observations re-fetched from RPC · commitment MATCHES ${market.inputsHash.toString('hex').slice(0, 16)}… ✅`);
   console.log(`\nresolver asserts  ${FLAG_NAME[market.resolverFlag]}`);
   console.log(`re-execution says ${claim.verdict.flag}     ← ${claim.verdict.reason}`);
+  console.log(`settlement deadline  ${timing}`);
   console.log(`\n${takeOtherSideValue(market, truth)}`);
   if (truth !== market.resolverFlag) console.log(`   vrdct challenge ${key.toBase58()} --flag ${claim.verdict.flag} --bond ${(Number(market.resolverBond) / 1_000_000_000).toFixed(9).replace(/0+$/, '').replace(/\.$/, '')}`);
   return 0;

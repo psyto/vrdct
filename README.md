@@ -132,8 +132,9 @@ RPC=https://your-rpc.example node vrdct.mjs check <market-pubkey>
 ```
 
 `check` exits non-zero, with **DO NOT BOND**, if the stated account/window rebuilds a different
-`inputs_hash`. When it matches, it says whether the resolver is right and what taking the other side
-would pay. `challenge` and `crank` are the signing verbs; they require
+`inputs_hash`. When it matches, it says whether the resolver is right, the chain-derived `settle_by`
+time remaining, and the conditional re-execution/expiry outcomes of taking the other side.
+`challenge` and `crank` are the signing verbs; they require
 `KEYPAIR=/path/to/keypair.json` and are documented in [`cli/README.md`](./cli/README.md).
 
 ## Run (offline engine)
