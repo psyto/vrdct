@@ -1,8 +1,8 @@
-// Vrdct — the canonical input commitment. This is the bridge between the offline engine and the
-// on-chain bond program (`onchain/programs/vrdct-bond`): both must derive the SAME bytes, the SAME
-// hash chain, and therefore the SAME verdict. If this file and `reexec/` in the program ever
-// disagree, a market can be opened that no honest feed can settle — so the encoding is consensus,
-// and every constant here has a twin in Rust.
+// Vrdct — the canonical input commitment. This serialises already-canonical typed inputs from each
+// claim-type parser; it must never interpret raw claim JSON itself. The parser is the consensus
+// boundary shared with offline re-execution, while this module is the bridge to the on-chain program
+// (`onchain/programs/vrdct-bond`). If either side derives different bytes or a different verdict, a
+// market can pay the wrong party, so every constant here has a twin in Rust.
 //
 //   h_0     = sha256( [claim_type u8][calendar_version u32 LE][n_records u32 LE] )
 //   h_{i+1} = sha256( h_i || chunk_i )        chunks: CHUNK_RECORDS records each, remainder last
@@ -12,6 +12,8 @@
 // price-account updates). Committing to the chain head lets the program re-execute them across
 // many transactions and still refuse to settle on anything but the exact pinned input set.
 import { createHash } from 'node:crypto';
+import { canonicalInputs as canonicalCmlsInputs } from '../claimtypes/closed-market-soundness.mjs';
+import { canonicalInputs as canonicalSolvencyInputs } from '../claimtypes/solvency.mjs';
 
 /// Claim-type tags — mirror `reexec::CT_*`.
 export const CLAIM_TYPE_ID = {
@@ -43,7 +45,7 @@ export function marketId(question) {
 
 const u128le = (v) => {
   const b = Buffer.alloc(16);
-  let x = BigInt(v);
+  let x = v;
   for (let i = 0; i < 16; i++) { b[i] = Number(x & 0xffn); x >>= 8n; }
   if (x !== 0n) throw new Error('value exceeds u128');
   return b;
@@ -57,24 +59,23 @@ export function encodeRecords(claim) {
   if (id === 1) {
     // Ascending blockTimes, u32 LE. The program rejects out-of-order records, so the sort here is
     // not cosmetic — it is what makes `max_gap` independent of submission order.
-    const times = claim.inputs.observed.observations.map((o) => o.blockTime).sort((a, b) => a - b);
+    const times = [...canonicalCmlsInputs(claim.inputs).blockTimes].sort((a, b) => a - b);
     const buf = Buffer.alloc(times.length * 4);
     times.forEach((t, i) => {
-      if (!Number.isInteger(t) || t < 0 || t > 0xffffffff) throw new Error(`blockTime out of u32 range: ${t}`);
       buf.writeUInt32LE(t, i * 4);
     });
     return { claimTypeId: id, nRecords: times.length, bytes: buf };
   }
 
-  const q = claim.inputs.observed.quantities;
+  const q = canonicalSolvencyInputs(claim.inputs);
   // inv2b is tri-state in the JS engine (`=== true` proves, `=== false` disproves, absent is
   // neither) and the verdict differs across all three — so it is encoded as a tri-state byte.
-  const inv2b = q.inv2b_ok === true ? 1 : q.inv2b_ok === false ? 0 : 2;
+  const inv2b = q.inv2bOk === true ? 1 : q.inv2bOk === false ? 0 : 2;
   const bytes = Buffer.concat([
     u128le(q.virtualValue),
     u128le(q.liability),
     Buffer.from([inv2b]),
-    (() => { const b = Buffer.alloc(4); b.writeUInt32LE(q.staleRecords >>> 0); return b; })(),
+    (() => { const b = Buffer.alloc(4); b.writeUInt32LE(q.staleRecords); return b; })(),
   ]);
   return { claimTypeId: id, nRecords: 1, bytes };
 }

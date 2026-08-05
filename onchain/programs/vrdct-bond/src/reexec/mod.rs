@@ -97,3 +97,6 @@ pub fn verdict(claim_type: u8, fold: &Fold) -> Result<u8> {
         _ => err!(crate::errors::VrdctError::UnknownClaimType),
     }
 }
+
+#[cfg(test)]
+mod parity_tests;

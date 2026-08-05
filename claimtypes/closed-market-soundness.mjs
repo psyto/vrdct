@@ -2,6 +2,10 @@
 // pinned update-times of the price account a venue liquidates against, whether that feed kept
 // updating while the underlying US equity market was CLOSED with no market-status guard — in which
 // case liquidations run against a price the regulated market never printed (RED). A pluggable module.
+//
+// A claim must contain one or more exactly representable `u32` timestamps. `canonicalInputs` is the
+// only raw-JSON reader; re-execution and `core/encode.mjs` both consume its typed result so malformed
+// observations cannot be accepted offline but mean something else on-chain.
 import { registerClaimType, buildClaim } from '../core/claim.mjs';
 import { marketStatus, STATUS } from '../core/campana.mjs';
 
@@ -10,6 +14,25 @@ export const invariant = {
   id: 'CMLS',
   statement: 'A lending venue must not liquidate tokenized-equity collateral against a price that keeps updating while the underlying US equity market is CLOSED, with no market-status guard.',
 };
+
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// The sole raw-JSON reader for this surface. The returned values are representable by Rust's u32
+// timestamp record and are the input domain shared with the canonical encoder.
+export function canonicalInputs(inputs) {
+  if (!isObject(inputs) || !isObject(inputs.observed) || !Array.isArray(inputs.observed.observations)) {
+    throw new Error('inputs.observed.observations must be an array');
+  }
+  const observations = inputs.observed.observations;
+  if (observations.length === 0) throw new Error('inputs.observed.observations must be non-empty');
+  const blockTimes = observations.map((observation, i) => {
+    if (!isObject(observation) || typeof observation.blockTime !== 'number' || !Number.isSafeInteger(observation.blockTime) || observation.blockTime < 0 || observation.blockTime > 0xffffffff) {
+      throw new Error(`observations[${i}].blockTime must be a safe u32 integer`);
+    }
+    return observation.blockTime;
+  });
+  return { blockTimes };
+}
 
 // PURE classifier: update-times (+ calendar) → market-status split + liveness signal. Sorts a copy.
 export function classifyUpdateTimes(times, cal) {
@@ -32,7 +55,8 @@ const guardFromSignal = (s) => s === 'LIVE_THROUGH_CLOSURE' ? 'NONE' : s === 'FR
 const flagFromGuard = (g) => g === 'NONE' ? 'RED' : g === 'STALENESS_ONLY' ? 'YELLOW' : 'UNKNOWN';
 
 export function reexec(inputs) {
-  const comp = classifyUpdateTimes(inputs.observed.observations.map((o) => o.blockTime));
+  const { blockTimes } = canonicalInputs(inputs);
+  const comp = classifyUpdateTimes(blockTimes);
   const guard = guardFromSignal(comp.signal);
   const flag = flagFromGuard(guard);
   return {

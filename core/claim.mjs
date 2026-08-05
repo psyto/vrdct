@@ -32,6 +32,9 @@ export function claimId(c) { return 'vc_' + sha256(canonical(claimBody(c))).slic
 export function buildClaim({ type, subject, inputs }) {
   const mod = claimType(type);
   if (!mod) throw new Error(`unknown claim_type: ${type} (register it first)`);
+  // Reject malformed raw inputs at construction. `reexec` repeats this through the same parser so
+  // verification cannot bypass the claim-type's consensus input domain.
+  mod.canonicalInputs?.(inputs);
   const { computation, verdict } = mod.reexec(inputs);
   const claim = {
     schema: CLAIM_SCHEMA, claim_type: type, subject,
