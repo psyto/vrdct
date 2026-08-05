@@ -84,6 +84,13 @@ test('CMLS rejects empty and unrepresentable observations at build, re-execution
   }
 });
 
+test('CMLS rejects observations that straddle the 2026 calendar validity boundary', () => {
+  const claim = cmlsClaim([{ blockTime: 1767225599 }, { blockTime: 1767225600 }]);
+  assert.throws(() => cmls.reexec(claim.inputs), /validity range/);
+  assert.throws(() => encodeRecords(claim), /validity range/);
+  assert.throws(() => cmls.build({ subject: { priceAccount: 'test' }, window: {}, observations: claim.inputs.observed.observations }), /validity range/);
+});
+
 test('CMLS keeps valid duplicate timestamps canonical and encodable', () => {
   const claim = cmlsClaim([{ blockTime: 1785600000 }, { blockTime: 1785600000 }]);
   assert.equal(cmls.reexec(claim.inputs).verdict.flag, 'RED');

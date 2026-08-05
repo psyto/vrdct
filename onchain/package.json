@@ -8,6 +8,7 @@
   "scripts": {
     "build": "anchor build && anchor build --no-idl -- --arch v3",
     "test:unit": "cargo test -p vrdct-bond",
+    "test:integration": "NO_DNA=1 anchor build --no-idl && BPF_OUT_DIR=$PWD/target/deploy cargo test -p vrdct-bond --test state_machine -- --ignored",
     "bond": "node client/bond-live.mjs"
   },
   "dependencies": {

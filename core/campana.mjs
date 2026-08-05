@@ -8,6 +8,10 @@ export const STATUS = Object.freeze({ OPEN: 'OPEN', CLOSED: 'CLOSED', HALF_DAY: 
 // Versioned holiday calendar — the ONLY trusted datum. Pin/verify against the official NYSE calendar.
 export const CALENDAR_2026 = {
   version: 2026_01,
+  // The holiday table is deliberately not a timeless rule. CMLS records outside this half-open
+  // range must be rejected rather than quietly classified with 2026 holidays.
+  validFrom: Date.UTC(2026, 0, 1) / 1000,
+  validUntil: Date.UTC(2027, 0, 1) / 1000,
   holidays: ['2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25', '2026-06-19', '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25'],
   halfDays: ['2026-11-27', '2026-12-24'],
 };

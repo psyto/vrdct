@@ -7,7 +7,7 @@
 // only raw-JSON reader; re-execution and `core/encode.mjs` both consume its typed result so malformed
 // observations cannot be accepted offline but mean something else on-chain.
 import { registerClaimType, buildClaim } from '../core/claim.mjs';
-import { marketStatus, STATUS } from '../core/campana.mjs';
+import { marketStatus, STATUS, CALENDAR_2026 } from '../core/campana.mjs';
 
 export const type = 'closed-market-liquidation-soundness';
 export const invariant = {
@@ -28,6 +28,9 @@ export function canonicalInputs(inputs) {
   const blockTimes = observations.map((observation, i) => {
     if (!isObject(observation) || typeof observation.blockTime !== 'number' || !Number.isSafeInteger(observation.blockTime) || observation.blockTime < 0 || observation.blockTime > 0xffffffff) {
       throw new Error(`observations[${i}].blockTime must be a safe u32 integer`);
+    }
+    if (observation.blockTime < CALENDAR_2026.validFrom || observation.blockTime >= CALENDAR_2026.validUntil) {
+      throw new Error(`observations[${i}].blockTime is outside calendar ${CALENDAR_2026.version}'s validity range`);
     }
     return observation.blockTime;
   });

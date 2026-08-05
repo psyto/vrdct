@@ -5,20 +5,22 @@
 // The referee is re-execution, not an authority. Reference state machine; on-chain custody is a PDA.
 import { verify } from './verify.mjs';
 
-const CUT = 0.10; // treasury cut on a slash
+const CUT = 0.10; // re-execution completer's reward on a slash
 
 const r6 = (x) => +x.toFixed(6);
 export function settle(claim, { resolverBond, challengeBond }) {
   const v = verify(claim);
-  const bal = { resolver: -resolverBond, challenger: -challengeBond, treasury: 0 };
+  // The reference model calls this actor `cranker`; on-chain it is specifically the feeder whose
+  // Feed PDA closed the commitment, never an arbitrary `settle` caller.
+  const bal = { resolver: -resolverBond, challenger: -challengeBond, cranker: 0 };
   if (v.ok) { // claim re-executes -> the challenge was frivolous
     const cut = r6(challengeBond * CUT);
     bal.resolver = r6(bal.resolver + resolverBond + (challengeBond - cut));
-    bal.treasury = cut;
+    bal.cranker = cut;
     return { outcome: 'CHALLENGE_FAILED', reexecutes: true, balances: bal };
   }
   const cut = r6(resolverBond * CUT); // claim is provably false -> resolver slashed
   bal.challenger = r6(bal.challenger + challengeBond + (resolverBond - cut));
-  bal.treasury = cut;
+  bal.cranker = cut;
   return { outcome: 'SLASHED', reexecutes: false, balances: bal };
 }

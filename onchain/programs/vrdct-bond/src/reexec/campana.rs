@@ -9,6 +9,13 @@
 
 /// The pinned calendar version — the only trusted datum. Mirrors `CALENDAR_2026.version` (2026_01).
 pub const CAL_2026_VERSION: u32 = 202601;
+/// Half-open validity interval for the table above. Mirrors `CALENDAR_2026.validFrom/validUntil`.
+pub const CAL_2026_VALID_FROM: i64 = 1_767_225_600; // 2026-01-01T00:00:00Z
+pub const CAL_2026_VALID_UNTIL: i64 = 1_798_761_600; // 2027-01-01T00:00:00Z
+
+pub fn is_valid_2026_timestamp(ts: i64) -> bool {
+    (CAL_2026_VALID_FROM..CAL_2026_VALID_UNTIL).contains(&ts)
+}
 
 /// NYSE 2026 full closures, as `y*10000 + m*100 + d`. Mirrors `CALENDAR_2026.holidays`.
 const HOLIDAYS_2026: [u32; 10] = [
