@@ -72,10 +72,10 @@ inputs_hash = h_N        ← pinned at open_market, before any money moves
 set — even a well-formed one whose verdict would flip the payout — lands on a different chain head
 and simply cannot settle.
 
-A market's address is the hash of its **whole definition** — question, input commitment, verdict
-mapping, bond, and challenge window — so nobody can reserve a question's address under terms of
-their own, and each feeder's re-execution progress lives in its own PDA, so a passer-by cannot reset
-or hijack someone else's.
+A market's address is the hash of its **whole definition** — question, input commitment, source
+descriptor, verdict mapping, bond, and challenge window — so nobody can reserve a question's
+address under terms of their own, and each feeder's re-execution progress lives in its own PDA, so a
+passer-by cannot reset or hijack someone else's.
 
 ```
 open_market  commit to inputs_hash and bounded terms, assert a flag, post a bond
@@ -118,6 +118,25 @@ What that last command does, on a live validator:
 Same program, same code path, opposite winners — the program has no preference for whoever opened
 the market.
 
+### Take a market as a stranger
+
+`cli/vrdct.mjs` is the path from a visible Market PDA to an informed decision. Reading needs only an
+RPC URL — no wallet, keypair, local database, or fee — and reconstructs CMLS inputs from the
+descriptor that is bound into the market address:
+
+```bash
+cd cli
+npm install
+RPC=https://your-rpc.example node vrdct.mjs markets
+RPC=https://your-rpc.example node vrdct.mjs check <market-pubkey>
+```
+
+`check` exits non-zero, with **DO NOT BOND**, if the stated account/window rebuilds a different
+`inputs_hash`. When it matches, it says whether the resolver is right, the chain-derived `settle_by`
+time remaining, and the conditional re-execution/expiry outcomes of taking the other side.
+`challenge` and `crank` are the signing verbs; they require
+`KEYPAIR=/path/to/keypair.json` and are documented in [`cli/README.md`](./cli/README.md).
+
 ## Run (offline engine)
 
 ```bash
@@ -140,16 +159,16 @@ program lands on the same verdict, and real lamports move on it.
 Three residual assumptions, all named rather than hidden:
 
 1. **Inputs.** `inputs_hash` *pins* a claim's inputs. Whether it also **sources** them depends on the
-   claim-type, and for `closed-market-liquidation-soundness` it now does: the input set is a pure
-   function of `(price account, window)` — every successful signature on that account in that range,
-   ordered by `(slot, sig)` — so anyone with an RPC rebuilds it and checks the commitment without
-   being handed anything.
+   claim-type. A CMLS Market stores and PDA-binds its `(price account, window)` descriptor; every
+   successful signature on that account in that range, ordered by `(slot, sig)`, is the rebuildable
+   input set. Anyone with an RPC can run `vrdct check` before bonding, instead of being handed an
+   opaque observation list.
 
    Measured, not asserted: `node reconstruct.mjs corpus/jupiter-spyx-cmls.claim.json` re-fetches the
    reference claim from mainnet and lands on the identical 3,789-observation set and the identical
    `inputs_hash`. **The bound is RPC retention** — reconstruction works while the RPC still serves
-   signature history for the window, which is why a market's challenge window is short and why an
-   old claim degrades back to "pinned but unsourced".
+   signature history for the window. A descriptor that rebuilds differently is a stop signal, not a
+   fallback: `vrdct check` tells the challenger not to bond.
 
    `reserve-solvency` is still genuinely in the unsourced case; closing it means an on-chain
    recorder root, or N-of-M attestation for historical data.

@@ -1,0 +1,13 @@
+{
+  "name": "@vrdct/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "vrdct": "./vrdct.mjs" },
+  "scripts": {
+    "test:local": "node tests/check.local.mjs"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4"
+  }
+}

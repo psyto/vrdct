@@ -15,10 +15,22 @@ use solana_sdk::{
 use solana_sha256_hasher::hashv;
 use vrdct_bond::{
     header_digest, market_definition_hash, reexec,
-    state::{Feed, Market, STATE_CHALLENGED, STATE_OPEN, STATE_SETTLED},
+    state::{
+        Feed, Market, Source, SOURCE_SOLANA_ACCOUNT_SIGNATURES, SOURCE_UNSOURCED, STATE_CHALLENGED,
+        STATE_OPEN, STATE_SETTLED,
+    },
 };
 
 const BOND: u64 = 1_000;
+
+fn cmls_source() -> Source {
+    Source {
+        kind: SOURCE_SOLANA_ACCOUNT_SIGNATURES,
+        account: Pubkey::new_from_array([9; 32]),
+        from_ts: 1,
+        to_ts: 2,
+    }
+}
 
 fn account<T: AccountSerialize>(value: &T, lamports: u64) -> Account {
     let mut data = Vec::new();
@@ -47,6 +59,7 @@ fn market(
         calendar_version: reexec::campana::CAL_2026_VERSION,
         n_records: 1,
         inputs_hash: [0; 32],
+        source: cmls_source(),
         yes_when: 1 << reexec::FLAG_RED,
         resolver,
         resolver_flag: reexec::FLAG_RED,
@@ -129,12 +142,14 @@ async fn open_rejects_zero_and_negative_windows() {
     );
     let mut ctx = pt.start_with_context().await;
     for window in [0, -1] {
+        let source = cmls_source();
         let definition = market_definition_hash(
             &[window as u8; 32],
             reexec::CT_CMLS,
             202601,
             1,
             &[1; 32],
+            &source,
             0,
             BOND,
             window,
@@ -147,6 +162,7 @@ async fn open_rejects_zero_and_negative_windows() {
             calendar_version: 202601,
             n_records: 1,
             inputs_hash: [1; 32],
+            source,
             yes_when: 0,
             asserted_flag: reexec::FLAG_RED,
             bond: BOND,
@@ -169,6 +185,72 @@ async fn open_rejects_zero_and_negative_windows() {
         .await
         .is_err());
     }
+}
+
+#[tokio::test]
+#[ignore = "requires the BPF artifact; run npm run test:integration"]
+async fn open_rejects_unsourced_cmls() {
+    let resolver = Keypair::new();
+    let source = Source {
+        kind: SOURCE_UNSOURCED,
+        account: Pubkey::default(),
+        from_ts: 0,
+        to_ts: 0,
+    };
+    let mut pt = ProgramTest::new(
+        "vrdct_bond",
+        vrdct_bond::ID,
+        processor!(process_instruction),
+    );
+    pt.add_account(
+        resolver.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            ..Account::default()
+        },
+    );
+    let definition = market_definition_hash(
+        &[8; 32],
+        reexec::CT_CMLS,
+        202601,
+        1,
+        &[1; 32],
+        &source,
+        0,
+        BOND,
+        3600,
+    );
+    let market_key = pda(&definition);
+    let mut ctx = pt.start_with_context().await;
+    let data = vrdct_bond::instruction::OpenMarket {
+        definition_hash: definition,
+        market_id: [8; 32],
+        claim_type: reexec::CT_CMLS,
+        calendar_version: 202601,
+        n_records: 1,
+        inputs_hash: [1; 32],
+        source,
+        yes_when: 0,
+        asserted_flag: reexec::FLAG_RED,
+        bond: BOND,
+        challenge_window_secs: 3600,
+    }
+    .data();
+    assert!(send(
+        &mut ctx,
+        ix(
+            "open_market",
+            data,
+            vec![
+                AccountMeta::new(resolver.pubkey(), true),
+                AccountMeta::new(market_key, false),
+                AccountMeta::new_readonly(system_program::id(), false),
+            ],
+        ),
+        &[&resolver],
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]

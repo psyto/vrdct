@@ -23,7 +23,7 @@ import '../../claimtypes/closed-market-soundness.mjs'; // register
 import * as solvency from '../../claimtypes/solvency.mjs';
 import { verify } from '../../core/verify.mjs';
 import { resolve } from '../../core/resolution.mjs';
-import { inputsCommitment, marketId, marketDefinitionHash, yesWhenMask, FLAG_ID, FLAG_NAME } from '../../core/encode.mjs';
+import { inputsCommitment, marketId, marketDefinitionHash, yesWhenMask, FLAG_ID, FLAG_NAME, SOURCE_KIND } from '../../core/encode.mjs';
 
 const RPC = process.env.RPC || 'http://127.0.0.1:8899';
 // Mirrors `declare_id!` in programs/vrdct-bond/src/lib.rs. Override if you deploy under your own.
@@ -51,11 +51,21 @@ const send = (tx, signers) => sendAndConfirmTransaction(conn, tx, signers, { com
 function decodeMarket(data) {
   const pk = (o) => new PublicKey(data.subarray(o, o + 32));
   return {
-    claimType: data[73], nRecords: data.readUInt32LE(78), yesWhen: data[114],
-    resolver: pk(115), resolverFlag: data[147], resolverBond: data.readBigUInt64LE(148),
-    challenger: pk(156), challengerFlag: data[188], challengeBond: data.readBigUInt64LE(189),
-    state: data[261], settledFlag: data[262], resolved: data[263],
+    claimType: data[73], nRecords: data.readUInt32LE(78),
+    source: { kind: data[114], account: pk(115), fromTs: data.readBigInt64LE(147), toTs: data.readBigInt64LE(155) },
+    yesWhen: data[163], resolver: pk(164), resolverFlag: data[196], resolverBond: data.readBigUInt64LE(197),
+    challenger: pk(205), challengerFlag: data[237], challengeBond: data.readBigUInt64LE(238),
+    state: data[310], settledFlag: data[311], resolved: data[312], byReexecution: data[313],
   };
+}
+
+function sourceForClaim(claim) {
+  if (claim.claim_type === 'closed-market-liquidation-soundness') {
+    const { account } = claim.inputs.observed;
+    const { from_ts: fromTs, to_ts: toTs } = claim.inputs.window;
+    return { kind: SOURCE_KIND.SOLANA_ACCOUNT_SIGNATURES, account: new PublicKey(account).toBuffer(), fromTs, toTs };
+  }
+  return { kind: SOURCE_KIND.UNSOURCED, account: Buffer.alloc(32), fromTs: 0, toTs: 0 };
 }
 
 function decodeFeed(data) {
@@ -78,13 +88,14 @@ async function fundedKeypair(sol = 10) {
 async function runMarket({ label, question, claim, yesWhen, resolverAsserts, challengerAsserts, actors, tamperWith }) {
   const { resolver, challenger, cranker } = actors;
   const commit = inputsCommitment(claim);
+  const source = sourceForClaim(claim);
   // `marketId` remains the discoverable question label. The PDA is a hash of the entire definition,
   // so no party can squat the question address with another commitment or challenge window.
   const id = marketId(`${question}\n#${resolver.publicKey.toBase58().slice(0, 8)}`);
   const windowSecs = 3600;
   const definition = marketDefinitionHash({
     marketId: id, claimTypeId: commit.claimTypeId, calendarVersion: commit.calendarVersion,
-    nRecords: commit.nRecords, inputsHash: commit.inputsHash, yesWhen: yesWhenMask(yesWhen),
+    nRecords: commit.nRecords, inputsHash: commit.inputsHash, source, yesWhen: yesWhenMask(yesWhen),
     bond: BOND, challengeWindowSecs: windowSecs,
   });
   const [market] = PublicKey.findProgramAddressSync([Buffer.from('market'), definition], PROGRAM_ID);
@@ -110,7 +121,8 @@ async function runMarket({ label, question, claim, yesWhen, resolverAsserts, cha
   // 1) open — the resolver commits to the inputs and puts lamports behind an assertion.
   await send(new Transaction().add(ix('open_market', [
     definition, id, u8(commit.claimTypeId), u32(commit.calendarVersion), u32(commit.nRecords),
-    commit.inputsHash, u8(yesWhenMask(yesWhen)), u8(FLAG_ID[resolverAsserts]),
+    commit.inputsHash, u8(source.kind), source.account, i64(source.fromTs), i64(source.toTs),
+    u8(yesWhenMask(yesWhen)), u8(FLAG_ID[resolverAsserts]),
     u64(BOND), i64(windowSecs),
   ], [rw(resolver.publicKey, true), rw(market), ro(SystemProgram.programId)])), [resolver]);
   console.log(`  → open       resolver asserts ${resolverAsserts}, bonds ${SOL(BOND)} SOL`);

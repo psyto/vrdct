@@ -46,4 +46,14 @@ pub enum VrdctError {
     MarketDefinitionMismatch,
     #[msg("feed account is not owned by this market and feeder")]
     FeedMismatch,
+    #[msg("source descriptor kind is unknown")]
+    UnknownSourceKind,
+    #[msg("CMLS markets must name a Solana account-signature source")]
+    CmlsSourceRequired,
+    #[msg("unsourced solvency markets must use an empty source descriptor")]
+    SolvencyMustBeUnsourced,
+    #[msg("source account cannot be the default pubkey")]
+    SourceAccountRequired,
+    #[msg("source window must have from_ts strictly before to_ts")]
+    InvalidSourceWindow,
 }
