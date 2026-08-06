@@ -247,3 +247,84 @@ this diff.
 | Brief satisfied | **no** — criteria 2 and 3 open (F8) |
 
 F1–F3 and F5 are the merge blockers. F4 can land with mainnet. F8 needs a subject set from me.
+
+## Addendum — findings from building the subject set (F8)
+
+The subject set is now filed at [`docs/tasks/005-subject-set.md`](../docs/tasks/005-subject-set.md),
+with measured verdicts for four mainnet price accounts. Building it surfaced four more defects and
+one claim-type decision. Read that file for the measurements; these are the code consequences.
+
+### F9 (P1) — one `rpc` serves both the market cluster and the source, so a devnet board about mainnet venues is impossible
+
+`lib.mjs:310` builds the `Connection` from `config.rpc`, and `lib.mjs:173` passes the *same*
+`config.rpc` to `reconstruct`. `cli/vrdct.mjs:15,126` has the identical single-`RPC` shape.
+
+Every subject worth naming is a **mainnet** account — tokenized equities do not exist on devnet.
+Every bond in this task is meant to be **devnet**. Those cannot both be true today, so the whole
+task-005 plan ("open devnet positions about named venues") does not currently have a cluster it can
+run on.
+
+Worse than "does not run": it fails *deceptively*. A market opened on devnet against a mainnet
+descriptor, checked with `RPC=devnet`, returns zero signatures — and `check` prints **DO NOT BOND**
+on a row that is perfectly sound. The loudest safety message in the CLI would be firing on a
+configuration error.
+
+**Fix:** split `sourceRpc` (config) / `SOURCE_RPC` (CLI env) from the cluster RPC, default it to
+`rpc` so nothing changes for same-cluster use, and print it inside the board's falsifier command —
+the row is only falsifiable if it tells you where the source lives.
+
+### F10 (P2) — `normalizeConfig` allows windows that manufacture a false *sound* verdict
+
+`lib.mjs:71` accepts `windowSecs >= 60`. A window that falls entirely inside a trading session has
+`closedUpdates === 0`, which the classifier reads as `FROZEN_THROUGH_CLOSURE` → YELLOW → "staleness
+guard only" — a *sound* verdict produced by a window that contained no closure to be sound about.
+An hourly cadence would print reassuring rows about venues nobody has checked.
+
+A daily UTC window always contains closure, so `86400` is safe today; nothing enforces it. Floor
+`windowSecs` at a day, and see F11 for why a day is still not the right unit.
+
+### F11 (P1) — a genuinely sound feed is silent on weekends, and a silent window cannot be a market
+
+Detailed in `005-subject-set.md` §4b. A market-hours-guarded feed emits nothing Saturday and Sunday,
+so the keeper's previous-UTC-day window is empty for exactly the subject the brief calls the most
+valuable row on the board:
+
+1. `reconstruct` throws `returned no observations` (`lib.mjs:141`), and per **F1** that takes down
+   the crank loop, the remaining subjects, and the board — **twice a week, on schedule**.
+2. Even with F1 fixed the market cannot be opened: `open_market` requires `n_records > 0`
+   (`lib.rs:158`). The strongest possible evidence of a working guard — 48 hours of silence —
+   encodes as the empty input set, which the program rejects.
+
+**Fix:** trading-day-aware window selection using `core/campana.mjs` (span a session plus its
+surrounding closure; skip subjects on days with no session) rather than `floor(now/windowSecs)`.
+This is the one item here that is a design change rather than a patch.
+
+### F12 (P2) — the falsifier command will be rate-limited on the endpoint a stranger has
+
+A weekend window on one of these accounts is ~2,000 observations = 3+ `getSignaturesForAddress`
+pages. I hit `Too many requests for a specific RPC call` on `api.mainnet-beta.solana.com` twice while
+measuring four accounts back to back. The board's central promise is "run this command yourself";
+either name an endpoint that can serve it, or say on the board's face that a public endpoint will
+not. Related to F2 — the same pagination limit is what makes RPC reachability a *money* variable.
+
+### F13 (decision, not a defect) — half-day sessions count as CLOSED
+
+`marketStatus` returns `HALF_DAY`, the classifier splits on `=== STATUS.OPEN`, so the shortened
+session lands on the closed side. Both twins agree and `reexec/campana.rs:8` documents it as
+intentional — so this is a design decision to revisit, not a parity break.
+
+But on `2026-11-27` or `2026-12-24`, a perfectly guarded feed publishes 09:30–13:00 ET and is silent
+otherwise; those in-session updates are counted closed with ~4-minute gaps →
+`LIVE_THROUGH_CLOSURE` → **RED**, reason string *"updated N× while the US market was CLOSED"*, about
+a window in which the market was open. A false public accusation against the best-behaved venue on
+the board, on a date already in the committed calendar, reachable by a keeper that simply keeps
+running.
+
+My recommendation is to treat `HALF_DAY` as open in both twins. That is a consensus change — parity
+vectors regenerated deliberately, and Hiro signs off. The corpus is unaffected (its window is
+2026-08-01→05, no half days), so `inputs_hash` and the published verdict do not move.
+
+### Revised blocker list
+
+F1, F2, F3, F5 as filed, plus **F9** (no runnable cluster without it) and **F11** (the sound row
+breaks the keeper twice a week). F13 needs a decision before any board runs past November.
