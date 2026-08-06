@@ -1,0 +1,17 @@
+{
+  "rpc": "https://api.devnet.solana.com",
+  "programId": "7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS",
+  "keypair": "/absolute/path/to/devnet-keeper.json",
+  "bondLamports": "10000000",
+  "challengeWindowSecs": 3600,
+  "boardDir": "../board",
+  "subjects": [
+    {
+      "venue": "Example tokenized-equity lender",
+      "question": "Does Example tokenized-equity lender avoid liquidating against a price that updates while US equities are closed?",
+      "priceAccount": "replace-with-a-Solana-price-account",
+      "windowSecs": 86400,
+      "yesWhen": ["GREEN"]
+    }
+  ]
+}

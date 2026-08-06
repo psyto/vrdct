@@ -39,6 +39,15 @@ Each surface is a pluggable module —
   that updated while the underlying market was closed, with no guard? *(Vesper lineage)*
 - *depeg, exploit, agent-escrow — the roadmap.*
 
+## Standing board
+
+[`board/README.md`](./board/README.md) is the committed record of configured keeper positions, not
+a landing page. Every published row names the venue and question, carries its source descriptor and
+market/deadline state, and includes the exact read-only `vrdct check <market>` command that can
+falsify it. A row being open or uncontested does not prove the venue correct. The keeper that writes
+the board is documented in [`keeper/README.md`](./keeper/README.md): it opens only the flag it
+re-executed and cranks its own challenged positions before expiry can award them to the challenger.
+
 `canonicalInputs` is **required** by the registry and is the only reader of a claim's raw JSON: both
 re-execution and the on-chain encoder consume its typed output, so the two cannot disagree about
 what a claim says. It rejects whatever it cannot represent exactly instead of coercing. That is not

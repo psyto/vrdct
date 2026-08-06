@@ -7,7 +7,8 @@
   "scripts": {
     "demo": "node demo.mjs",
     "generate:parity-vectors": "node tests/generate-parity-vectors.mjs --write",
-    "test:canonical": "node --test tests/canonical-inputs.test.mjs && node tests/generate-parity-vectors.mjs --check && node tests/generate-definition-vectors.mjs && (cd onchain && cargo test -p vrdct-bond)"
+    "test:canonical": "node --test tests/canonical-inputs.test.mjs && node tests/generate-parity-vectors.mjs --check && node tests/generate-definition-vectors.mjs && (cd onchain && cargo test -p vrdct-bond)",
+    "test:keeper": "cd keeper && npm run test:local"
   },
   "keywords": ["re-execution", "resolver", "prediction-markets", "solana", "verifiable-claims", "oracle-free"]
 }

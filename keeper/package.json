@@ -1,0 +1,14 @@
+{
+  "name": "@vrdct/keeper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "vrdct-keeper": "./vrdct-keeper.mjs" },
+  "engines": { "node": ">=20.18.0" },
+  "scripts": {
+    "test:local": "${VRDCT_NODE:-node} tests/standing-board.local.mjs"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4"
+  }
+}
