@@ -138,3 +138,63 @@ host tx-timing with chain state is not hermetic, and its green is not evidence.*
 - [ ] F3 — the test derives its window from chain time, or fails fast naming the drift.
 - [ ] `npm run test:canonical`, `npm run test:integration`, `bond-live.mjs`, and the CLI test green —
       the CLI test run twice, once against a validator that has been up for a while.
+
+---
+
+## Re-review — `f1ab86c`
+
+**APPROVE.** All three closed, verified by running the cases myself rather than by reading the diff.
+
+**F1.** Both branches now state the contingency and print `settle_by` with time remaining, computed
+from **chain time** rather than the host clock — the same principle the finding was about. Observed
+directly:
+
+```
+✓ the resolver is right. If a completed Feed settles first, taking the opposite side with 0.0010 SOL
+  loses that bond … If no Feed settles before this deadline, expiry can pay the challenger the full
+  0.0020 SOL pot. After the deadline, a completed Feed and expiry race; the first terminal
+  transaction wins.
+settlement deadline  settle_by 2026-08-07T01:26:10Z (24h 59m 25s left; chain time 2026-08-06T00:26:45Z)
+```
+
+The "resolver is wrong" branch carries the symmetric disclosure, which is the part that could have
+been skipped since it only makes challenging look safer. It wasn't.
+
+**F2.** The mismatch fixture is now a genuine strict subset (`timestamps[0] - 1 → timestamps[0]`),
+the assertion names `/REBUILD MISMATCH/` specifically, and the empty-source case is its own market
+and its own assertion. Confirmed on a live market: one fixture exits 1 with `REBUILD MISMATCH`, a
+different one exits 1 with `returned no observations`. The branch that had never executed now does.
+
+**F3.** Windows come from `getBlockTime(getSlot('finalized'))`, and the test waits for chain time to
+advance between the two source transactions so the subset fixture is constructible at all. The suite
+passed twice on the validator that had been up for a while, and again after a restart. **Stated
+limit:** I could not manufacture a ten-hour drift on demand, so this is verified by construction —
+no `Date.now()` remains in the window path — plus green runs, not by re-triggering the original
+failure.
+
+Everything else re-run on my own SBPFv3 build and deploy: `test:canonical` (160 parity + 2
+definition vectors, 20 Rust tests), `test:integration` (5), `bond-live.mjs`, CLI suite ×2. corpus
+`inputs_hash` unchanged.
+
+### Recorded for a later task, not blocking
+
+Chasing F2 surfaced something real. On a default `solana-test-validator` the ledger prunes fast
+(`getFirstAvailableBlock` 3141 against slot 3382 — roughly 100 seconds of history), and **every one
+of nineteen live markets became uncheckable**, including ones that had returned `commitment MATCHES`
+half an hour earlier. That is not a defect: it is README Honest scope #1's retention boundary
+happening in front of me, and `check` did the right thing — `DO NOT BOND`, exit 1, refusing to
+advise on a market it can no longer reconstruct.
+
+But it exposes a gap in the message. "Source reconstruction returned no observations" currently
+covers two situations a reader must not confuse:
+
+- **the resolver pointed at a window that never had records** — evidence against the market, and
+- **the market has simply aged out of this RPC's history** — no evidence either way, and the correct
+  response is to try an RPC with deeper history, not to conclude anything about the resolver.
+
+`check` should distinguish them, e.g. by comparing the source window against
+`getFirstAvailableBlock`'s block time and saying "this RPC's history starts after this market's
+window; use an archival RPC" in the second case. Worth a task on its own, since it is the difference
+between "this market is bad" and "you are looking with the wrong instrument".
+
+Merged to `main`.
