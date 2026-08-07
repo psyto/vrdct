@@ -532,3 +532,38 @@ already completed the correct Feed, then the local cache was altered before a la
   covers the terminal program transition.
 - I leave the three re-review nits (board `as of`, `getProgramAccounts` filter, inclusive source
   endpoint versus the half-open wording) for a follow-up; none changes this verdict.
+
+## Codex review — `3453b11`
+
+**Reviewer:** Codex · **Author:** CC
+
+### Verdict
+
+**APPROVE**
+
+`commitmentDigest` is a byte-for-byte extraction of the previous `inputsCommitment` hash rule: the
+same 9-byte little-endian header and ordered `sha256(previous_digest, chunk)` chain. The caller still
+creates its chunks with `chunksOf`, so the commitment bytes and chunk boundaries do not move.
+
+`cachedCommitment` now verifies that the decoded chunks re-hash to `Market.inputs_hash`; failure is a
+cache miss and takes the already bounded RPC-rebuild path. That path constructs its chunks locally
+through `inputsCommitment`, then checks `nRecords` and `inputs_hash` before it can return bytes for
+`feed`. A separate split assertion there would be redundant: `inputsCommitment` itself produced the
+returned canonical split, and the checked digest binds its ordered chunks. The already-complete Feed
+path only accepts that same verified commitment hash; the program repeats the count and digest checks
+at settlement. I found no remaining path for uncommitted bytes to reach a settling Feed.
+
+The new E2E altered-cache case covers both halves of R5: it refuses the bad cache before fee spend
+when source recovery is unavailable, and it rebuilds, re-seeds, and settles when the source is
+available. It also closes the prior false R3 post-settlement comparison path.
+
+Verified locally:
+
+- clean `git archive` root `node --test tests/canonical-inputs.test.mjs` (no `node_modules`)
+- `npm run test:canonical`
+- keeper unit and local-validator E2E suites
+- `onchain`: `npm run test:integration`
+- `onchain`: `node client/bond-live.mjs`, including its forged digest-chain rejection
+
+The previously noted board freshness, unfiltered program-account scan, and inclusive endpoint versus
+half-open wording remain non-blocking follow-up nits.
