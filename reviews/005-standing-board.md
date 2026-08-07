@@ -479,3 +479,56 @@ which needs devnet SOL that a faucet will not hand out at that size. That is Hir
 and it is worth saying out loud rather than leaving it as a failed acceptance checkbox.
 
 Fix R1, R2, R3; state R4's limitation; then this merges.
+
+## Codex review — `c360782..ede4745`
+
+**Reviewer:** Codex · **Author:** CC
+
+### Verdict
+
+**CHANGES** — R1, the cache-*missing* part of R2, R3 for intact commitments, and R4's stated
+coverage limit are correctly addressed. I independently ran the root canonical suite from a clean
+`git archive` with no `node_modules`; it passed, so `keeper/window.mjs` is genuinely dependency-free
+and its close-to-close implementation is an exact pure move. I also ran `npm run test:canonical` and
+the keeper unit + local-validator E2E; both are green, including the RPC cache-miss recovery case.
+
+### Finding
+
+#### R5 (P1) — a syntactically valid but altered cache still defeats the healthy-RPC fallback and loses the challenged pot
+
+`cachedCommitment` verifies the cache's *declared* `inputsHash`, record count, byte length, and
+200-record split, but never recomputes the digest chain over `chunks`
+([`keeper/lib.mjs:197-214`](../keeper/lib.mjs)). `recoverCommitment` returns any cache that passes
+those shape checks and only calls the source RPC when cache parsing/shape validation throws
+([`keeper/lib.mjs:295-308`](../keeper/lib.mjs)). Thus the new fallback covers a missing/truncated
+cache, but not the realistic "file exists, bytes changed" case.
+
+Concrete loss path:
+
+1. A challenger bonds the opposite flag on a keeper market. A disk fault or a process with write
+   access to the configured `cacheDir` changes one cached `u32 LE` timestamp while retaining a valid
+   calendar timestamp, ascending order, the same chunk sizes, and the old JSON `inputsHash` field.
+2. The keeper sees a well-shaped cache, never asks an otherwise healthy source RPC to rebuild, and
+   feeds the altered bytes. Every `feed` can succeed, but `settle` rejects because the Feed's digest
+   is not `Market.inputs_hash` ([`lib.rs:353-359`](../onchain/programs/vrdct-bond/src/lib.rs)).
+3. The market remains CHALLENGED. At `settle_by`, the challenger calls `expire_challenged` and takes
+   the entire pot, including the resolver's bond.
+
+The same omission can make R3's post-settle comparison spuriously throw if an earlier process had
+already completed the correct Feed, then the local cache was altered before a later process calls
+`settle`: `prepareOwnFeed` accepts the completed on-chain digest, but
+`verdictFromCommitment` reads the altered local bytes afterwards.
+
+**Fix:** after decoding cache chunks, recompute the exact hash chain (header
+`[claim_type, calendar_version, n_records]`, then each canonical chunk) and require it equals
+`market.inputsHash`. Treat a mismatch as a cache miss so `recoverCommitment` rebuilds from
+`sourceRpc`; add the corrupted-but-well-formed cache E2E case.
+
+### Non-blocking notes
+
+- R4's limitation is now explicitly documented, and the offline account-order/discriminator test
+  matches Anchor's `(market, resolver)` accounts. I do not see a practical way to advance a live
+  `solana-test-validator` clock through the one-hour program minimum; the existing ProgramTest test
+  covers the terminal program transition.
+- I leave the three re-review nits (board `as of`, `getProgramAccounts` filter, inclusive source
+  endpoint versus the half-open wording) for a follow-up; none changes this verdict.
