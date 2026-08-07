@@ -45,7 +45,7 @@ export function classifyUpdateTimes(times, cal) {
   const gaps = [], dailyClosed = {};
   for (let i = 0; i < times.length; i++) {
     const st = marketStatus(times[i], cal);
-    if (st.status === STATUS.OPEN) openN++;
+    if (st.status === STATUS.OPEN || st.status === STATUS.HALF_DAY) openN++;
     else { closedN++; if (!firstClosed) firstClosed = times[i]; lastClosed = times[i]; dailyClosed[st.dateET] = (dailyClosed[st.dateET] || 0) + 1; }
     if (i > 0) gaps.push(times[i] - times[i - 1]);
   }

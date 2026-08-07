@@ -13,6 +13,9 @@ import { FLAG_ID, FLAG_NAME, inputsCommitment, SOURCE_KIND } from '../core/encod
 import { fetchObservations } from '../core/rpc.mjs';
 
 const RPC = process.env.RPC || 'http://127.0.0.1:8899';
+// Markets may custody bonds on devnet while their descriptors point at a mainnet source account.
+// Keep reads of Market state on RPC and reconstruct the descriptor from SOURCE_RPC.
+const SOURCE_RPC = process.env.SOURCE_RPC || RPC;
 const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID || '7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS');
 const conn = new Connection(RPC, 'confirmed');
 const STATE = ['OPEN', 'CHALLENGED', 'SETTLED'];
@@ -123,7 +126,7 @@ async function check(address) {
   console.log(`source   ${sourceLabel(market.source)}`);
   let observations;
   try {
-    observations = await fetchObservations(RPC, market.source.account.toBase58(), {
+    observations = await fetchObservations(SOURCE_RPC, market.source.account.toBase58(), {
       from: Number(market.source.fromTs), to: Number(market.source.toTs),
     });
   } catch (error) {
@@ -148,7 +151,7 @@ async function check(address) {
   }
   const truth = FLAG_ID[claim.verdict.flag];
   const timing = await settlementTiming(market);
-  console.log(`rebuild  ${observations.length} observations re-fetched from RPC · commitment MATCHES ${market.inputsHash.toString('hex').slice(0, 16)}… ✅`);
+  console.log(`rebuild  ${observations.length} observations re-fetched from SOURCE_RPC (${SOURCE_RPC}) · commitment MATCHES ${market.inputsHash.toString('hex').slice(0, 16)}… ✅`);
   console.log(`\nresolver asserts  ${FLAG_NAME[market.resolverFlag]}`);
   console.log(`re-execution says ${claim.verdict.flag}     ← ${claim.verdict.reason}`);
   console.log(`settlement deadline  ${timing}`);
@@ -215,7 +218,7 @@ async function crank(address) {
   if (market.state !== 1) fatal(`market is ${STATE[market.state] || market.state}; crank requires CHALLENGED`);
   if (market.claimType !== 1 || market.source.kind !== SOURCE_KIND.SOLANA_ACCOUNT_SIGNATURES) fatal('crank currently supports sourced CMLS markets only');
   const signer = signerFromEnv();
-  const observations = await fetchObservations(RPC, market.source.account.toBase58(), { from: Number(market.source.fromTs), to: Number(market.source.toTs) });
+  const observations = await fetchObservations(SOURCE_RPC, market.source.account.toBase58(), { from: Number(market.source.fromTs), to: Number(market.source.toTs) });
   if (!observations.length) fatal('source reconstruction returned no observations; refusing to crank');
   const claim = cmlsClaim(market, observations);
   const commitment = inputsCommitment(claim, { calendarVersion: market.calendarVersion });

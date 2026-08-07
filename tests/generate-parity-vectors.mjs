@@ -33,7 +33,9 @@ const cmlsVectors = [
   ['regular-close-at', [unix(2026, 8, 3, 20)]],
   ['weekend', [unix(2026, 8, 1, 16)]],
   ['holiday', [unix(2026, 7, 3, 16)]],
-  ['half-day', [unix(2026, 11, 27, 16)]],
+  ['half-day-open-at', [unix(2026, 11, 27, 14, 30)]],
+  ['half-day-open-before-close', [unix(2026, 11, 27, 17, 59, 59)]],
+  ['half-day-close-at', [unix(2026, 11, 27, 18)]],
   ['multi-chunk-201', Array.from({ length: 201 }, (_, i) => unix(2026, 8, 1, 16) + i * 60)],
 ];
 

@@ -6,6 +6,11 @@ import * as cmls from '../claimtypes/closed-market-soundness.mjs';
 import * as solvency from '../claimtypes/solvency.mjs';
 import { registerClaimType } from '../core/claim.mjs';
 import { verify } from '../core/verify.mjs';
+// keeper/window.mjs only, never keeper/lib.mjs: the root suite must stay runnable on a clean clone,
+// and lib.mjs pulls in a Solana client the root package does not depend on.
+import { tradingWindow } from '../keeper/window.mjs';
+
+const unix = (y, m, d, hour, minute = 0, second = 0) => Math.floor(Date.UTC(y, m - 1, d, hour, minute, second) / 1000);
 
 const solvencyInputs = (staleRecords = 0, overrides = {}) => ({
   observed: { quantities: { virtualValue: '100', liability: '100', inv2b_ok: true, staleRecords, ...overrides } },
@@ -97,6 +102,16 @@ test('CMLS keeps valid duplicate timestamps canonical and encodable', () => {
   assert.equal(encodeRecords(claim).nRecords, 2);
 });
 
+test('CMLS counts a half-day session as open and its 13:00 ET boundary as closed', () => {
+  const result = cmls.classifyUpdateTimes([
+    unix(2026, 11, 27, 14, 30), // 09:30 EST, open
+    unix(2026, 11, 27, 17, 59, 59), // 12:59:59 EST, open
+    unix(2026, 11, 27, 18), // 13:00 EST, closed
+  ]);
+  assert.equal(result.openUpdates, 2);
+  assert.equal(result.closedUpdates, 1);
+});
+
 test('CMLS 201-record vector crosses the canonical 200-record chunk boundary', () => {
   const observations = Array.from({ length: 201 }, (_, i) => ({ blockTime: 1785600000 + i * 60 }));
   const commitment = inputsCommitment(cmlsClaim(observations));
@@ -104,6 +119,21 @@ test('CMLS 201-record vector crosses the canonical 200-record chunk boundary', (
   assert.equal(commitment.chunks.length, 2);
   assert.equal(commitment.chunks[0].length, 200 * 4);
   assert.equal(commitment.chunks[1].length, 4);
+});
+
+test('keeper trading windows are close-to-close across Friday, weekend, Monday, and a half day', () => {
+  const thuClose = unix(2026, 8, 6, 20);
+  const friClose = unix(2026, 8, 7, 20);
+  const monClose = unix(2026, 8, 10, 20);
+  for (const now of [unix(2026, 8, 7, 21), unix(2026, 8, 8, 12), unix(2026, 8, 9, 12), unix(2026, 8, 10, 19)]) {
+    assert.deepEqual(tradingWindow(now), { fromTs: thuClose, toTs: friClose, chainNow: now });
+  }
+  assert.deepEqual(tradingWindow(unix(2026, 8, 10, 21)), { fromTs: friClose, toTs: monClose, chainNow: unix(2026, 8, 10, 21) });
+
+  // Thanksgiving is closed; the next completed session is Friday's 13:00 ET half-day close.
+  assert.deepEqual(tradingWindow(unix(2026, 11, 27, 19)), {
+    fromTs: unix(2026, 11, 25, 21), toTs: unix(2026, 11, 27, 18), chainNow: unix(2026, 11, 27, 19),
+  });
 });
 
 test('committed corpus remains a valid, reproducible canonical claim', () => {

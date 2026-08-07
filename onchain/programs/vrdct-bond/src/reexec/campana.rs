@@ -5,7 +5,7 @@
 //! Parity contract with the JS core (any divergence here is a consensus bug):
 //!   • civil-date math must agree with `Date.UTC` / `getUTC*` over the supported range
 //!   • ET offset: EDT (-4) from 2nd Sun Mar 02:00 to 1st Sun Nov 02:00, else EST (-5)
-//!   • a HALF_DAY session is NOT `OPEN` — the JS classifier counts it on the CLOSED side
+//!   • a HALF_DAY session is open until its pinned 13:00 ET close, like the JS classifier
 
 /// The pinned calendar version — the only trusted datum. Mirrors `CALENDAR_2026.version` (2026_01).
 pub const CAL_2026_VERSION: u32 = 202601;
@@ -27,6 +27,7 @@ const HALF_DAYS_2026: [u32; 2] = [20261127, 20261224];
 
 const REG_OPEN_MIN: i64 = 9 * 60 + 30;
 const REG_CLOSE_MIN: i64 = 16 * 60;
+const HALF_CLOSE_MIN: i64 = 13 * 60;
 
 /// Days since the unix epoch for a civil date (Howard Hinnant's algorithm; exact, integer-only).
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
@@ -89,19 +90,22 @@ fn et_parts(ts: i64) -> EtParts {
     }
 }
 
-/// Is this instant inside a REGULAR (`STATUS.OPEN`) US-equities session?
-///
-/// Deliberately excludes half-days: `marketStatus` returns `HALF_DAY` there and the JS classifier
-/// (`st.status === STATUS.OPEN ? open++ : closed++`) counts it on the CLOSED side. Mirrored exactly.
-pub fn is_regular_open(ts: i64) -> bool {
+/// Is this instant inside a pinned US-equities trading session, including a 13:00 ET half-day?
+/// Mirrors the JS classifier, where both `STATUS.OPEN` and `STATUS.HALF_DAY` count as open.
+pub fn is_session_open(ts: i64) -> bool {
     let p = et_parts(ts);
     if p.wday == 0 || p.wday == 6 {
         return false; // weekend
     }
-    if HOLIDAYS_2026.contains(&p.ymd) || HALF_DAYS_2026.contains(&p.ymd) {
+    if HOLIDAYS_2026.contains(&p.ymd) {
         return false;
     }
-    p.minutes >= REG_OPEN_MIN && p.minutes < REG_CLOSE_MIN
+    let close = if HALF_DAYS_2026.contains(&p.ymd) {
+        HALF_CLOSE_MIN
+    } else {
+        REG_CLOSE_MIN
+    };
+    p.minutes >= REG_OPEN_MIN && p.minutes < close
 }
 
 #[cfg(test)]
@@ -130,15 +134,22 @@ mod tests {
     fn session_windows() {
         // Mon 2026-08-03 13:30Z == 09:30 ET (EDT) -> open; 20:00Z == 16:00 ET -> closed.
         let day = days_from_civil(2026, 8, 3) * 86400;
-        assert!(!is_regular_open(day + 13 * 3600 + 29 * 60));
-        assert!(is_regular_open(day + 13 * 3600 + 30 * 60));
-        assert!(is_regular_open(day + 19 * 3600 + 59 * 60));
-        assert!(!is_regular_open(day + 20 * 3600));
+        assert!(!is_session_open(day + 13 * 3600 + 29 * 60));
+        assert!(is_session_open(day + 13 * 3600 + 30 * 60));
+        assert!(is_session_open(day + 19 * 3600 + 59 * 60));
+        assert!(!is_session_open(day + 20 * 3600));
         // Sat 2026-08-01 mid-session-hours -> weekend, closed.
         let sat = days_from_civil(2026, 8, 1) * 86400;
-        assert!(!is_regular_open(sat + 15 * 3600));
+        assert!(!is_session_open(sat + 15 * 3600));
         // Independence Day observed 2026-07-03 -> holiday, closed.
         let hol = days_from_civil(2026, 7, 3) * 86400;
-        assert!(!is_regular_open(hol + 15 * 3600));
+        assert!(!is_session_open(hol + 15 * 3600));
+        // Fri 2026-11-27 is a 13:00 EST half-day. Its actual session is open, and the
+        // surrounding closure remains closed.
+        let half = days_from_civil(2026, 11, 27) * 86400;
+        assert!(!is_session_open(half + 14 * 3600 + 29 * 60 + 59)); // 09:29:59 EST
+        assert!(is_session_open(half + 14 * 3600 + 30 * 60)); // 09:30 EST
+        assert!(is_session_open(half + 17 * 3600 + 59 * 60 + 59)); // 12:59:59 EST
+        assert!(!is_session_open(half + 18 * 3600)); // 13:00 EST
     }
 }
