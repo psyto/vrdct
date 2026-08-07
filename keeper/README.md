@@ -44,9 +44,10 @@ be independently falsified.
 
 ## Local-validator test
 
-Start a local validator with the task-004 program binary, then run the committed E2E. It creates a
-source account, waits for a **chain-time** minute to close, then verifies open → dedupe → challenge
-→ feeder-owned re-execution → settle → board.
+Start a local validator with the program binary, then run the committed E2E. It derives a
+close-to-close window from a finalized source observation's **chain blockTime**, then verifies a
+quiet subject cannot stop another open or board write; an old-question/cache-missing market cannot
+stop a cached challenged market from settling; and source loss becomes a visible board skip.
 
 ```bash
 solana-test-validator --reset --bpf-program 7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS onchain/target/program-test-deploy/vrdct_bond.so
