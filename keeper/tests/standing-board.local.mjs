@@ -2,7 +2,7 @@
 // blockTime inside the keeper; this test deliberately never consults Date.now().
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -181,4 +181,19 @@ const checked = spawnSync(NODE, ['cli/vrdct.mjs', 'check', marketB.toBase58()], 
 assert.equal(checked.status, 0, checked.stdout + checked.stderr);
 assert.match(checked.stdout, new RegExp(`re-execution says ${FLAG_NAME[openedB.resolverFlag]}`));
 
-console.log(`vrdct standing board local: quiet-source isolation, idempotent close-to-close open, stale-config custody, cached crank/settle, source-loss board skip, and feeder reward verified`);
+// Market A is still CHALLENGED with no cache file. Cache loss must not be terminal: with the source
+// RPC reachable again the keeper rebuilds the committed bytes, defends the bond, and re-seeds the
+// cache. A is also still absent from `editedConfig`, so this exercises custody beyond wording too.
+assert.ok(!existsSync(join(config.cacheDir, `${marketA.toBase58()}.json`)), 'market A must still be cacheless going in');
+const recovered = await runKeeper({ config: editedConfig, signer: keeper, connection: conn, chainNow: fixedChainNow, fetch: sourceFetch });
+assert.ok(recovered.cranked.some((entry) => entry.market.equals(marketA)),
+  `cache loss must fall back to the source RPC: ${JSON.stringify(recovered.failures)}`);
+const settledA = decodeMarket((await conn.getAccountInfo(marketA)).data);
+assert.equal(settledA.state, 2);
+assert.equal(settledA.byReexecution, 1, 'an RPC-rebuilt commitment must still settle by on-chain re-execution');
+assert.equal(settledA.settledFlag, openedA.resolverFlag, 'the rebuilt bytes are the ones market A committed to');
+assert.ok(existsSync(join(config.cacheDir, `${marketA.toBase58()}.json`)), 'a successful rebuild must re-seed the cache');
+const crankedA = recovered.cranked.find((entry) => entry.market.equals(marketA));
+assert.equal(crankedA.keeperReceivesLamports, config.bondLamports * 2n, 'the winning resolver-feeder takes the whole pot, not only the 10% cut');
+
+console.log(`vrdct standing board local: quiet-source isolation, idempotent close-to-close open, stale-config custody, cached crank/settle, RPC-fallback recovery, source-loss board skip, and feeder reward verified`);

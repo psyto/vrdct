@@ -9,12 +9,14 @@ import {
   TransactionInstruction,
 } from '@solana/web3.js';
 import * as cmls from '../claimtypes/closed-market-soundness.mjs';
-import { marketStatus } from '../core/campana.mjs';
 import {
-  CAL_2026_VERSION, FLAG_ID, FLAG_NAME, SOURCE_KIND, inputsCommitment, marketDefinitionHash,
-  marketId, yesWhenMask,
+  CAL_2026_VERSION, CHUNK_RECORDS, FLAG_ID, FLAG_NAME, SOURCE_KIND, inputsCommitment,
+  marketDefinitionHash, marketId, yesWhenMask,
 } from '../core/encode.mjs';
 import { fetchObservations } from '../core/rpc.mjs';
+import { tradingWindow } from './window.mjs';
+
+export { tradingWindow };
 
 export const DEFAULT_PROGRAM_ID = '7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS';
 export const MARKET_SIZE = 314;
@@ -125,16 +127,6 @@ export async function chainTime(connection) {
   return timestamp;
 }
 
-export function tradingWindow(now) {
-  const toTs = marketStatus(now).last_close_ts;
-  requireValue(toTs != null, `no completed trading session before chain time ${now}`);
-  // One second before the completed close is still in the preceding bucket, so Campana returns
-  // the prior trading-day close through weekends, holidays, and shortened sessions alike.
-  const fromTs = marketStatus(toTs - 1).last_close_ts;
-  requireValue(fromTs != null, `no prior trading session before close ${toTs}`);
-  return { fromTs, toTs, chainNow: now };
-}
-
 export async function windowFor(connection, now = null) {
   if (now == null) now = await chainTime(connection);
   return tradingWindow(now);
@@ -215,7 +207,22 @@ function cachedCommitment(config, marketKey, market) {
   const chunks = record.chunks.map((chunk) => Buffer.from(chunk, 'base64'));
   requireValue(chunks.every((chunk) => chunk.length > 0 && chunk.length % 4 === 0), `cached commitment ${file} has malformed record bytes`);
   requireValue(chunks.reduce((n, chunk) => n + chunk.length, 0) === market.nRecords * 4, `cached commitment ${file} chunk length does not match Market`);
+  // The program enforces `fed == min(CHUNK_RECORDS, remaining)` per chunk, so a non-canonical split
+  // is rejected on-chain — but only after the fees for that transaction are already spent.
+  requireValue(chunks.every((chunk, i) => chunk.length / 4 === Math.min(CHUNK_RECORDS, market.nRecords - i * CHUNK_RECORDS)),
+    `cached commitment ${file} is not the canonical ${CHUNK_RECORDS}-record chunk split`);
   return { nRecords: record.nRecords, inputsHash: Buffer.from(record.inputsHash, 'hex'), chunks };
+}
+
+/// The flag the program will re-execute from a commitment, derived offline from the very bytes the
+/// keeper is about to feed. Goes through the claim-type rather than re-deriving the signal mapping,
+/// because two readers of the same rule is the bug this repo already shipped once.
+function verdictFromCommitment(commitment) {
+  const observations = [];
+  for (const chunk of commitment.chunks) {
+    for (let offset = 0; offset < chunk.length; offset += 4) observations.push({ blockTime: chunk.readUInt32LE(offset) });
+  }
+  return cmls.reexec({ observed: { observations } }).verdict;
 }
 
 export async function openSubject({ connection, config, signer, subject, fetch, chainNow = null }) {
@@ -278,15 +285,35 @@ async function prepareOwnFeed({ connection, config, signer, marketKey, market, c
   return { feed, completed: false };
 }
 
-export async function crankMarket({ connection, config, signer, marketKey }) {
+/// Recover the committed record bytes: the local cache first, the source RPC as a fallback.
+///
+/// Neither path is trusted on its own. `settle` requires both `Feed.count` and `Feed.digest` to
+/// equal the Market commitment, and the rebuild below is checked against `inputs_hash` before a
+/// single lamport of fees is spent — so whichever path produces the bytes, they can only ever be
+/// the ones this market already committed to. Having both matters because each fails on its own:
+/// the cache is gone after a host move, and the RPC is gone once signature history ages out.
+async function recoverCommitment({ config, marketKey, market, fetch }) {
+  try { return cachedCommitment(config, marketKey, market); } catch (cacheError) {
+    let rebuilt;
+    try {
+      rebuilt = await reconstruct({ rpc: config.sourceRpc, source: market.source, calendarVersion: market.calendarVersion, fetch });
+      requireValue(rebuilt.commitment.nRecords === market.nRecords, `rebuilt record count does not match Market ${marketKey.toBase58()}`);
+      requireValue(rebuilt.commitment.inputsHash.equals(market.inputsHash), `rebuilt source does not reproduce inputs_hash for ${marketKey.toBase58()}`);
+    } catch (rpcError) {
+      throw new Error(`cannot recover the committed inputs for ${marketKey.toBase58()} — cache: ${errorText(cacheError)}; source RPC: ${errorText(rpcError)}`);
+    }
+    // Re-seed the cache so the next crank of this market does not depend on the RPC again.
+    try { cacheCommitment(config, marketKey, rebuilt.commitment); } catch { /* defending the bond matters more than the cache */ }
+    return { nRecords: rebuilt.commitment.nRecords, inputsHash: rebuilt.commitment.inputsHash, chunks: rebuilt.commitment.chunks };
+  }
+}
+
+export async function crankMarket({ connection, config, signer, marketKey, fetch }) {
   const market = await readMarket(connection, config.programId, marketKey);
   requireValue(market.state === 1, `market ${marketKey.toBase58()} is not CHALLENGED`);
   requireValue(market.resolver.equals(signer.publicKey), `market ${marketKey.toBase58()} is not this keeper's position`);
   requireValue(market.claimType === 1 && market.source.kind === SOURCE_KIND.SOLANA_ACCOUNT_SIGNATURES, 'keeper can crank only sourced CMLS markets');
-  // The cached bytes are exactly those committed before open. `settle` independently requires
-  // both Feed.count and Feed.digest to equal the Market commitment, so an unavailable source RPC
-  // is not an integrity reason to abandon a challenged bond.
-  const commitment = cachedCommitment(config, marketKey, market);
+  const commitment = await recoverCommitment({ config, marketKey, market, fetch });
   const { feed, completed } = await prepareOwnFeed({ connection, config, signer, marketKey, market, commitment });
   if (!completed) {
     for (const chunk of commitment.chunks) {
@@ -301,9 +328,20 @@ export async function crankMarket({ connection, config, signer, marketKey }) {
       ro(signer.publicKey, true), rw(marketKey), rw(market.resolver), rw(market.challenger), rw(signer.publicKey), rw(feed),
     ])), signer, `settle ${marketKey.toBase58()}`);
   const settled = await readMarket(connection, config.programId, marketKey);
-  const truth = settled.settledFlag;
-  requireValue(settled.state === 2 && settled.byReexecution === 1 && settled.settledFlag === truth, `market ${marketKey.toBase58()} did not settle from its re-execution`);
-  return { market: marketKey, feed, rewardLamports: rewardFor(market, truth), state: settled.state };
+  // What the keeper's own offline re-execution of the fed bytes says the program must land on.
+  // Comparing the settled flag against this — rather than against itself — is what would catch a
+  // JS/Rust divergence on the exact inputs this market is settling.
+  const expected = verdictFromCommitment(commitment);
+  const truth = FLAG_ID[expected.flag];
+  requireValue(settled.state === 2 && settled.byReexecution === 1, `market ${marketKey.toBase58()} did not settle from its re-execution`);
+  requireValue(settled.settledFlag === truth,
+    `market ${marketKey.toBase58()} settled ${FLAG_NAME[settled.settledFlag]} but the committed inputs re-execute to ${expected.flag} offline`);
+  const crankerReward = rewardFor(market, truth);
+  // The keeper is both resolver and feeder here, so when it is not the losing side it takes the
+  // whole pot, not just the 10% cut. Reporting only the cut reads a win as a loss.
+  const pot = market.resolverBond + market.challengeBond;
+  const keeperReceivesLamports = truth === market.challengerFlag ? crankerReward : pot;
+  return { market: marketKey, feed, verdict: expected, rewardLamports: crankerReward, keeperReceivesLamports, state: settled.state };
 }
 
 function configuredSubject(config, market) {
@@ -396,13 +434,20 @@ export async function writeBoard({ connection, config, signer, fetch, chainNow =
   return { content, rows, skipped, files: [resolve(config.boardDir, 'README.md'), resolve(config.boardDir, dated)] };
 }
 
+// Built separately so the account order can be asserted offline. `ClaimUncontested` takes exactly
+// (market, resolver) with no signer, and `resolver` is pinned by the program to `market.resolver`;
+// swapping the two would send this keeper's bond to whatever account landed in slot 0.
+export function claimUncontestedIx({ programId, marketKey, resolver }) {
+  return ix(programId, 'claim_uncontested', [], [rw(marketKey), rw(resolver)]);
+}
+
 export async function claimUncontested({ connection, config, signer, marketKey }) {
   const market = await readMarket(connection, config.programId, marketKey);
   requireValue(market.state === 0, `market ${marketKey.toBase58()} is not OPEN`);
   requireValue(market.resolver.equals(signer.publicKey), `market ${marketKey.toBase58()} is not this keeper's position`);
-  await simulateAndSend(connection, new Transaction().add(ix(config.programId, 'claim_uncontested', [], [
-    rw(marketKey), rw(signer.publicKey),
-  ])), signer, `claim uncontested ${marketKey.toBase58()}`);
+  await simulateAndSend(connection, new Transaction().add(claimUncontestedIx({
+    programId: config.programId, marketKey, resolver: signer.publicKey,
+  })), signer, `claim uncontested ${marketKey.toBase58()}`);
   const settled = await readMarket(connection, config.programId, marketKey);
   requireValue(settled.state === 2 && settled.byReexecution === 0 && settled.settledFlag === market.resolverFlag,
     `market ${marketKey.toBase58()} did not settle as uncontested`);
@@ -421,7 +466,7 @@ export async function runKeeper({ config, signer = signerFromConfig(config), con
   const cranked = [];
   for (const { pubkey, market } of positions) {
     if (market.state !== 1) continue;
-    try { cranked.push(await crankMarket({ connection, config, signer, marketKey: pubkey })); }
+    try { cranked.push(await crankMarket({ connection, config, signer, marketKey: pubkey, fetch })); }
     catch (error) { recordFailure('crank', error, { market: pubkey.toBase58() }); }
   }
   const claimed = [];

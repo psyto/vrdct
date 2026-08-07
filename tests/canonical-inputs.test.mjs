@@ -6,7 +6,9 @@ import * as cmls from '../claimtypes/closed-market-soundness.mjs';
 import * as solvency from '../claimtypes/solvency.mjs';
 import { registerClaimType } from '../core/claim.mjs';
 import { verify } from '../core/verify.mjs';
-import { normalizeConfig, tradingWindow } from '../keeper/lib.mjs';
+// keeper/window.mjs only, never keeper/lib.mjs: the root suite must stay runnable on a clean clone,
+// and lib.mjs pulls in a Solana client the root package does not depend on.
+import { tradingWindow } from '../keeper/window.mjs';
 
 const unix = (y, m, d, hour, minute = 0, second = 0) => Math.floor(Date.UTC(y, m - 1, d, hour, minute, second) / 1000);
 
@@ -132,17 +134,6 @@ test('keeper trading windows are close-to-close across Friday, weekend, Monday, 
   assert.deepEqual(tradingWindow(unix(2026, 11, 27, 19)), {
     fromTs: unix(2026, 11, 25, 21), toTs: unix(2026, 11, 27, 18), chainNow: unix(2026, 11, 27, 19),
   });
-});
-
-test('keeper config defaults sourceRpc, permits source/cluster split, and rejects obsolete sub-day windows', () => {
-  const base = {
-    rpc: 'http://cluster.example', keypair: '/tmp/keeper.json', bondLamports: '1', challengeWindowSecs: 3600,
-    subjects: [{ venue: 'Venue', question: 'Question', priceAccount: '11111111111111111111111111111111', yesWhen: ['GREEN'] }],
-  };
-  assert.equal(normalizeConfig(base).sourceRpc, base.rpc);
-  assert.equal(normalizeConfig({ ...base, sourceRpc: 'https://history.example' }).sourceRpc, 'https://history.example');
-  assert.throws(() => normalizeConfig({ ...base, sourceRpc: 3 }), /sourceRpc/);
-  assert.throws(() => normalizeConfig({ ...base, subjects: [{ ...base.subjects[0], windowSecs: 60 }] }), /windowSecs.*no longer supported/);
 });
 
 test('committed corpus remains a valid, reproducible canonical claim', () => {
