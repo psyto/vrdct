@@ -37,6 +37,10 @@ Each surface is a pluggable module —
 - `reserve-solvency` — is a protocol's recomputed backing ≥ its liability? *(Redde lineage)*
 - `closed-market-liquidation-soundness` — does a venue liquidate tokenized equities against a price
   that updated while the underlying market was closed, with no guard? *(Vesper lineage)*
+- `monday-open-gap` — did a market closure move the price by a threshold declared before it began?
+  Offline-complete, **not yet wired to `encode.mjs` or the on-chain twin.** Unlike the others this
+  one is not a verdict on someone's conduct: it settles an event people are already exposed to and
+  cannot hedge, so it is the first claim-type that describes a market that does not exist yet.
 - *depeg, exploit, agent-escrow — the roadmap.*
 
 ## Standing board
@@ -186,6 +190,14 @@ Three residual assumptions, all named rather than hidden:
    A CMLS verdict counts every normal US-equities session and every calendared half-day session
    (through its 13:00 ET close) as **open**; only updates outside those sessions count toward its
    closed-market liveness signal.
+
+   `monday-open-gap` pins two prints and cannot prove either is the *closest* one to its boundary —
+   the same omission problem, on two observations instead of thousands. It bounds the choice rather
+   than removing it: the terms declare `maxLagSecs`, re-execution re-derives both boundary instants
+   from the calendar by bisection and returns `STALE` for a print outside that lag, so a settled
+   verdict always rests on prints near the bell. **The obligation this puts on a participant:** a
+   challenger holding a print closer to a boundary must dispute with it, and the closer print wins.
+   Nobody should read a gap verdict as a claim that no closer print existed.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
    A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain
