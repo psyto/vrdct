@@ -425,14 +425,16 @@ export async function runKeeper({ config, signer = signerFromConfig(config), con
     catch (error) { recordFailure('crank', error, { market: pubkey.toBase58() }); }
   }
   const claimed = [];
-  let effectiveChainNow = chainNow;
-  if (effectiveChainNow == null) {
-    try { effectiveChainNow = await chainTime(connection); }
-    catch (error) { recordFailure('read chain time', error); }
-  }
-  if (effectiveChainNow != null) {
+  // Claim deadlines are custody state, so they always use the validator's current clock. The
+  // optional `chainNow` seam below exists solely to replay an already closed source window in
+  // tests; using it for a live deadline would reintroduce host/chain time mixing.
+  let custodyNow = null;
+  try { custodyNow = await chainTime(connection); }
+  catch (error) { recordFailure('read chain time', error); }
+  const effectiveChainNow = chainNow ?? custodyNow;
+  if (custodyNow != null) {
     for (const { pubkey, market } of positions) {
-      if (market.state !== 0 || BigInt(effectiveChainNow) <= market.challengeUntil) continue;
+      if (market.state !== 0 || BigInt(custodyNow) <= market.challengeUntil) continue;
       try { claimed.push(await claimUncontested({ connection, config, signer, marketKey: pubkey })); }
       catch (error) { recordFailure('claim uncontested', error, { market: pubkey.toBase58() }); }
     }
