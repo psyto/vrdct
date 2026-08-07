@@ -137,10 +137,11 @@ descriptor that is bound into the market address:
 cd cli
 npm install
 RPC=https://your-rpc.example node vrdct.mjs markets
-RPC=https://your-rpc.example node vrdct.mjs check <market-pubkey>
+RPC=https://your-rpc.example SOURCE_RPC=https://source-rpc.example node vrdct.mjs check <market-pubkey>
 ```
 
-`check` exits non-zero, with **DO NOT BOND**, if the stated account/window rebuilds a different
+`SOURCE_RPC` defaults to `RPC`, but it is separate when (for example) a devnet Market binds a
+mainnet price account. `check` exits non-zero, with **DO NOT BOND**, if the stated account/window rebuilds a different
 `inputs_hash`. When it matches, it says whether the resolver is right, the chain-derived `settle_by`
 time remaining, and the conditional re-execution/expiry outcomes of taking the other side.
 `challenge` and `crank` are the signing verbs; they require
@@ -181,6 +182,10 @@ Three residual assumptions, all named rather than hidden:
 
    `reserve-solvency` is still genuinely in the unsourced case; closing it means an on-chain
    recorder root, or N-of-M attestation for historical data.
+
+   A CMLS verdict counts both a normal US-equities session and a calendared half-day session (until
+   its 13:00 ET close) as **open**; only updates outside those sessions count toward its closed-market
+   liveness signal.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
    A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain

@@ -2,7 +2,7 @@
 // blockTime inside the keeper; this test deliberately never consults Date.now().
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -10,8 +10,9 @@ import {
   Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction,
   TransactionInstruction, sendAndConfirmTransaction,
 } from '@solana/web3.js';
-import { DEFAULT_PROGRAM_ID, decodeMarket, renderBoard, runKeeper } from '../lib.mjs';
+import { DEFAULT_PROGRAM_ID, decodeMarket, runKeeper, tradingWindow, writeBoard } from '../lib.mjs';
 import { FLAG_ID, FLAG_NAME } from '../../core/encode.mjs';
+import { fetchObservations } from '../../core/rpc.mjs';
 
 const ROOT = resolve(new URL('../..', import.meta.url).pathname);
 const RPC = process.env.RPC || 'http://127.0.0.1:8899';
@@ -46,16 +47,26 @@ async function latestChainTime() {
   return timestamp;
 }
 
-async function nextCompletedMinute(sourceTime) {
-  const end = Math.floor(sourceTime / 60) * 60 + 60;
-  // One chain minute is the maximum wait. This is deliberately chain-time polling, not a host
-  // timer used to choose the window; the short delay only avoids hammering local RPC.
+async function finalizedSourceTime(account) {
+  // core/rpc.mjs intentionally asks the source RPC without a weaker commitment. Wait until that
+  // exact view can see the records; this is test synchronisation only, never a host-time window.
   for (let attempt = 0; attempt < 240; attempt++) {
-    const current = await latestChainTime();
-    if (current >= end) return current;
+    const observations = await fetchObservations(RPC, account.toBase58(), { from: 0 });
+    if (observations.length >= 3) return observations.at(-1).blockTime;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`validator blockTime did not close the source minute ending ${end}; test windows must come from chain time`);
+  throw new Error(`source ${account.toBase58()} did not become visible at the source RPC`);
+}
+
+function nextCloseWindowContaining(sourceTime) {
+  // This deliberately derives a completed trading-day bucket from a source observation's chain
+  // blockTime, never from the host clock. It lets a local-validator test replay a closed window
+  // without waiting through an actual US session.
+  for (let candidate = sourceTime; candidate <= sourceTime + 7 * 86400; candidate += 86400) {
+    const window = tradingWindow(candidate);
+    if (window.fromTs <= sourceTime && sourceTime <= window.toTs) return { ...window, chainNow: window.toTs };
+  }
+  throw new Error(`no close-to-close window contained source timestamp ${sourceTime}`);
 }
 
 function opposite(flag) {
@@ -68,69 +79,106 @@ if (!(await conn.getAccountInfo(PROGRAM_ID))?.executable) {
 
 const keeper = await funded(5);
 const challenger = await funded(5);
-const source = await funded(2);
-await sourceTransfers(source, challenger.publicKey);
-const fixedChainNow = await nextCompletedMinute(await latestChainTime());
+const sourceA = await funded(2);
+const sourceB = await funded(2);
+const quietSource = Keypair.generate(); // deliberately no signatures in the completed source window
+await sourceTransfers(sourceA, challenger.publicKey);
+await sourceTransfers(sourceB, challenger.publicKey);
+const sourceTimeA = await finalizedSourceTime(sourceA.publicKey);
+await finalizedSourceTime(sourceB.publicKey);
+const fixedChainNow = nextCloseWindowContaining(sourceTimeA).chainNow;
 
 const boardDir = mkdtempSync(join(tmpdir(), 'vrdct-standing-board-'));
 const config = {
   rpc: RPC,
+  sourceRpc: RPC,
   programId: PROGRAM_ID,
   keypairPath: '',
   bondLamports: 100_000_000n,
   challengeWindowSecs: 3600,
   boardDir,
+  cacheDir: join(boardDir, 'commitments'),
   subjects: [{
     venue: 'Local validator demonstration venue',
     question: 'Does the local demonstration venue avoid liquidating against prices that update while US equities are closed?',
-    priceAccount: source.publicKey,
-    windowSecs: 60,
+    priceAccount: sourceA.publicKey,
+    yesWhen: ['GREEN'],
+  }, {
+    venue: 'Second local validator demonstration venue',
+    question: 'Does the second local demonstration venue avoid liquidating against prices that update while US equities are closed?',
+    priceAccount: sourceB.publicKey,
+    yesWhen: ['GREEN'],
+  }, {
+    venue: 'Quiet local validator demonstration venue',
+    question: 'Does the quiet demonstration venue avoid liquidating against prices that update while US equities are closed?',
+    priceAccount: quietSource.publicKey,
     yesWhen: ['GREEN'],
   }],
 };
+const sourceFetch = (rpc, account, window) => fetchObservations(rpc, account, window);
+const sourceWindow = tradingWindow(fixedChainNow);
+const sourceObservations = await sourceFetch(RPC, sourceA.publicKey.toBase58(), { from: sourceWindow.fromTs, to: sourceWindow.toTs });
+assert.ok(sourceObservations.length > 0, `source=${sourceA.publicKey} sourceTime=${sourceTimeA} window=${JSON.stringify(sourceWindow)} observations=${JSON.stringify(sourceObservations)}`,
+  'the chain-derived close-to-close window must contain the source observation');
 
-// First run opens the exact flag it re-executed. The second has the same daily, chain-timed window
-// and must resolve the same definition PDA rather than open another market.
-const first = await runKeeper({ config, signer: keeper, connection: conn, chainNow: fixedChainNow });
-assert.equal(first.opened.length, 1);
+// A quiet subject must not prevent the two observed sources from opening, nor suppress the board.
+const first = await runKeeper({ config, signer: keeper, connection: conn, chainNow: fixedChainNow, fetch: sourceFetch });
+assert.equal(first.opened.length, 2, `sourceTime=${sourceTimeA} window=${JSON.stringify(tradingWindow(fixedChainNow))} ${JSON.stringify(first.failures)}`);
 assert.equal(first.opened[0].action, 'opened');
-const market = first.opened[0].market;
-const opened = decodeMarket((await conn.getAccountInfo(market)).data);
-assert.equal(opened.resolverFlag, FLAG_ID[first.opened[0].claim.verdict.flag], 'keeper must assert its own re-execution flag');
+assert.equal(first.failures.filter((failure) => failure.stage === 'open').length, 1, 'quiet subject must be reported, not abort the run');
+assert.ok(first.board.files.every((file) => file.includes(boardDir)), 'board must be written despite quiet source');
+assert.match(first.board.content, /Subject did not open this window: Quiet local validator demonstration venue/);
+const marketA = first.opened[0].market;
+const marketB = first.opened[1].market;
+const openedA = decodeMarket((await conn.getAccountInfo(marketA)).data);
+const openedB = decodeMarket((await conn.getAccountInfo(marketB)).data);
+assert.equal(openedA.resolverFlag, FLAG_ID[first.opened[0].claim.verdict.flag], 'keeper must assert its own re-execution flag');
 
-const second = await runKeeper({ config, signer: keeper, connection: conn, chainNow: fixedChainNow });
-assert.equal(second.opened.length, 1);
-assert.equal(second.opened[0].action, 'deduped');
-assert.ok(second.opened[0].market.equals(market), 'same chain-timed window must not create a second market');
+// The exact same trading-day bucket dedupes; verify actual board writes rather than comparing a
+// renderer argument it does not consume.
+const second = await runKeeper({ config, signer: keeper, connection: conn, chainNow: fixedChainNow, fetch: sourceFetch });
+assert.equal(second.opened.length, 2);
+assert.ok(second.opened.every((result) => result.action === 'deduped'), JSON.stringify(second.opened.map((result) => result.action)));
+assert.ok(second.opened[0].market.equals(marketA), 'same chain-timed window must not create a second market');
+const boardOne = await writeBoard({ connection: conn, config, signer: keeper, chainNow: fixedChainNow, fetch: sourceFetch });
+const boardTwo = await writeBoard({ connection: conn, config, signer: keeper, chainNow: fixedChainNow, fetch: sourceFetch });
+assert.equal(boardOne.content, boardTwo.content, 'two actual board writes over unchanged chain state must agree');
+assert.ok(boardOne.content.includes(`RPC=${RPC} SOURCE_RPC=${RPC} PROGRAM_ID=${PROGRAM_ID.toBase58()}`), 'published row must carry separate cluster and source RPC settings');
 
-// A challenger takes the other flag. The next keeper run must complete its feeder-owned PDA and
-// settle before expiry; the keeper is both winning resolver and feeder, so it receives the feeder cut.
+// Challenge both positions. Delete A's cache to make its crank fail, then edit A out of config:
+// B still must settle from its cache even though the source RPC is now unavailable. This covers
+// per-market isolation, custody beyond current wording, and source-history loss in one run.
 const challengedBefore = await conn.getBalance(keeper.publicKey);
-await sendAndConfirmTransaction(conn, new Transaction().add(ix('challenge', [
-  u8(opposite(opened.resolverFlag)), u64(config.bondLamports),
-], [rw(challenger.publicKey, true), rw(market), ro(SystemProgram.programId)])), [challenger], { commitment: 'confirmed' });
-const defended = await runKeeper({ config, signer: keeper, connection: conn, chainNow: fixedChainNow });
-assert.equal(defended.cranked.length, 1, 'keeper must crank its challenged position');
+for (const [market, opened] of [[marketA, openedA], [marketB, openedB]]) {
+  await sendAndConfirmTransaction(conn, new Transaction().add(ix('challenge', [
+    u8(opposite(opened.resolverFlag)), u64(config.bondLamports),
+  ], [rw(challenger.publicKey, true), rw(market), ro(SystemProgram.programId)])), [challenger], { commitment: 'confirmed' });
+}
+unlinkSync(join(config.cacheDir, `${marketA.toBase58()}.json`));
+const editedConfig = { ...config, subjects: config.subjects.slice(1) };
+const sourceUnavailable = async () => { throw new Error('source RPC history is unavailable'); };
+const defended = await runKeeper({ config: editedConfig, signer: keeper, connection: conn, chainNow: fixedChainNow, fetch: sourceUnavailable });
+assert.equal(defended.cranked.length, 1, 'one missing cache must not prevent another market crank');
+assert.ok(defended.cranked[0].market.equals(marketB), 'a market omitted from config must still be attempted before the configured one settles');
 assert.equal(defended.cranked[0].rewardLamports, config.bondLamports / 10n, 'completed Feed earns the 10% challenger-bond reward');
-const settled = decodeMarket((await conn.getAccountInfo(market)).data);
+assert.ok(defended.failures.some((failure) => failure.stage === 'crank' && failure.market === marketA.toBase58()), 'unreconstructible/cache-missing market must be recorded');
+const settled = decodeMarket((await conn.getAccountInfo(marketB)).data);
 assert.equal(settled.state, 2);
-assert.equal(settled.byReexecution, 1, 'challenged market must settle by on-chain re-execution');
-assert.equal(settled.settledFlag, opened.resolverFlag, 'keeper defended the flag it opened');
+assert.equal(settled.byReexecution, 1, 'cached bytes must settle by on-chain re-execution with source unavailable');
+assert.equal(settled.settledFlag, openedB.resolverFlag, 'keeper defended the flag it opened');
 assert.ok(await conn.getBalance(keeper.publicKey) > challengedBefore, 'keeper received the challenged pot, including its feeder reward');
 
-// The board is deterministic for the same reconstructed chain state and contains a command that
-// resolves to the market it names.
+// An unavailable source makes the row explicitly unpublishable, but never prevents the board.
 const board = defended.board;
-assert.equal(board.rows.length, 1);
-assert.equal(renderBoard({ config, chainNow: 1, rows: board.rows }), renderBoard({ config, chainNow: 2, rows: board.rows }));
-const checkCommand = `RPC=${RPC} PROGRAM_ID=${PROGRAM_ID.toBase58()} node cli/vrdct.mjs check ${market.toBase58()}`;
-assert.ok(board.content.includes(checkCommand), 'board row must carry its exact falsifier command');
-assert.ok(board.content.includes(config.subjects[0].question));
+assert.equal(board.rows.length, 0);
+assert.match(board.content, /Skipped rows — not independently checkable now/);
+assert.match(board.content, /source rebuild warning: source RPC history is unavailable/);
+assert.match(board.content, /current keeper config no longer names this position/);
 assert.ok(board.content.includes('devnet bonds are not real capital'));
-const checked = spawnSync(NODE, ['cli/vrdct.mjs', 'check', market.toBase58()], {
-  cwd: ROOT, env: { ...process.env, RPC, PROGRAM_ID: PROGRAM_ID.toBase58() }, encoding: 'utf8',
+const checked = spawnSync(NODE, ['cli/vrdct.mjs', 'check', marketB.toBase58()], {
+  cwd: ROOT, env: { ...process.env, RPC, SOURCE_RPC: RPC, PROGRAM_ID: PROGRAM_ID.toBase58() }, encoding: 'utf8',
 });
 assert.equal(checked.status, 0, checked.stdout + checked.stderr);
-assert.match(checked.stdout, new RegExp(`re-execution says ${FLAG_NAME[opened.resolverFlag]}`));
+assert.match(checked.stdout, new RegExp(`re-execution says ${FLAG_NAME[openedB.resolverFlag]}`));
 
-console.log(`vrdct standing board local: idempotent open, ${FLAG_NAME[opened.resolverFlag]} assertion, challenged crank/settle, feeder reward, and falsifiable board verified`);
+console.log(`vrdct standing board local: quiet-source isolation, idempotent close-to-close open, stale-config custody, cached crank/settle, source-loss board skip, and feeder reward verified`);

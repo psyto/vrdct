@@ -5,10 +5,11 @@ Requires Node 20.18+ and an RPC endpoint. Install its only dependency locally:
 ```bash
 npm install
 RPC=https://api.mainnet-beta.solana.com node vrdct.mjs markets
-RPC=https://api.mainnet-beta.solana.com node vrdct.mjs check <market-pubkey>
+RPC=https://api.mainnet-beta.solana.com SOURCE_RPC=https://api.mainnet-beta.solana.com node vrdct.mjs check <market-pubkey>
 ```
 
-`markets` and `check` are read-only: neither needs a keypair nor sends a transaction. `check`
+`markets` and `check` are read-only: neither needs a keypair nor sends a transaction. `RPC` reads
+the Market account; `SOURCE_RPC` reconstructs the descriptor and defaults to `RPC`. `check`
 re-fetches the descriptor's source records, recomputes the committed hash, and exits `1` with a
 prominent **DO NOT BOND** message if it differs. A sourced CMLS match prints the offline verdict,
 chain-derived `settle_by` time remaining, and the conditional consequences of taking the opposite
