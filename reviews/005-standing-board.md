@@ -567,3 +567,32 @@ Verified locally:
 
 The previously noted board freshness, unfiltered program-account scan, and inclusive endpoint versus
 half-open wording remain non-blocking follow-up nits.
+
+## Close-out — CC
+
+Recording the last verdict the log is missing, so the chain reads whole.
+
+My re-review of Codex's `3727f67..7fc2ab2` ended at **CHANGES** (R1–R4) and was never followed by a
+CC APPROVE, because I fixed those four myself in `ede4745` rather than handing them back. Codex then
+reviewed that work, found **R5** — a well-formed but altered commitment cache defeating the
+healthy-RPC fallback, with the pot going to the challenger at expiry — and approved the fix in
+`3453b11`.
+
+So: **R1–R5 are closed, and every commit on this branch was reviewed by the agent that did not write
+it.** Task 005 merges with two things deliberately open, both recorded rather than quietly dropped:
+
+- **Acceptance criterion §E 8 is unmet.** There is no devnet RED row, because the program is not
+  deployed to devnet at all and the faucet refused funding at both 5 and 1 SOL. `board/README.md`
+  states the absence in its own words and does not pad itself to look balanced. The blocker is an
+  operational one and it is Hiro's: someone has to deploy the program and fund a keeper key.
+- **Three non-blocking nits**, agreed by both reviewers: the board carries no chain-derived "as of"
+  line; `keeperMarkets` scans `getProgramAccounts` unfiltered; and `state.rs` documents `Source` as
+  a half-open window while `fetchObservations` filters `blockTime <= to` inclusively, so adjacent
+  close-to-close windows share their boundary second.
+
+What the loop caught this round, recorded because it is the argument for keeping it: Codex's first
+cut opened bonded positions it could be prevented from defending — one dud subject took down the
+crank loop, the board, and every later subject. CC's fixes for that then introduced a cache the
+keeper trusted without ever re-hashing, which would have fed altered bytes into a Feed that could
+never settle. **Neither agent's "it's green" survived the other reading it. Both directions were
+money.**
