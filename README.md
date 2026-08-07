@@ -183,9 +183,9 @@ Three residual assumptions, all named rather than hidden:
    `reserve-solvency` is still genuinely in the unsourced case; closing it means an on-chain
    recorder root, or N-of-M attestation for historical data.
 
-   A CMLS verdict counts both a normal US-equities session and a calendared half-day session (until
-   its 13:00 ET close) as **open**; only updates outside those sessions count toward its closed-market
-   liveness signal.
+   A CMLS verdict counts every normal US-equities session and every calendared half-day session
+   (through its 13:00 ET close) as **open**; only updates outside those sessions count toward its
+   closed-market liveness signal.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
    A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain

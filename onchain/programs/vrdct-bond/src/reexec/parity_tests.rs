@@ -72,5 +72,7 @@ fn js_generated_canonical_vectors_match_rust_reexecution() {
         );
         vectors += 1;
     }
-    assert_eq!(vectors, 160, "fixture coverage changed unexpectedly");
+    // CMLS now has explicit half-day open/before-close/at-close coverage (three vectors in place
+    // of the former single half-day fixture), so the generated corpus contains 162 rows.
+    assert_eq!(vectors, 162, "fixture coverage changed unexpectedly");
 }

@@ -12,7 +12,7 @@
 //!
 //! Record: `u32 LE` unix blockTime, ascending. 4 bytes — valid through 2106.
 
-use super::campana::{is_regular_open, is_valid_2026_timestamp};
+use super::campana::{is_session_open, is_valid_2026_timestamp};
 use super::{Fold, FLAG_RED, FLAG_UNKNOWN, FLAG_YELLOW};
 use crate::errors::VrdctError;
 use anchor_lang::prelude::*;
@@ -36,7 +36,7 @@ pub fn fold_chunk(fold: &mut Fold, chunk: &[u8]) -> Result<()> {
                 fold.max_gap = gap;
             }
         }
-        if is_regular_open(ts) {
+        if is_session_open(ts) {
             fold.open_n += 1;
         } else {
             fold.closed_n += 1;
