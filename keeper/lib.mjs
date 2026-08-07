@@ -10,8 +10,8 @@ import {
 } from '@solana/web3.js';
 import * as cmls from '../claimtypes/closed-market-soundness.mjs';
 import {
-  CAL_2026_VERSION, CHUNK_RECORDS, FLAG_ID, FLAG_NAME, SOURCE_KIND, inputsCommitment,
-  marketDefinitionHash, marketId, yesWhenMask,
+  CAL_2026_VERSION, CHUNK_RECORDS, FLAG_ID, FLAG_NAME, SOURCE_KIND, commitmentDigest,
+  inputsCommitment, marketDefinitionHash, marketId, yesWhenMask,
 } from '../core/encode.mjs';
 import { fetchObservations } from '../core/rpc.mjs';
 import { tradingWindow } from './window.mjs';
@@ -211,6 +211,13 @@ function cachedCommitment(config, marketKey, market) {
   // is rejected on-chain — but only after the fees for that transaction are already spent.
   requireValue(chunks.every((chunk, i) => chunk.length / 4 === Math.min(CHUNK_RECORDS, market.nRecords - i * CHUNK_RECORDS)),
     `cached commitment ${file} is not the canonical ${CHUNK_RECORDS}-record chunk split`);
+  // Everything above trusts what the file *says*. Only recomputing the chain over the bytes
+  // themselves proves they are the committed ones: a well-shaped file whose records were altered
+  // keeps a correct-looking `inputsHash` field, feeds fine, and then cannot settle — which hands
+  // the pot to the challenger at expiry with a healthy source RPC sitting unused.
+  requireValue(commitmentDigest({
+    claimTypeId: market.claimType, calendarVersion: market.calendarVersion, nRecords: market.nRecords, chunks,
+  }).equals(market.inputsHash), `cached commitment ${file} does not re-hash to the Market's inputs_hash`);
   return { nRecords: record.nRecords, inputsHash: Buffer.from(record.inputsHash, 'hex'), chunks };
 }
 
