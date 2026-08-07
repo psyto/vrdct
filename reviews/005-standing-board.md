@@ -328,3 +328,154 @@ vectors regenerated deliberately, and Hiro signs off. The corpus is unaffected (
 
 F1, F2, F3, F5 as filed, plus **F9** (no runnable cluster without it) and **F11** (the sound row
 breaks the keeper twice a week). F13 needs a decision before any board runs past November.
+
+## Re-review — `3727f67..7fc2ab2`
+
+**Reviewer:** CC · **Author:** Codex · Four commits against `docs/tasks/006-keeper-hardening.md`.
+
+### Verdict
+
+**CHANGES** — but small ones. Every blocker from the first review is genuinely fixed, and I
+reproduced Codex's verification rather than taking it: the parity change is sound in both twins, the
+corpus is provably unmoved, and the E2E now exercises the money paths instead of asserting around
+them. Three things stop me approving: the repo's primary test command no longer works on a clean
+clone, the crank swapped one single point of failure for another, and the post-settle safety check
+in `crankMarket` is now a tautology.
+
+### What I verified myself
+
+Not "Codex says" — run on my machine, against a validator I started with a binary built from the
+current source (`onchain/target/program-test-deploy/vrdct_bond.so`, 09:02, newer than the 08:57
+`campana.rs`/`cmls.rs` edits):
+
+- `npm run test:canonical` — green, **162** parity vectors, 20 Rust unit tests.
+- `npm run test:keeper` — green: *quiet-source isolation, idempotent close-to-close open,
+  stale-config custody, cached crank/settle, source-loss board skip, feeder reward.*
+- `onchain npm run test:integration` — 5/5.
+- `cli` local test — 4/4 · `node demo.mjs` · `onchain/client/bond-live.mjs` both green.
+- `node reconstruct.mjs corpus/jupiter-spyx-cmls.claim.json` — 3,789 observations re-fetched from
+  mainnet, set match identical, **`inputs_hash` still `2f224c44f93a8e2c…`**, claim re-executes to
+  its stated verdict. The consensus change did not move the published commitment, exactly as
+  required.
+
+### The findings, one by one
+
+| | status |
+| --- | --- |
+| F1 per-item isolation | **fixed** — `runKeeper` records failures and continues; they render on the board |
+| F2 feed from cache | **fixed** — with a new gap, see R2 |
+| F3 skip, don't abort | **fixed** — `writeBoard` skips with a printed reason |
+| F4 claim uncontested | **implemented**, untested end-to-end (R4) |
+| F5 custody beyond config | **fixed** — `keeperMarkets` no longer filters on `subject` |
+| F6 E2E boundary race | **fixed** — window derived from a finalized observation's `blockTime` |
+| F7 tautological determinism | **fixed** for the board (two real `writeBoard` calls), **reintroduced** in `crankMarket` (R3) |
+| F9 source/cluster RPC | **fixed** — `sourceRpc` / `SOURCE_RPC`, both printed in the falsifier line |
+| F10 sub-day windows | **fixed** — `windowSecs` is now a hard error, not a floor |
+| F11 trading-day windows | **fixed** — `tradingWindow` is close-to-close via `last_close_ts` |
+| F12 RPC honesty | **fixed** — the board names its source endpoint and warns about pruning |
+| F13 half-day | **fixed** correctly, see below |
+
+The half-day change is right. `is_session_open` uses `HALF_CLOSE_MIN` for calendared half days and
+the JS classifier counts `HALF_DAY` as open, so the two agree; the replacement vectors
+(`half-day-open-at` YELLOW, `half-day-open-before-close` YELLOW, `half-day-close-at` RED) bracket
+the 13:00 ET boundary from both sides, which is exactly the coverage the old single `half-day`
+fixture lacked — and that old fixture's flag was RED for a timestamp *inside* the session, which is
+the bug, preserved in the diff for anyone who wants to see it. `tradingWindow`'s Thanksgiving case
+(Wed close → Friday half-day close, skipping the holiday) is tested and correct.
+
+`7fc2ab2` is a good catch by Codex that I did not ask for: the test-only `chainNow` seam must never
+decide a live custody deadline. Right instinct, right fix.
+
+### R1 (P1) — `npm run test:canonical` no longer runs on a clean clone
+
+`tests/canonical-inputs.test.mjs:9` now imports `normalizeConfig` and `tradingWindow` from
+`../keeper/lib.mjs`, whose module graph pulls in `@solana/web3.js` at load time. The root
+`package.json` declares **no dependencies** and there is no root `node_modules`.
+
+It passes here only by accident of this machine. I removed `keeper/node_modules` and the suite still
+ran — because there is a stray `/Users/hiroyusai/node_modules/@solana/web3.js` outside the repo. On
+a fresh clone, the first command in `CLAUDE.md` fails with `ERR_MODULE_NOT_FOUND` before a single
+assertion, and the failure points at a package the root never asked for.
+
+This one is partly mine: I asked for `normalizeConfig` tests *in* `test:canonical`. The fix is a
+choice, not a debate — declare `@solana/web3.js` as a root devDependency, or split the pure parts
+out (`tradingWindow` needs only `core/campana.mjs` and is genuinely zero-dep; `normalizeConfig`
+needs `PublicKey` and could live behind an injected validator). Either way the gate must be honest
+about what it needs. It also brushes against the `core/*.mjs` zero-dependency invariant — not a
+violation of the letter, but the root suite is now the first thing in the repo that silently needs a
+client dep.
+
+### R2 (P1) — the crank traded an RPC single point of failure for a disk one
+
+`crankMarket` (`keeper/lib.mjs:288`) now reads `cachedCommitment` and nothing else. There is no
+fallback. The brief asked for the RPC rebuild to become *a warning*, not to be deleted: cache-first,
+then rebuild from RPC on a cache miss and verify the rebuilt digest against `market.inputsHash`
+before feeding. The program checks the digest either way, so the fallback cannot settle anything but
+the committed inputs — it is free safety.
+
+As written, the keeper cannot defend a challenged position if the cache file is gone, even when the
+source RPC is perfectly healthy. Concretely: a keeper redeployed to a new host, a changed `cacheDir`,
+a cleared disk — every challenged market becomes a 100% slash at `settle_by`. Same for any market
+opened before this change, which have no cache at all (empty set today, not empty later). The test
+even encodes cache-loss-means-no-defence as *expected* behaviour, which is how a gap becomes a spec.
+
+### R3 (P2) — the post-settle check in `crankMarket` cannot fail
+
+```js
+const truth = settled.settledFlag;
+requireValue(settled.state === 2 && settled.byReexecution === 1 && settled.settledFlag === truth, …)
+```
+
+`settled.settledFlag === truth` compares a value to itself. The previous code compared the settled
+flag against the keeper's own re-execution; that comparison is now gone, so nothing verifies that
+the chain landed where the keeper expected. This is the same defect class as F7, in a money path
+this time.
+
+The keeper still *can* check it: the cached chunks are the canonical `u32 LE` blockTimes, so
+decoding them and running `classifyUpdateTimes` offline gives the expected flag with no RPC at all.
+Either restore a real assertion or delete the dead terms — a check that reads as a safety net and
+is not one is worse than no check.
+
+### R4 (P2) — `claimUncontested` ships untested end-to-end
+
+The instruction is encoded correctly (`ClaimUncontested` takes `market`, `resolver` pinned to
+`market.resolver`, no signer — the keeper passes exactly that), and the program-level behaviour is
+covered by `expiry_and_uncontested_are_terminal_exits`. But the keeper's own path — account order,
+the `custodyNow > challengeUntil` gate, the post-state assertion — is exercised by nothing.
+
+I accept the reason: `MIN_CHALLENGE_WINDOW_SECS` is 3600 in the program, and a live
+`solana-test-validator` cannot warp its clock, so the E2E cannot reach the deadline. Say that in
+`keeper/README.md` rather than leaving it silent, and consider an offline assertion on the built
+instruction's accounts and discriminator — cheap, and it would catch an account-order regression,
+which is the failure mode that actually costs money here.
+
+### Nits
+
+- `cachedCommitment` validates total record bytes but not that chunks are the canonical 200-record
+  split. A wrong split fails on-chain with `NonCanonicalChunk` after fees are spent; checking it
+  locally is two lines.
+- `rewardFor` still returns `cut(pot)` in the neither-side-correct branch, where `settle` makes the
+  feeder the outright winner of the whole pot. The CLI prints it as "feeder reward", so a win reads
+  as a loss. Filed in the first review, still open.
+- The board still carries no chain-derived "as of" line; `board/README.md` on its own cannot tell a
+  reader how stale it is.
+- `keeperMarkets` still calls `getProgramAccounts` with no `dataSize`/`memcmp` filter.
+- Now visible because of close-to-close windows: `Source` is documented in `state.rs:12` as a
+  **half-open** window, but `fetchObservations` filters `blockTime <= to` inclusively. Adjacent
+  windows therefore share their boundary second, and an observation landing exactly on a session
+  close belongs to two consecutive markets. Pre-existing, harmless per market, but the doc and the
+  code disagree about a consensus-relevant descriptor.
+
+### Acceptance criteria
+
+§E 1, 2, 4, 5, 6, 7 met and verified by me. §E 3 implemented but unproven (R4). §E 8 not met, and
+Codex's account of why is accurate and honest — the program is not deployed to devnet at all, so
+there is no truthful Market address to put in a row, and devnet faucet funding was refused at both
+5 and 1 SOL. `board/README.md` states the absence plainly and does not pad itself. That is the right
+call.
+
+The actual next blocker for §E 8 is not the keeper: **someone has to deploy the program to devnet**,
+which needs devnet SOL that a faucet will not hand out at that size. That is Hiro's, not Codex's,
+and it is worth saying out loud rather than leaving it as a failed acceptance checkbox.
+
+Fix R1, R2, R3; state R4's limitation; then this merges.
