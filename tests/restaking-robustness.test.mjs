@@ -32,10 +32,13 @@ test("the paper's tightness construction certifies exactly zero buffer", () => {
   const r = run(terms(1, 10), services, validators);
 
   assert.equal(r.computation.gamma_max, '0/1'); // T_v = 1 exactly ⇒ γ* = 0
-  assert.equal(r.computation.gamma_max_bps, 0);
+  assert.equal(r.computation.gamma_max_bps, '0');
   assert.equal(r.verdict.flag, 'RED');
-  assert.match(r.verdict.reason, /no positive buffer/);
-  assert.match(r.verdict.reason, /arbitrarily small shock can in the worst case take everything/);
+  // F2 (Codex review of 45d3f80): the reason must stop at what the certificate says about THIS
+  // graph. Corollary 2 failing does not prove a valid attack or a cascade here; Theorem 2 is a
+  // separate existence construction, not a theorem about every RED input.
+  assert.match(r.verdict.reason, /does not establish a positive buffer for this network/);
+  assert.doesNotMatch(r.verdict.reason, /take everything|will cascade|is attackable/);
 });
 
 // Figure 4, left (p.6): a green service with π = 1 secured by a dedicated validator holding 100, and
@@ -48,7 +51,7 @@ test("a well-collateralized service does not rescue the network it shares a grap
 
   assert.equal(r.verdict.flag, 'RED');
   assert.equal(r.computation.gamma_max, '-1/101'); // T = 101/100 > 1 through either blue validator
-  assert.equal(r.computation.gamma_max_bps, -100); // rounded DOWN, never flattering
+  assert.equal(r.computation.gamma_max_bps, '-100'); // rounded DOWN, never flattering
   assert.equal(r.computation.binding_validator, 'v-blue-1');
 
   // the green service alone would certify a buffer of 99×
@@ -182,4 +185,84 @@ test('a claim re-executes end-to-end, resists tampering, and resolves a market',
   const res = resolve(claim, { market: 'Does the network certify a 10% overcollateralization buffer?', yesWhen: ['GREEN'] });
   assert.equal(res.resolved, claim.verdict.flag === 'GREEN' ? 'YES' : 'NO');
   assert.equal(res.reproduces, true);
+});
+
+// ── Codex review of 45d3f80 ──────────────────────────────────────────────────────────────────
+
+// F1 (P1). σ_v cancels out of Eq. (17) only when it is POSITIVE. At σ_v = 0 the unreduced condition
+// reads 0 ≤ 0 and holds vacuously — so asking whether T_v ≤ 1 for such a row invents a constraint
+// the theorem does not impose, and one zero-balance row was enough to make the market pay the
+// other side.
+test('a zero-stake validator cannot invent a constraint', () => {
+  const services = [svc('a', 1, 1, 1), svc('b', 1, 1, 1)];
+  const real = [val('v-a', 100, ['a']), val('v-b', 100, ['b'])];
+  const declared = terms(75, 1);
+
+  const without = run(declared, services, real);
+  assert.equal(without.computation.gamma_max, '99/1');
+  assert.equal(without.verdict.flag, 'GREEN');
+
+  // add a row holding nothing, adjacent to both services. The network is unchanged.
+  const withZero = run(declared, services, [...real, val('z', 0, ['a', 'b'])]);
+  assert.equal(withZero.computation.gamma_max, '99/1', 'a zero-stake row moved the certificate');
+  assert.equal(withZero.verdict.flag, 'GREEN');
+  assert.equal(withZero.computation.binding_validator, 'v-a');
+  assert.equal(withZero.computation.constrained_validators, 2);
+
+  // it still counts as an edge for σ_{N(s)} — it just adds zero
+  assert.equal(withZero.computation.total_stake, '200');
+
+  // and a graph holding no stake at all cannot state a fraction of total stake
+  assert.throws(
+    () => rsk.canonicalInputs(inputs(declared, services, [val('z', 0, ['a'])])),
+    /non-zero total stake/,
+  );
+});
+
+// F3 (P2). γ* is unbounded, and Number() rounds a large exact floor UPWARD — the one direction a
+// reported buffer must never move.
+test('gamma_max_bps stays exact above Number.MAX_SAFE_INTEGER', () => {
+  // π = 1, α = 1 ⇒ T = 1/σ ⇒ γ* = σ − 1. Pick σ so that γ* × 10000 is far past 2^53.
+  const sigma = 18014398509481987n; // γ* = 18014398509481986
+  const r = run(terms(1, 10), [svc('s', 1, 1, 1)], [val('v', sigma, ['s'])]);
+  assert.equal(r.computation.gamma_max, '18014398509481986/1');
+  assert.equal(r.computation.gamma_max_bps, '180143985094819860000');
+  assert.equal(typeof r.computation.gamma_max_bps, 'string');
+  // the conversion this replaced, applied to the very value being published: strictly larger than
+  // the true floor, i.e. flattering — which is the one direction a reported buffer must never move
+  const exact = BigInt(r.computation.gamma_max_bps);
+  assert.ok(BigInt(Number(exact)) > exact, 'the removed Number() conversion was not actually lossy');
+});
+
+// F4 (P2). Bounding the u128 scalars bounds neither the work nor the intermediate digits.
+test('the graph itself is bounded, not just its scalars', () => {
+  const many = (n, f) => Array.from({ length: n }, (_, i) => f(`x${String(i).padStart(6, '0')}`));
+  const oneSvc = [svc('s', 1)];
+
+  assert.throws(
+    () => rsk.canonicalInputs(inputs(terms(1, 10), many(rsk.MAX_SERVICES + 1, (id) => svc(id, 1)), [val('v', 100, ['x000000'])])),
+    /at most 4096 entries/,
+  );
+  assert.throws(
+    () => rsk.canonicalInputs(inputs(terms(1, 10), oneSvc, many(rsk.MAX_VALIDATORS + 1, (id) => val(id, 100, ['s'])))),
+    /at most 16384 entries/,
+  );
+  // edges are counted across validators, not per row
+  const wide = many(rsk.MAX_SERVICES, (id) => svc(id, 1));
+  const ids = wide.map((s) => s.id);
+  const rows = many(32, (id) => val(id, 100, ids)); // 32 × 4096 = 131,072 edges
+  assert.throws(() => rsk.canonicalInputs(inputs(terms(1, 10), wide, rows)), /at most 65536 edges/);
+});
+
+// N1. free_attack_services is reported in the claim body and in the RED reason, so leaving it in the
+// caller's array order would make two claims over the same network hash differently.
+test('the free-attack set is canonically ordered, like everything else reported', () => {
+  const orphans = [svc('zeta', 5), svc('alpha', 7), svc('funded', 1)];
+  const validators = [val('v', 1000, ['funded'])];
+  const a = run(terms(1, 10), orphans, validators);
+  const b = run(terms(1, 10), [...orphans].reverse(), validators);
+
+  assert.deepEqual(a.computation.free_attack_services, ['alpha', 'zeta']);
+  assert.deepEqual(b.computation, a.computation);
+  assert.equal(b.verdict.reason, a.verdict.reason);
 });

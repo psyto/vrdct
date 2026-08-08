@@ -74,7 +74,9 @@ board possible is their **Corollary 2**, an efficiently checkable per-validator 
 The paper proposes exactly this as *"an easily computed risk measure"* a restaking protocol could
 expose to its participants. Nobody exposes it. `GREEN` is `γ* ≥` the declared buffer, `YELLOW` is a
 positive but smaller one, `RED` is none at all. All of it in exact rational arithmetic — `α_s = 1/3`
-is the common case and is precisely what a float cannot hold.
+is the common case and is precisely what a float cannot hold, `γ*` is published as an exact fraction
+and as a decimal-string basis-point floor, and a validator holding **zero** stake imposes no
+constraint at all, because `σ_v` cancels out of the condition only when it is positive.
 
 **Honest scope.** Corollary 2 is *sufficient, not necessary*: `GREEN` means the network provably
 sustains the buffer, but `RED` does **not** mean an attack exists — it means the checkable

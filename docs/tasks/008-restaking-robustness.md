@@ -124,3 +124,42 @@ sum because no validator is adjacent to it. Handled explicitly, and tested.
 4. **Overflow / cost.** `π`, `σ` are u128-bounded; denominators are products across a validator's
    services. What does a claim with a 1000-service validator cost, and should there be a bound?
 5. Does the honest-scope section overclaim anywhere — particularly the wording of `RED`?
+
+---
+
+## Addendum — Codex review, verdict CHANGES → addressed
+
+**F1 (P1) — a zero-stake validator invented a constraint that does not exist.** `σ_v` cancels out of
+Eq. (17) only when it is *positive*. At `σ_v = 0` the unreduced condition reads `0 ≤ 0` and holds
+vacuously whatever services the row touches, so dividing through and testing `T_v ≤ 1` imposed a
+constraint the theorem does not. Codex's reproducer: two healthy services at `γ* = 99`, plus one
+zero-balance row adjacent to both, produced a binding `γ* = 49` and turned a true `GREEN` into
+`YELLOW` — the network and every stake-bearing validator unchanged, and the market paying the other
+side. Fixed by skipping zero-stake rows in the constraint loop (they remain edges and contribute
+their zero to `σ_{N(s)}`), and by rejecting a graph whose **total** stake is zero, since Theorem 1
+bounds a fraction of total stake and such a graph cannot state one. Reproducer is now a test.
+
+**F2 (P1) — `RED`'s reason promised what the certificate cannot establish.** It said, of every `RED`,
+that "with no slack an arbitrarily small shock can in the worst case take everything". `γ* ≤ 0` means
+only that this *sufficient* check does not certify a positive buffer; it does not prove a valid
+attack or a cascade in *this* graph. Theorem 2 is a separate existence construction. The reason now
+stops at the graph-specific result, and the test asserts the qualified wording plus the absence of
+the old claim. Theorem 2 keeps its place in the module header and README, framed as what *can* happen
+without slack — which is what it is.
+
+**F3 (P2) — `gamma_max_bps` lost exactness.** `floorScaled` is exact, but the result passed through
+`Number()`, which rounds a large floor **upward** — the one direction a reported buffer must never
+move. Now a decimal string, with a regression above `Number.MAX_SAFE_INTEGER` that reproduces the
+removed conversion on the published value. `cascade_bound_bps` stays a number: it is capped at 10,000
+before conversion.
+
+**F4 (P2) — no bounded re-execution cost.** Bounding the u128 scalars bounds neither the work nor the
+intermediate digits, since `gammaMax` reduces an arbitrary-precision fraction per edge.
+`MAX_SERVICES = 4_096`, `MAX_VALIDATORS = 16_384`, `MAX_EDGES = 65_536`, rejected before the Maps are
+built, each tested at its boundary. These belong to the canonical input domain, so a future Rust twin
+must carry the same three numbers.
+
+**N1 — `free_attack_services` was order-dependent.** It is reported in the claim body and in the
+`RED` reason, so caller order would make two claims over the same network hash differently. Sorted,
+and the order-independence test now has an orphan case (the original graph had none, which is why it
+passed).

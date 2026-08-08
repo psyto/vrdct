@@ -71,6 +71,15 @@ export const invariant = {
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const U128_MAX = (1n << 128n) - 1n;
 
+/// Re-execution has to terminate for a verifier with a laptop, and an attacker must not be able to
+/// make one claim cost a year of CPU. `gammaMax` walks every edge and reduces an arbitrary-precision
+/// fraction at each step, so an unbounded edge set is unbounded work AND unbounded intermediate
+/// digits — bounding the u128 scalars alone bounds neither. These belong to the canonical input
+/// domain, so a future Rust twin must carry the same three numbers.
+export const MAX_SERVICES = 4_096;
+export const MAX_VALIDATORS = 16_384;
+export const MAX_EDGES = 65_536;
+
 /// Stakes and profits are pinned as canonical unsigned decimal strings (or safe integers) in base
 /// units — never floats. Two verifiers that parse the same claim must hold the same number.
 function amount(name, value) {
@@ -124,6 +133,8 @@ export function canonicalInputs(inputs) {
 
   if (!Array.isArray(observed.services) || observed.services.length === 0) throw new Error('observed.services must be a non-empty array');
   if (!Array.isArray(observed.validators) || observed.validators.length === 0) throw new Error('observed.validators must be a non-empty array');
+  if (observed.services.length > MAX_SERVICES) throw new Error(`observed.services must hold at most ${MAX_SERVICES} entries`);
+  if (observed.validators.length > MAX_VALIDATORS) throw new Error(`observed.validators must hold at most ${MAX_VALIDATORS} entries`);
 
   const services = new Map();
   observed.services.forEach((s, i) => {
@@ -138,21 +149,27 @@ export function canonicalInputs(inputs) {
 
   const validators = [];
   const seen = new Set();
+  let edges = 0;
   observed.validators.forEach((v, i) => {
     if (!isObject(v)) throw new Error(`observed.validators[${i}] must be an object`);
     const id = identifier(`observed.validators[${i}].id`, v.id);
     if (seen.has(id)) throw new Error(`observed.validators[${i}].id is a duplicate: ${id}`);
     seen.add(id);
     if (!Array.isArray(v.services)) throw new Error(`observed.validators[${i}].services must be an array`);
-    const edges = [];
+    const adjacent = [];
     v.services.forEach((sid, j) => {
       const s = identifier(`observed.validators[${i}].services[${j}]`, sid);
       if (!services.has(s)) throw new Error(`observed.validators[${i}].services[${j}] names an unknown service: ${s}`);
-      if (edges.includes(s)) throw new Error(`observed.validators[${i}].services[${j}] is a duplicate edge: ${s}`);
-      edges.push(s);
+      if (adjacent.includes(s)) throw new Error(`observed.validators[${i}].services[${j}] is a duplicate edge: ${s}`);
+      adjacent.push(s);
     });
-    validators.push({ id, stake: amount(`observed.validators[${i}].stake`, v.stake), services: [...edges].sort() });
+    edges += adjacent.length;
+    if (edges > MAX_EDGES) throw new Error(`the graph must hold at most ${MAX_EDGES} edges`);
+    validators.push({ id, stake: amount(`observed.validators[${i}].stake`, v.stake), services: [...adjacent].sort() });
   });
+
+  // Theorem 1 bounds a FRACTION of total stake. A graph holding none cannot state one.
+  if (validators.reduce((acc, v) => acc + v.stake, 0n) === 0n) throw new Error('observed.validators must hold non-zero total stake');
 
   // Sorted so the reported binding validator and any tie-break are a property of the network, not of
   // the order a claim happened to list it in.
@@ -200,10 +217,17 @@ export function gammaMax(services, validators) {
   // A service with profit but no stake behind it is corrupted by the EMPTY coalition: Eq. (1) reads
   // 0 ≥ α_s · 0 and Eq. (2) reads π_s > 0. That is a valid attack, and it is invisible to a
   // per-validator sum because no validator is adjacent to it — so it is caught here, explicitly.
-  const freeAttacks = [...services.values()].filter((s) => s.profit > 0n && stakeIn.get(s.id) === 0n).map((s) => s.id);
+  // Sorted: this is reported in the claim body and in the RED reason, so leaving it in the caller's
+  // array order would make two claims over the same network hash differently.
+  const freeAttacks = [...services.values()].filter((s) => s.profit > 0n && stakeIn.get(s.id) === 0n).map((s) => s.id).sort();
 
   let best = null, binding = null, constrained = 0;
   for (const v of validators) {
+    // σ_v CANCELS ONLY WHEN IT IS POSITIVE. At σ_v = 0 the unreduced Eq. (17) reads 0 ≤ 0 and holds
+    // vacuously, whatever services the row is adjacent to — so dividing through and asking whether
+    // T_v ≤ 1 invents a constraint that the theorem does not impose. A single zero-balance row
+    // adjacent to two healthy services was enough to bind γ* and turn a true GREEN into a YELLOW.
+    if (v.stake === 0n) continue;
     let t = ZERO;
     for (const sid of v.services) {
       const s = services.get(sid);
@@ -244,7 +268,7 @@ export function reexec(inputs) {
         ? `the network certifies γ = ${fracStr(g.gammaMax)} ≥ the declared ${fracStr(gamma)}, so a ${shockPsiBps}bps shock cannot cascade past ${cascadeBoundBps}bps of total stake`
         : positiveBuffer
           ? `the network certifies only γ = ${fracStr(g.gammaMax)}, short of the declared ${fracStr(gamma)} (binding validator ${g.binding})`
-          : `the network certifies no positive buffer (γ* = ${fracStr(g.gammaMax)}, binding validator ${g.binding}); with no slack an arbitrarily small shock can in the worst case take everything`;
+          : `the checkable certificate does not establish a positive buffer for this network (γ* = ${fracStr(g.gammaMax)}, binding validator ${g.binding}), so no bound on a cascade follows from it`;
 
   return {
     computation: {
@@ -254,7 +278,10 @@ export function reexec(inputs) {
       total_stake: String(totalStake),
       gamma_declared: fracStr(gamma),
       gamma_max: g.gammaMax === null ? null : fracStr(g.gammaMax),
-      gamma_max_bps: g.gammaMax === null ? null : Number(floorScaled(g.gammaMax, 10_000n)),
+      // A decimal STRING: γ* is unbounded, and Number() silently rounds a large exact floor UPWARD —
+      // which is the one direction a reported buffer must never move. `cascade_bound_bps` is capped
+      // at 10_000 before conversion, so it stays a safe integer.
+      gamma_max_bps: g.gammaMax === null ? null : String(floorScaled(g.gammaMax, 10_000n)),
       binding_validator: g.binding,
       free_attack_services: g.freeAttacks,
       shock_psi_bps: shockPsiBps,
