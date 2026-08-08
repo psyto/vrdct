@@ -37,7 +37,59 @@ Each surface is a pluggable module —
 - `reserve-solvency` — is a protocol's recomputed backing ≥ its liability? *(Redde lineage)*
 - `closed-market-liquidation-soundness` — does a venue liquidate tokenized equities against a price
   that updated while the underlying market was closed, with no guard? *(Vesper lineage)*
+- `obligated-liveness` — did an obligor miss more of its schedule than the network assumption the
+  market declared can excuse? The first type that settles a party doing **nothing** rather than doing
+  something wrong. Offline-complete, **not yet wired to `encode.mjs` or the on-chain twin.**
 - *depeg, exploit, agent-escrow — the roadmap.*
+
+### Settling silence — and the boundary past which nobody can
+
+Every other type above settles a **safety** question: a number came out, re-execute it, and a wrong
+one is deterministically wrong. But the README's other target market, *agent-payment escrow*, mostly
+disputes the opposite — the agent returned **nothing**. There is nothing to re-execute, and a
+resolver that can only adjudicate safety quietly hands every non-delivery dispute back to whoever
+holds the funds. That is not neutrality.
+
+What makes silence hard is that *"the network was slow"* is an unfalsifiable alibi until you commit
+to a bound on how slow it may be. `obligated-liveness` implements the bound and its limit, from
+Lewis-Pye, Neu, Roughgarden & Zanolini, [*Accountable Liveness*](https://arxiv.org/abs/2504.12218)
+(CCS '25): in an **x-partially-synchronous** network — at most an `x` fraction of steps in any long
+enough interval are asynchronous — accountable liveness is achievable **iff `x < 1/2` and `f < n/2`**.
+
+So a market declares `x` and the obligor's quorum shape up front, and re-execution:
+
+- **derives the obligated slots from the calendar**, never from the claim, so no list of convenient
+  slots can be supplied — the same `campana` move that makes `monday-open-gap` possible;
+- **charges only the excess**: `excusable = floor(nSlots × x)`, and misses beyond it are
+  `RED`/attributable while misses at or below it are `YELLOW`/excused;
+- **refuses to blame anyone** — `UNKNOWN` — when the declared `x ≥ 1/2` or `f ≥ n/2`. That flag is
+  decided by the terms alone: the evidence is parsed, but no valid evidence can move it. A neutral
+  resolver has to be able to say *this question is not answerable under your assumptions* instead of
+  picking someone.
+
+**Honest scope.** Three things, and the third is a correction.
+
+*Omission is the open residual, and it is safe to leave open.* Whoever pins the claim can leave
+actions out — but removing actions only turns slots from met to missed, so omission can only make a
+verdict **harsher** (`GREEN → YELLOW → RED`, never the reverse). A `RED` is contestable by any
+challenger holding one more real action, and a `GREEN` cannot be manufactured by omitting anything.
+
+*What gets spent is the record, not the instant.* An action is pinned as an identified on-chain
+record — a transaction signature and its timestamp — and duplicate ids are rejected. This matters
+more than it sounds: while actions were bare timestamps, listing **one real instant twice** bought
+two discharges wherever grace made two slots overlap, which was enough to manufacture a `GREEN`
+without inventing anything. That was found in review (`reviews/007-obligated-liveness.md`), and the
+earlier wording here — that forging a `GREEN` required fabricating a timestamp — was false. It now
+requires a second identified action that the source descriptor can be checked against.
+
+*The schedule terms are an obligation on the market, not a property of this module.* The slots are
+derived, but `fromTs`, `toTs` **and** `periodSecs` all shape which slots exist. They are safe only
+when declared before the fact and bound by a market definition. Offline they are merely hashed into
+the claim; this type has no on-chain market-definition binding yet.
+
+And the actions must be observations of **on-chain state** — were the evidence third-party
+attestation, the `f < n/2` half of the theorem would bind on the *observers* too, and this type does
+not model that.
 
 ## Standing board
 
