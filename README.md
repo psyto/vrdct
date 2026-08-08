@@ -86,6 +86,12 @@ better than measured, it is *proven*: because reduction is deferred to once per 
 accumulated denominator is exactly `Π (α_s.num · σ_{N(s)})`, hence at most `degree × 174` bits, so
 `γ*` cannot print longer than ~3,400 characters on any accepted graph.
 
+Those limits are a defensible *computational domain*, not a finding that every live operator fits
+inside one. The consequence lands on ingestion: a snapshot with a validator past the degree cap must
+be **rejected, never truncated**. Dropping edges to make a graph admissible removes constraints, and
+removing constraints can only raise `γ*` — it would manufacture a `GREEN` out of a network this type
+is not entitled to judge.
+
 **Honest scope.** Corollary 2 is *sufficient, not necessary*: `GREEN` means the network provably
 sustains the buffer, but `RED` does **not** mean an attack exists — it means the checkable
 certificate is unavailable. Saying *"not certified"* rather than *"broken"* is not hedging; deciding

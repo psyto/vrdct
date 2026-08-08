@@ -97,6 +97,13 @@ const U128_MAX = (1n << 128n) - 1n;
 /// ~20 services, so ~8k edges at degree ~20 — roughly 4x inside these limits. If a real set outgrows
 /// them, they are part of the canonical input domain: cheap to change now, expensive once a Rust
 /// twin exists, so re-measure and change them deliberately rather than raising them in place.
+///
+/// AND SAY WHAT THIS IS NOT. These numbers are a defensible COMPUTATIONAL DOMAIN. They are not a
+/// finding that every live operator fits inside them — that is a claim about the world, and nothing
+/// here establishes it. The consequence binds whoever writes the ingestion adapter: a snapshot with
+/// a validator past the degree cap must be REJECTED, never truncated to fit. Dropping edges to make
+/// a graph admissible removes constraints, and removing constraints can only raise γ* — it would
+/// manufacture a GREEN out of a network this type is not entitled to judge.
 export const MAX_SERVICES = 4_096;
 export const MAX_VALIDATORS = 16_384;
 export const MAX_SERVICES_PER_VALIDATOR = 32;

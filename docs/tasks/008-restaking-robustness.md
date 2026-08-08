@@ -100,6 +100,10 @@ sum because no validator is adjacent to it. Handled explicitly, and tested.
 - **Live network ingestion.** No adapter fetches a real EigenLayer / Symbiotic / Jito operator set
   yet. That is the next task and it is where the `π_s` estimate has to be argued in public, not in
   code. Deliberately separated so the arithmetic can be reviewed before the estimates are.
+  **Binding requirement carried forward from the task-008 approval:** the input limits are a
+  computational domain, not a finding about real operator sets, so the adapter must **reject** an
+  out-of-domain snapshot and never truncate one to fit. Dropping edges removes constraints, and
+  removing constraints can only raise `γ*` — truncation manufactures a `GREEN`.
 
 ## Acceptance criteria
 
