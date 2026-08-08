@@ -143,3 +143,33 @@ This asymmetry is the honest scope of the type and must be stated in the README,
 4. Does the monotonicity claim actually hold in the code, including at the budget boundary?
 5. Is the `UNKNOWN` gate genuinely independent of the evidence, or does an evidence-dependent path
    leak into it?
+
+---
+
+## Addendum — Codex review `eaab0f0`, verdict CHANGES → addressed
+
+Both findings were real and both broke a claim this brief makes.
+
+**F1 (P1) — duplicating one real action manufactured `GREEN`.** Actions were bare timestamps and
+the matching spent array entries, so listing one genuine instant twice discharged two slots wherever
+grace made them overlap. The loophole the matching closes was simply moved into the evidence
+encoding, and the README's statement that forging a `GREEN` required fabricating a timestamp was
+false — copying one was enough.
+
+Fixed as Codex directed: an action is now an identified record `{ id, ts }`, `canonicalInputs`
+rejects duplicate ids, and `matchSlots` spends the record while matching on the timestamp. Two
+**distinct** records sharing a second each discharge an obligation — that is now asserted by test so
+the semantics are chosen rather than tripped over. The README's honest-scope paragraph is rewritten
+and names the correction.
+
+**F2 (P1) — `MAX_SLOTS` bounded one input and left the other open.** `MAX_ACTIONS = 100_000` added,
+enforced in `canonicalInputs`, tested from both sides.
+
+**Note (feasibility gate).** The gate is verdict-invariant, not evidence-blind: input is parsed
+first because the registry's contract is that malformed input is rejected rather than stepped
+around. The comment and the test name now say invariance instead of blindness.
+
+**Note (schedule terms).** `periodSecs` shapes the slot set as directly as the window does, so the
+"pinner supplies only the window" phrasing was wrong. Module and README now state that all schedule
+terms must be predeclared and bound by a market definition, and that this offline type only hashes
+them into the claim — an obligation on whoever opens a market, not something this module enforces.

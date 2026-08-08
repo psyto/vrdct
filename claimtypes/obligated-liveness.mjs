@@ -36,15 +36,21 @@
 // explicit: the misses happened, and the assumption the market declared says you may not convict.
 //
 // THE ATTACK THIS TYPE IS BUILT AGAINST — and it is asymmetric, which is the point:
-//   • Choosing the SCHEDULE is closed by construction. The slots are re-derived from `campana`, not
-//     read from the claim; the pinner picks only the window, which is part of the market definition
-//     and declared before the fact. Same move that makes `monday-open-gap` possible.
+//   • Choosing the SCHEDULE is closed by construction against the EVIDENCE, but not by itself. The
+//     slots are re-derived from `campana` rather than read from the claim, so no list of convenient
+//     slots can be supplied. What the pinner still chooses is the schedule TERMS — `fromTs`, `toTs`
+//     AND `periodSecs`, which shape the slot set just as directly as the window does. Those are safe
+//     only when they are declared before the fact and bound by a market definition, exactly like
+//     `monday-open-gap`'s threshold. Offline they are merely hashed into the claim; there is no
+//     on-chain market-definition binding for this type yet, so that is an obligation on whoever
+//     opens a market, not a property this module can enforce. Said plainly rather than assumed.
 //   • Omitting ACTIONS is deliberately left open, because it is monotone in the safe direction.
 //     Removing actions can only turn slots from met to missed, so omission only ever makes a verdict
 //     HARSHER on the obligor (GREEN → YELLOW → RED, never the reverse). So a RED is contestable by
 //     any challenger holding one more real action, and a GREEN cannot be manufactured by omitting
-//     anything. Forging a GREEN requires fabricating an action timestamp, which is checkable against
-//     the source descriptor the way `cli check` rebuilds CMLS inputs.
+//     anything. Manufacturing a GREEN needs an extra IDENTIFIED action record — see `matchSlots` on
+//     why identity rather than instant is what gets spent — and the ids are checkable against the
+//     source descriptor the way `cli check` rebuilds CMLS inputs.
 //
 // HONEST RESIDUAL. The actions must be observations of ON-CHAIN state. If the evidence were
 // third-party attestation, the `f < n/2` half of the theorem would bind on the OBSERVERS as well,
@@ -72,6 +78,9 @@ export const ASYNC_PPM_BOUND = PPM / 2;
 /// A window may not obligate an unbounded number of slots: re-execution has to terminate for a
 /// verifier with a laptop, and an attacker must not be able to make one claim cost a year of CPU.
 export const MAX_SLOTS = 100_000;
+/// The same bound on the other input. `MAX_SLOTS` alone bounds nothing: a pinner can aim millions of
+/// well-formed observations at a one-slot window and make every verifier copy and sort them.
+export const MAX_ACTIONS = 100_000;
 const MIN_PERIOD_SECS = 60;
 const MAX_PERIOD_SECS = 86_400;
 
@@ -80,6 +89,15 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 function u32(name, value) {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
     throw new Error(`${name} must be a safe u32 integer`);
+  }
+  return value;
+}
+/// The identity of an action: whatever the source descriptor makes unique and checkable — a
+/// transaction signature, for Solana. It is what gets SPENT against an obligation, while `ts` is
+/// only what decides which obligations it could have discharged.
+function actionId(name, value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9._:-]{1,96}$/.test(value)) {
+    throw new Error(`${name} must be a 1–96 char source-unique id of [A-Za-z0-9._:-]`);
   }
   return value;
 }
@@ -127,8 +145,18 @@ export function canonicalInputs(inputs) {
   if (n === 0) throw new Error('terms.quorum.n must be non-zero');
   if (f >= n) throw new Error('terms.quorum.f must be less than terms.quorum.n');
 
+  // An action is an IDENTIFIED on-chain record, not a bare instant. A timestamp alone is copyable,
+  // and one copied timestamp is enough to discharge two overlapping obligations — see `matchSlots`.
   if (!Array.isArray(observed.actions)) throw new Error('observed.actions must be an array');
-  const actions = observed.actions.map((a, i) => inCalendar(`observed.actions[${i}]`, u32(`observed.actions[${i}]`, a)));
+  if (observed.actions.length > MAX_ACTIONS) throw new Error(`observed.actions must hold at most ${MAX_ACTIONS} records`);
+  const ids = new Set();
+  const actions = observed.actions.map((a, i) => {
+    if (!isObject(a)) throw new Error(`observed.actions[${i}] must be an object { id, ts }`);
+    const id = actionId(`observed.actions[${i}].id`, a.id);
+    if (ids.has(id)) throw new Error(`observed.actions[${i}].id is a duplicate: ${id}`);
+    ids.add(id);
+    return { id, ts: inCalendar(`observed.actions[${i}].ts`, u32(`observed.actions[${i}].ts`, a.ts)) };
+  });
 
   return { fromTs, toTs, periodSecs, graceSecs, asyncPpm, n, f, actions };
 }
@@ -146,8 +174,8 @@ export function deriveSlots(fromTs, toTs, periodSecs, cal = CALENDAR_2026) {
   return slots;
 }
 
-/// PURE: slots × actions × grace → which slots were met. Sorts a copy of the actions, so the answer
-/// does not depend on the order a claim happens to list its observations in.
+/// PURE: slots × actions × grace → which slots were met. Sorts a copy of the actions by (ts, id), so
+/// the answer does not depend on the order a claim happens to list its observations in.
 ///
 /// ONE ACTION DISCHARGES ONE OBLIGATION. Because grace extends a slot's window past its deadline,
 /// that window overlaps the first `graceSecs` of the next slot — so a single action can *fall inside*
@@ -157,14 +185,22 @@ export function deriveSlots(fromTs, toTs, periodSecs, cal = CALENDAR_2026) {
 /// Slots ascend by both open and deadline, so that greedy walk is a MAXIMUM matching — the count of
 /// missed slots is the true minimum, never an artefact of the walk order, and adding an action can
 /// only ever grow it (which is what makes omission monotone).
+///
+/// WHAT IS SPENT IS THE RECORD, NOT THE INSTANT. The matching above is only worth as much as the
+/// distinctness of what it consumes. An earlier draft consumed bare timestamps, and then listing one
+/// real timestamp twice bought two discharges out of a single act — the same loophole, moved from
+/// the matching into the evidence encoding, and enough to manufacture a GREEN without inventing any
+/// instant. `canonicalInputs` rejects duplicate ids, so a second discharge costs a second on-chain
+/// action that the source descriptor can be checked against. Two DISTINCT records sharing a second
+/// do each discharge an obligation: they are two real acts, and the source cannot tell us otherwise.
 export function matchSlots(slots, actions, graceSecs) {
-  const sorted = [...actions].sort((a, b) => a - b);
+  const sorted = [...actions].sort((a, b) => (a.ts !== b.ts ? a.ts - b.ts : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const met = [];
   let cursor = 0;
   for (const s of slots) {
     // actions before this slot opens are unusable by it, and by every later slot too
-    while (cursor < sorted.length && sorted[cursor] < s.open) cursor++;
-    const ok = cursor < sorted.length && sorted[cursor] <= s.deadline + graceSecs;
+    while (cursor < sorted.length && sorted[cursor].ts < s.open) cursor++;
+    const ok = cursor < sorted.length && sorted[cursor].ts <= s.deadline + graceSecs;
     met.push(ok);
     if (ok) cursor++; // spent
   }
@@ -189,8 +225,10 @@ export function reexec(inputs) {
   const q = canonicalInputs(inputs);
   const { fromTs, toTs, periodSecs, graceSecs, asyncPpm, n, f, actions } = q;
 
-  // 1. The theorem's feasibility gate. Evaluated from the TERMS alone — no evidence is consulted, so
-  //    the same window returns the same UNKNOWN however the obligor behaved.
+  // 1. The theorem's feasibility gate. Decided by the TERMS alone: the evidence is still parsed
+  //    first — the registry's contract is that malformed input is rejected, not stepped around — but
+  //    no valid evidence can move this flag, so the same window returns the same UNKNOWN however the
+  //    obligor behaved. Invariance of the verdict, not blindness of the code.
   const syncOk = asyncPpm < ASYNC_PPM_BOUND;      // x < 1/2
   const quorumOk = 2 * f < n;                     // f < n/2
   const attributable_possible = syncOk && quorumOk;
