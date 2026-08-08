@@ -60,3 +60,53 @@ For comparison, a benign, accepted 4,096-service / 16-validator / 65,536-edge gr
 242 ms; it is not a valid cost proof because its identical denominators collapse cheaply. F4 is the
 remaining blocker. No new concern was found in the theorem algebra, zero-stake handling, or the
 honest-scope wording.
+
+---
+
+## Addendum — re-review of `1dd047b`: F4 remains open
+
+`1dd047b` correctly identifies validator degree as *a* cost driver, adds
+`MAX_SERVICES_PER_VALIDATOR = 32`, lowers `MAX_EDGES` to 32,768, and makes the accepted-boundary
+test run rather than merely reject `limit + 1`. Exact arithmetic remains intact. This is substantial
+progress, but the test fixture does not construct the worst accepted arithmetic shape it claims to.
+
+### F4 (P2, remains open) — low degree does not prevent distinct `σ_N(s)` factors from exploding `T_v`
+
+The boundary fixture assigns validator `v` its contiguous services with
+`services[(v * degree + j) % services.length]`. Each such service has the same eight backing
+validators, hence the same `σ_N(s)`, within a given validator's 32-term sum. Its sequential
+`alpha.num = 1000003 + 2i` values are also not all prime and do share factors. The test therefore
+gets a cheaply collapsing denominator; it does not establish its “worst accepted claim” assertion.
+
+I constructed a valid regular graph at the new exact limits:
+
+- 4,096 services, 1,024 validators, degree 32, and 32,768 edges;
+- every validator stake is `2^120 + v` (within u128);
+- every alpha numerator is a distinct prime near 1,000,003 and every denominator is 4,294,967,291;
+- index a validator as `(a, b)` with `a ∈ [0,127]`, `b ∈ [0,7]`; its edge for service column `k` is
+  `((a + k·b) mod 128, k)`.
+
+Every service then has eight positive backers, while one validator's 32 services have differing
+`σ_N(s)` values. This is not a malformed or over-limit input. On the reviewed implementation it
+returned GREEN but took **7.92 seconds** and produced a **2,627-character** `gamma_max`, exceeding
+both the test's 5,000 ms wall and the documented 512-character certificate budget. Thus the proposed
+cost model breaks down inside the accepted region exactly through the low-degree, distinct-stake-sum
+shape the review request asked about.
+
+**Required fix:** derive the domain from an adversarial fixture that varies both reduced alpha
+numerators *and* `σ_N(s)` within every binding validator, then lower the degree/edge limits until
+that fixture meets the time and certificate-size budgets. Make that fixture the boundary regression.
+Alternatively, introduce a separately bounded canonical representation/algorithm that proves an
+equivalent exact result without materializing the large rational; do not weaken this to floating or
+unbounded fixed-point arithmetic.
+
+### Process note
+
+The local ref `cc/restaking-robustness` remains at `c7711cc`; `1dd047b` was committed atop the
+previous Codex re-review branch. Before merge, move the implementation commit onto the intended CC
+task branch (or otherwise preserve a clear author/reviewer history) so the branch contract remains
+auditable.
+
+`npm run test:canonical` is green at `1dd047b` (29 JS tests, 162 parity vectors, 2 definition
+vectors, 20 Rust tests; corpus hash unchanged), but its green boundary test is the false assurance
+described above. **CHANGES remains the verdict.**
