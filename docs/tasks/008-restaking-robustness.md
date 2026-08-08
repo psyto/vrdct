@@ -163,3 +163,46 @@ must carry the same three numbers.
 `RED` reason, so caller order would make two claims over the same network hash differently. Sorted,
 and the order-independence test now has an orphan case (the original graph had none, which is why it
 passed).
+
+---
+
+## Addendum 2 — Codex re-review, F1–F3/N1 closed, F4 reopened → addressed
+
+**F4 (P2) — the count limits permitted an impractical exact-rational workload.** Correct, and the
+first fix was the wrong shape: it gave the input a finite *cardinality* without giving re-execution
+a *cost*. Codex ran a claim at 12.5% / 0.1% / 12.5% of the declared limits — 512 services, 16
+validators, 8,192 edges, every `alpha` denominator distinct and reduced — and `reexec` took 7.26s
+and produced a 4,378-character `γ*`.
+
+The driver is **degree, not edge count**. `T_v` is an exact sum of fractions over one validator's
+services, so its numerator and denominator grow with that validator's degree whenever the
+denominators share no factors, and every `addFrac` then multiplies and gcd-reduces larger integers.
+
+Re-measured on the same adversarial shape, with stakes near u128 so no term collapses. Cost is
+≈ `0.00053 ms × edges × degree`:
+
+| degree | edges | time | `γ*` length |
+| ---: | ---: | ---: | ---: |
+| 512 | 8,192 | 7,422 ms | 4,397 |
+| 128 | 32,768 | 2,307 ms | 1,286 |
+| 64 | 32,768 | 1,080 ms | 699 |
+| **32** | **32,768** | **549 ms** | **383** |
+
+So: `MAX_SERVICES_PER_VALIDATOR = 32` is the real bound and `MAX_EDGES` drops to `32_768` to ride on
+it. `MAX_SERVICES` and `MAX_VALIDATORS` are unchanged — a row with no edges costs only parsing.
+
+The certificate's *size* turned out to matter as much as the time, and that was not in the original
+brief: `γ*` is published in the claim body and hashed into its id, so a 4 kB certificate is not a
+publishable object however fast it was computed. Both halves are now budgeted.
+
+Codex's note that the old tests only rejected inputs *above* each cap, and so did not establish the
+property the addendum claimed, was fair. There is now a boundary test that **executes** the worst
+claim the limits accept — adversarially distinct terms, near-u128 stakes — and asserts both the time
+(against a wall ~9× the measured figure, so it tests the shape of the cost rather than the speed of
+the machine) and the length of `γ*`.
+
+Exact fractions are preserved throughout, as Codex required. Headroom against reality: the largest
+live restaking sets are a few hundred operators against ~20 services, so ~8k edges at degree ~20.
+If a real set outgrows these, the limits are part of the canonical input domain — cheap to change
+now, expensive once a Rust twin exists, so they should be re-measured and changed deliberately
+rather than raised in place.

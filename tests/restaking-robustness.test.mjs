@@ -234,10 +234,16 @@ test('gamma_max_bps stays exact above Number.MAX_SAFE_INTEGER', () => {
   assert.ok(BigInt(Number(exact)) > exact, 'the removed Number() conversion was not actually lossy');
 });
 
-// F4 (P2). Bounding the u128 scalars bounds neither the work nor the intermediate digits.
-test('the graph itself is bounded, not just its scalars', () => {
+// F4 (P2, re-review). Cardinality alone does not bound cost: `T_v` is an exact sum over ONE
+// validator's services, so its digits grow with that validator's DEGREE whenever the denominators
+// share no factors. Codex's re-review ran a claim well inside the first set of limits — 512
+// services, 16 validators, 8,192 edges — and `reexec` took 7.26 s and produced a 4,378-character
+// γ*. Degree is the driver; the edge cap rides on it.
+test('the graph is bounded by degree, not just by cardinality', () => {
   const many = (n, f) => Array.from({ length: n }, (_, i) => f(`x${String(i).padStart(6, '0')}`));
   const oneSvc = [svc('s', 1)];
+  const wide = many(rsk.MAX_SERVICES, (id) => svc(id, 1));
+  const ids = wide.map((s) => s.id);
 
   assert.throws(
     () => rsk.canonicalInputs(inputs(terms(1, 10), many(rsk.MAX_SERVICES + 1, (id) => svc(id, 1)), [val('v', 100, ['x000000'])])),
@@ -247,11 +253,46 @@ test('the graph itself is bounded, not just its scalars', () => {
     () => rsk.canonicalInputs(inputs(terms(1, 10), oneSvc, many(rsk.MAX_VALIDATORS + 1, (id) => val(id, 100, ['s'])))),
     /at most 16384 entries/,
   );
-  // edges are counted across validators, not per row
-  const wide = many(rsk.MAX_SERVICES, (id) => svc(id, 1));
-  const ids = wide.map((s) => s.id);
-  const rows = many(32, (id) => val(id, 100, ids)); // 32 × 4096 = 131,072 edges
-  assert.throws(() => rsk.canonicalInputs(inputs(terms(1, 10), wide, rows)), /at most 65536 edges/);
+  // one validator may not reach past the degree cap — this is the arithmetic bound
+  assert.throws(
+    () => rsk.canonicalInputs(inputs(terms(1, 10), wide, [val('v', 100, ids.slice(0, rsk.MAX_SERVICES_PER_VALIDATOR + 1))])),
+    /at most 32 services/,
+  );
+  // and edges are counted across validators, not per row
+  const rows = many(rsk.MAX_EDGES / rsk.MAX_SERVICES_PER_VALIDATOR + 1, (id) => val(id, 100, ids.slice(0, rsk.MAX_SERVICES_PER_VALIDATOR)));
+  assert.throws(() => rsk.canonicalInputs(inputs(terms(1, 10), wide, rows)), /at most 32768 edges/);
+});
+
+// The bound above is only worth what it costs at the boundary, so the boundary is executed. This
+// builds the worst claim the limits accept — every term adversarially distinct, so no fraction ever
+// collapses — and asserts both halves of the budget: the time, and the size of the certificate that
+// gets published in the claim body and hashed into its id.
+test('the worst accepted claim re-executes inside a documented budget', () => {
+  const STAKE = 1n << 120n; // near-u128: the largest denominators a claim can legally carry
+  const degree = rsk.MAX_SERVICES_PER_VALIDATOR;
+  const validators = rsk.MAX_EDGES / degree;
+  const services = Array.from({ length: rsk.MAX_SERVICES }, (_, i) => ({
+    id: `s${String(i).padStart(5, '0')}`,
+    profit: '1',
+    alpha: { num: 1000003 + 2 * i, den: 4294967291 }, // distinct, reduced, share no factors
+  }));
+  const rows = Array.from({ length: validators }, (_, v) => ({
+    id: `v${String(v).padStart(5, '0')}`,
+    stake: String(STAKE + BigInt(v)),
+    services: Array.from({ length: degree }, (_, j) => services[(v * degree + j) % services.length].id),
+  }));
+
+  const started = process.hrtime.bigint();
+  const r = rsk.reexec(inputs(terms(1, 10), services, rows));
+  const ms = Number(process.hrtime.bigint() - started) / 1e6;
+
+  assert.equal(r.computation.constrained_validators, validators);
+  // Measured ~0.55 s on the development machine. The wall is deliberately ~9x that: this asserts
+  // the shape of the cost, not the speed of whatever runs it. If it ever trips, the limits are
+  // wrong, not the machine.
+  assert.ok(ms < 5_000, `worst accepted claim took ${ms.toFixed(0)}ms`);
+  // and the certificate stays a publishable object
+  assert.ok(r.computation.gamma_max.length < 512, `γ* was ${r.computation.gamma_max.length} chars`);
 });
 
 // N1. free_attack_services is reported in the claim body and in the RED reason, so leaving it in the

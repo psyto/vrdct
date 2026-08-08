@@ -72,13 +72,34 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const U128_MAX = (1n << 128n) - 1n;
 
 /// Re-execution has to terminate for a verifier with a laptop, and an attacker must not be able to
-/// make one claim cost a year of CPU. `gammaMax` walks every edge and reduces an arbitrary-precision
-/// fraction at each step, so an unbounded edge set is unbounded work AND unbounded intermediate
-/// digits — bounding the u128 scalars alone bounds neither. These belong to the canonical input
-/// domain, so a future Rust twin must carry the same three numbers.
+/// make one claim cost a year of CPU. Cardinality alone does not deliver that, which the first
+/// attempt at these limits got wrong: `T_v` is an exact sum of fractions over ONE validator's
+/// services, so its numerator and denominator grow with that validator's DEGREE whenever the
+/// denominators do not share factors — and every `addFrac` then multiplies and gcd-reduces larger
+/// and larger integers. Degree, not edge count, is what makes the arithmetic expensive.
+///
+/// MEASURED, on adversarial input: services with distinct reduced `alpha` denominators near 2^32
+/// and stakes near u128, so no term ever collapses. Cost is ≈ `0.00053 ms × edges × degree`:
+///
+///     degree   edges     time      γ* length
+///        512    8,192   7,422 ms    4,397 chars   ← the shape Codex's re-review reported
+///        128   32,768   2,307 ms    1,286 chars
+///         64   32,768   1,080 ms      699 chars
+///         32   32,768     549 ms      383 chars   ← the limits below
+///
+/// So the degree cap is the real bound and the edge cap rides on it. The pair below buys a worst
+/// accepted claim of roughly **0.6 s and a γ* under 512 characters** — the second number matters as
+/// much as the first, since γ* is published in the claim body and hashed into its id, and a 4 kB
+/// certificate is not a publishable object however fast it was computed.
+///
+/// Headroom against reality: the largest live restaking sets are on the order of a few hundred
+/// operators against ~20 services, so ~8k edges at degree ~20. If a real set outgrows these, the
+/// limits are part of the canonical input domain — changing them is cheap now and expensive once a
+/// Rust twin exists, so re-measure and change them deliberately rather than raising them in place.
 export const MAX_SERVICES = 4_096;
 export const MAX_VALIDATORS = 16_384;
-export const MAX_EDGES = 65_536;
+export const MAX_SERVICES_PER_VALIDATOR = 32;
+export const MAX_EDGES = 32_768;
 
 /// Stakes and profits are pinned as canonical unsigned decimal strings (or safe integers) in base
 /// units — never floats. Two verifiers that parse the same claim must hold the same number.
@@ -163,6 +184,9 @@ export function canonicalInputs(inputs) {
       if (adjacent.includes(s)) throw new Error(`observed.validators[${i}].services[${j}] is a duplicate edge: ${s}`);
       adjacent.push(s);
     });
+    if (adjacent.length > MAX_SERVICES_PER_VALIDATOR) {
+      throw new Error(`observed.validators[${i}].services must name at most ${MAX_SERVICES_PER_VALIDATOR} services`);
+    }
     edges += adjacent.length;
     if (edges > MAX_EDGES) throw new Error(`the graph must hold at most ${MAX_EDGES} edges`);
     validators.push({ id, stake: amount(`observed.validators[${i}].stake`, v.stake), services: [...adjacent].sort() });

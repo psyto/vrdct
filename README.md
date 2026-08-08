@@ -78,6 +78,14 @@ is the common case and is precisely what a float cannot hold, `γ*` is published
 and as a decimal-string basis-point floor, and a validator holding **zero** stake imposes no
 constraint at all, because `σ_v` cancels out of the condition only when it is positive.
 
+Exactness has a price, and the claim domain is where it gets paid: `T_v` is a sum of fractions over
+**one** validator's services, so its digits grow with that validator's degree. The input limits are
+therefore chosen from measured adversarial cost rather than from graph size — a cap of 32 services
+per validator and 32,768 edges, which puts the worst claim the type will accept at roughly 0.6s and
+a `γ*` under 512 characters. The second number matters as much as the first: `γ*` is published in
+the claim body and hashed into its id, and a 4 kB certificate is not a publishable object however
+fast it was computed.
+
 **Honest scope.** Corollary 2 is *sufficient, not necessary*: `GREEN` means the network provably
 sustains the buffer, but `RED` does **not** mean an attack exists — it means the checkable
 certificate is unavailable. Saying *"not certified"* rather than *"broken"* is not hedging; deciding
