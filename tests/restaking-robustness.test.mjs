@@ -263,36 +263,60 @@ test('the graph is bounded by degree, not just by cardinality', () => {
   assert.throws(() => rsk.canonicalInputs(inputs(terms(1, 10), wide, rows)), /at most 32768 edges/);
 });
 
-// The bound above is only worth what it costs at the boundary, so the boundary is executed. This
-// builds the worst claim the limits accept — every term adversarially distinct, so no fraction ever
-// collapses — and asserts both halves of the budget: the time, and the size of the certificate that
-// gets published in the claim body and hashed into its id.
+// The bound above is only worth what it costs at the boundary, so the boundary is executed. The
+// FIRST version of this test was not worst case and Codex caught it: it gave each validator a
+// contiguous block of services, so every service in the block shared the same adjacent-validator
+// set, every denominator carried an identical σ_{N(s)} factor, and the gcd collapsed it — 587 ms
+// where the true worst case is 8,556 ms. So the fixture now proves its own adversarial-ness before
+// it proves anything about cost.
 test('the worst accepted claim re-executes inside a documented budget', () => {
-  const STAKE = 1n << 120n; // near-u128: the largest denominators a claim can legally carry
+  const STAKE = 1n << 120n;              // near-u128: the largest denominators a claim can carry
   const degree = rsk.MAX_SERVICES_PER_VALIDATOR;
-  const validators = rsk.MAX_EDGES / degree;
+  const nValidators = rsk.MAX_EDGES / degree;
+
+  // deterministic xorshift — pseudorandom neighbourhoods, so no two services of one validator share
+  // an adjacent-validator set and nothing in the arithmetic collapses
+  let seed = 0x9e3779b9;
+  const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0; };
+
   const services = Array.from({ length: rsk.MAX_SERVICES }, (_, i) => ({
     id: `s${String(i).padStart(5, '0')}`,
     profit: '1',
-    alpha: { num: 1000003 + 2 * i, den: 4294967291 }, // distinct, reduced, share no factors
+    alpha: { num: 1000003 + 2 * i, den: 4294967291 }, // distinct, reduced, sharing no factors
   }));
-  const rows = Array.from({ length: validators }, (_, v) => ({
-    id: `v${String(v).padStart(5, '0')}`,
-    stake: String(STAKE + BigInt(v)),
-    services: Array.from({ length: degree }, (_, j) => services[(v * degree + j) % services.length].id),
-  }));
+  const rows = Array.from({ length: nValidators }, (_, v) => {
+    const picked = new Set();
+    while (picked.size < degree) picked.add(rnd() % services.length);
+    return {
+      id: `v${String(v).padStart(5, '0')}`,
+      stake: String(STAKE + BigInt(2 * v + 1)), // distinct and odd: subset sums share no large factor
+      services: [...picked].map((i) => services[i].id),
+    };
+  });
 
+  // (1) the fixture is actually adversarial: within a validator, the σ_{N(s)} must be distinct, or
+  //     the denominators share a factor and this measures nothing.
+  const stakeIn = new Map(services.map((s) => [s.id, 0n]));
+  for (const v of rows) for (const id of v.services) stakeIn.set(id, stakeIn.get(id) + BigInt(v.stake));
+  let worstDistinct = Infinity;
+  for (const v of rows) worstDistinct = Math.min(worstDistinct, new Set(v.services.map((id) => String(stakeIn.get(id)))).size / degree);
+  assert.ok(worstDistinct > 0.9, `fixture collapsed: only ${(worstDistinct * 100).toFixed(0)}% of σ_N distinct per validator`);
+
+  // (2) the cost
   const started = process.hrtime.bigint();
   const r = rsk.reexec(inputs(terms(1, 10), services, rows));
   const ms = Number(process.hrtime.bigint() - started) / 1e6;
 
-  assert.equal(r.computation.constrained_validators, validators);
-  // Measured ~0.55 s on the development machine. The wall is deliberately ~9x that: this asserts
-  // the shape of the cost, not the speed of whatever runs it. If it ever trips, the limits are
-  // wrong, not the machine.
+  assert.equal(r.computation.constrained_validators, nValidators);
+  // Measured ~0.91 s on the development machine, down from 8.6 s before reduction was deferred to
+  // once per validator. The wall is ~5x that: this asserts the shape of the cost, not the speed of
+  // whatever runs it. If it ever trips, the limits are wrong, not the machine.
   assert.ok(ms < 5_000, `worst accepted claim took ${ms.toFixed(0)}ms`);
-  // and the certificate stays a publishable object
-  assert.ok(r.computation.gamma_max.length < 512, `γ* was ${r.computation.gamma_max.length} chars`);
+
+  // (3) the certificate's size, against the PROVEN ceiling rather than a number I liked: the
+  //     accumulated denominator is exactly Π (α_s.num · σ_{N(s)}), so at most degree × (32 + 142)
+  //     bits — 5,568 bits, i.e. under ~1,700 digits each side of the fraction.
+  assert.ok(r.computation.gamma_max.length < 3_600, `γ* was ${r.computation.gamma_max.length} chars`);
 });
 
 // N1. free_attack_services is reported in the claim body and in the RED reason, so leaving it in the

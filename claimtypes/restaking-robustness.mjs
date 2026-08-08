@@ -72,30 +72,31 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const U128_MAX = (1n << 128n) - 1n;
 
 /// Re-execution has to terminate for a verifier with a laptop, and an attacker must not be able to
-/// make one claim cost a year of CPU. Cardinality alone does not deliver that, which the first
-/// attempt at these limits got wrong: `T_v` is an exact sum of fractions over ONE validator's
-/// services, so its numerator and denominator grow with that validator's DEGREE whenever the
-/// denominators do not share factors — and every `addFrac` then multiplies and gcd-reduces larger
-/// and larger integers. Degree, not edge count, is what makes the arithmetic expensive.
+/// make one claim cost a year of CPU. Cardinality alone does not deliver that: `T_v` is an exact sum
+/// of fractions over ONE validator's services, so its size grows with that validator's DEGREE
+/// whenever the denominators share no factors. Degree, not edge count, is the expensive dimension.
 ///
-/// MEASURED, on adversarial input: services with distinct reduced `alpha` denominators near 2^32
-/// and stakes near u128, so no term ever collapses. Cost is ≈ `0.00053 ms × edges × degree`:
+/// SIZE IS PROVEN, NOT MEASURED. Because `addFracRaw` defers reduction, a validator's accumulated
+/// denominator is exactly Π_{s ∈ N(v)} (α_s.num · σ_{N(s)}). With `α.num` a u32 and σ_{N(s)} at most
+/// MAX_VALIDATORS · u128, that is at most `degree × (32 + 142)` bits — 5,568 bits at the cap below,
+/// so `γ*` can never print longer than about 3,400 characters, on any graph the type accepts.
 ///
-///     degree   edges     time      γ* length
-///        512    8,192   7,422 ms    4,397 chars   ← the shape Codex's re-review reported
-///        128   32,768   2,307 ms    1,286 chars
-///         64   32,768   1,080 ms      699 chars
-///         32   32,768     549 ms      383 chars   ← the limits below
+/// TIME IS MEASURED, on genuinely adversarial input: pseudorandom neighbourhoods so the σ_{N(s)}
+/// inside one validator are pairwise distinct, `alpha` denominators distinct and reduced, stakes
+/// near u128 — so nothing collapses. (An earlier fixture assigned each validator a contiguous block
+/// of services, which gave all of them the SAME σ_{N(s)} and quietly collapsed the arithmetic; it
+/// measured 587 ms where the true worst case measures 8,556 ms. The boundary test now asserts its
+/// own adversarial-ness so that cannot recur.)
 ///
-/// So the degree cap is the real bound and the edge cap rides on it. The pair below buys a worst
-/// accepted claim of roughly **0.6 s and a γ* under 512 characters** — the second number matters as
-/// much as the first, since γ* is published in the claim body and hashed into its id, and a 4 kB
-/// certificate is not a publishable object however fast it was computed.
+///     degree   edges    time (stepwise gcd)   time (deferred)   γ* length
+///         32   32,768         8,556 ms             906 ms        2,503 chars   ← the limits below
+///         32   16,384         3,502 ms             439 ms        2,489 chars
+///         16   32,768         1,079 ms             371 ms        1,281 chars
 ///
-/// Headroom against reality: the largest live restaking sets are on the order of a few hundred
-/// operators against ~20 services, so ~8k edges at degree ~20. If a real set outgrows these, the
-/// limits are part of the canonical input domain — changing them is cheap now and expensive once a
-/// Rust twin exists, so re-measure and change them deliberately rather than raising them in place.
+/// Headroom against reality: the largest live restaking sets are a few hundred operators against
+/// ~20 services, so ~8k edges at degree ~20 — roughly 4x inside these limits. If a real set outgrows
+/// them, they are part of the canonical input domain: cheap to change now, expensive once a Rust
+/// twin exists, so re-measure and change them deliberately rather than raising them in place.
 export const MAX_SERVICES = 4_096;
 export const MAX_VALIDATORS = 16_384;
 export const MAX_SERVICES_PER_VALIDATOR = 32;
@@ -210,10 +211,18 @@ function gcd(a, b) {
   return a;
 }
 const ZERO = { n: 0n, d: 1n };
-function addFrac(a, b) {
-  const n = a.n * b.d + b.n * a.d, d = a.d * b.d;
-  const g = gcd(n, d);
-  return g > 1n ? { n: n / g, d: d / g } : { n, d };
+/// Accumulate WITHOUT reducing. Reducing at every step looks tidy and is where the cost was: gcd on
+/// a multi-thousand-bit pair, once per incident service, is cubic in a validator's degree and made
+/// the worst accepted claim take 8.6s. Deferring it to one reduction per validator is ~9x faster on
+/// the same input and gives the identical fraction — and, more usefully, it makes the size of the
+/// intermediate PROVABLE rather than measured: the denominator is exactly Π_{s ∈ N(v)} (α_s.num ·
+/// σ_{N(s)}), so it can never exceed `degree × (32 + bits(σ_N))` bits, whatever the graph looks like.
+function addFracRaw(a, b) {
+  return { n: a.n * b.d + b.n * a.d, d: a.d * b.d };
+}
+function reduceFrac(f) {
+  const g = gcd(f.n, f.d);
+  return g > 1n ? { n: f.n / g, d: f.d / g } : f;
 }
 /// −1, 0, +1 for a ⋚ b. Denominators are always positive here.
 const cmpFrac = (a, b) => { const l = a.n * b.d, r = b.n * a.d; return l < r ? -1 : l > r ? 1 : 0; };
@@ -257,8 +266,9 @@ export function gammaMax(services, validators) {
       const s = services.get(sid);
       if (s.profit === 0n) continue;
       // π_s / (α_s · σ_{N(s)}) = (π_s · α.den) / (α.num · σ_{N(s)})
-      t = addFrac(t, { n: s.profit * s.alpha.d, d: s.alpha.n * stakeIn.get(sid) });
+      t = addFracRaw(t, { n: s.profit * s.alpha.d, d: s.alpha.n * stakeIn.get(sid) });
     }
+    t = reduceFrac(t); // once per validator, not once per service — see `addFracRaw`
     if (t.n === 0n) continue; // nothing corruptible through v: no constraint
     constrained++;
     const g = { n: t.d - t.n, d: t.n }; // γ*_v = (1 − T_v)/T_v

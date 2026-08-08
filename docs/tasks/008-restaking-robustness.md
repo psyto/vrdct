@@ -206,3 +206,46 @@ live restaking sets are a few hundred operators against ~20 services, so ~8k edg
 If a real set outgrows these, the limits are part of the canonical input domain — cheap to change
 now, expensive once a Rust twin exists, so they should be re-measured and changed deliberately
 rather than raised in place.
+
+---
+
+## Addendum 3 — Codex final re-review: the boundary fixture was not worst case
+
+Correct on both counts, and the fixture failure is the more useful of the two.
+
+**The fixture was not adversarial.** It assigned each validator the contiguous service block
+`[v·d, v·d+d)`, so every service in a block shared the *same* adjacent-validator set, every
+denominator carried an identical `σ_{N(s)}` factor, and the gcd collapsed it on the first step. It
+measured 587 ms where the true worst case measures **8,556 ms** — so the limits chosen from it were
+chosen from a number that meant nothing. Codex's independent construction reported 7.92 s; with
+pseudorandom neighbourhoods (σ_N pairwise distinct within a validator, 0.97 by measurement) the same
+shape reproduces at 8,556 ms here.
+
+**The real hot spot was reducing at every step.** `addFrac` ran a Euclidean gcd on a multi-thousand-
+bit pair once per incident service, which is cubic in a validator's degree. Deferring reduction to
+**once per validator** gives the identical fraction and is ~9× faster on the same adversarial input:
+
+| degree | edges | stepwise gcd | deferred | `γ*` |
+| ---: | ---: | ---: | ---: | ---: |
+| 32 | 32,768 | 8,556 ms | **906 ms** | 2,503 chars |
+| 32 | 16,384 | 3,502 ms | 439 ms | 2,489 chars |
+| 16 | 32,768 | 1,079 ms | 371 ms | 1,281 chars |
+
+So the limits stand at `MAX_SERVICES_PER_VALIDATOR = 32` / `MAX_EDGES = 32_768`, now at ~0.9 s worst
+case rather than 8.6 s — and with ~4× headroom against the largest live sets (a few hundred
+operators against ~20 services, ~8k edges at degree ~20).
+
+Deferring reduction bought something better than speed: **the size bound is now provable rather than
+measured.** The accumulated denominator is exactly `Π_{s ∈ N(v)} (α_s.num · σ_{N(s)})`, so it is at
+most `degree × (32 + 142)` bits — 5,568 bits at the cap, i.e. `γ*` under ~3,400 characters on *any*
+graph the type accepts. The "under 512 characters" budget in Addendum 2 was a number I invented and
+it was simply wrong; it is replaced by the derived ceiling, which the test asserts.
+
+**The boundary test now proves its own adversarial-ness** before it asserts anything about cost: it
+computes the per-validator fraction of distinct `σ_{N(s)}` and fails if it drops below 0.9. That is
+the actual lesson — a cost test that does not verify its input is adversarial measures the fixture,
+not the bound.
+
+**Branch hygiene.** Codex was right that `1dd047b` had landed on the review branch rather than
+`cc/restaking-robustness`, and that the push therefore did not move the task branch. Cherry-picked
+to `40dd8b2` on `cc/restaking-robustness`; this work continues from there.

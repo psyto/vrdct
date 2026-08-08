@@ -79,12 +79,12 @@ and as a decimal-string basis-point floor, and a validator holding **zero** stak
 constraint at all, because `σ_v` cancels out of the condition only when it is positive.
 
 Exactness has a price, and the claim domain is where it gets paid: `T_v` is a sum of fractions over
-**one** validator's services, so its digits grow with that validator's degree. The input limits are
-therefore chosen from measured adversarial cost rather than from graph size — a cap of 32 services
-per validator and 32,768 edges, which puts the worst claim the type will accept at roughly 0.6s and
-a `γ*` under 512 characters. The second number matters as much as the first: `γ*` is published in
-the claim body and hashed into its id, and a 4 kB certificate is not a publishable object however
-fast it was computed.
+**one** validator's services, so its size grows with that validator's degree. The limits are
+therefore set from measured adversarial cost rather than graph size — at most 32 services per
+validator and 32,768 edges, putting the worst claim the type accepts at about **0.9s**. Size is
+better than measured, it is *proven*: because reduction is deferred to once per validator, the
+accumulated denominator is exactly `Π (α_s.num · σ_{N(s)})`, hence at most `degree × 174` bits, so
+`γ*` cannot print longer than ~3,400 characters on any accepted graph.
 
 **Honest scope.** Corollary 2 is *sufficient, not necessary*: `GREEN` means the network provably
 sustains the buffer, but `RED` does **not** mean an attack exists — it means the checkable
