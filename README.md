@@ -37,7 +37,54 @@ Each surface is a pluggable module —
 - `reserve-solvency` — is a protocol's recomputed backing ≥ its liability? *(Redde lineage)*
 - `closed-market-liquidation-soundness` — does a venue liquidate tokenized equities against a price
   that updated while the underlying market was closed, with no guard? *(Vesper lineage)*
+- `restaking-robustness` — what overcollateralization buffer does a restaking network actually
+  certify, and how far can a small shock cascade? Offline-complete, **not yet wired to `encode.mjs`
+  or the on-chain twin.**
 - *depeg, exploit, agent-escrow — the roadmap.*
+
+### The number restaking dashboards don't publish
+
+Restaking reuses one validator's stake across many services, so a loss anywhere is a loss of security
+everywhere that stake was pledged. What gets published is **TVL** — which says how much is pledged,
+not whether pledging it *that way* is survivable.
+
+`restaking-robustness` settles the survivable-ness, and unlike every other surface here the
+definition of the invariant is **not ours**. It is Durvasula & Roughgarden, [*Robust Restaking
+Networks*](https://arxiv.org/abs/2407.21785) (ITCS '25): a restaking graph is secure with **γ-slack**
+when every attacking coalition satisfies `(1+γ)·π_A ≤ σ_B`, and their Theorem 1 bounds the cascade
+from an initial shock of a `ψ` fraction of all stake at
+
+```
+R_ψ(G) < (1 + 1/γ) · ψ          ← tight (Theorems 2, 3, 8)
+```
+
+A 10% buffer means a sudden 0.1% loss cannot end in losing more than 1.1%. At `γ = 0`, their
+Theorem 2 exhibits a network meeting EigenLayer's own sufficient condition where an arbitrarily small
+shock loses *everything* — that construction is in our test suite, and this type reports exactly zero
+buffer for it.
+
+Checking security exactly quantifies over every coalition and is coNP-hard, so what makes a public
+board possible is their **Corollary 2**, an efficiently checkable per-validator condition in which
+`σ_v` cancels from both sides — making the certificate a property of the graph's *shape*:
+
+```
+γ* = min_{v ∈ V} (1/T_v) − 1        where  T_v = Σ_{s ∈ N(v)} π_s / (α_s · σ_{N(s)})
+```
+
+The paper proposes exactly this as *"an easily computed risk measure"* a restaking protocol could
+expose to its participants. Nobody exposes it. `GREEN` is `γ* ≥` the declared buffer, `YELLOW` is a
+positive but smaller one, `RED` is none at all. All of it in exact rational arithmetic — `α_s = 1/3`
+is the common case and is precisely what a float cannot hold.
+
+**Honest scope.** Corollary 2 is *sufficient, not necessary*: `GREEN` means the network provably
+sustains the buffer, but `RED` does **not** mean an attack exists — it means the checkable
+certificate is unavailable. Saying *"not certified"* rather than *"broken"* is not hedging; deciding
+the latter is coNP-hard. And `π_s`, the profit from corrupting a service, is **not on-chain state** —
+the paper assumes the `π_s` are given and calls estimating them an open research direction. So they
+are pinned in the claim and declared before the fact, and the verdict is a claim about the network
+*under that estimate*. The estimate is public and contestable; everything downstream of it is
+mechanical. This also implements the **global** guarantee only; the paper's local, per-coalition
+guarantees (§5) need attack headers and stable attacks and are not here.
 
 ## Standing board
 
