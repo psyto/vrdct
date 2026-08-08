@@ -136,3 +136,44 @@ test('a market resolves off the re-executed verdict, not off a report of it', ()
   assert.equal(r.resolved, 'YES');
   assert.equal(r.reproduces, true);
 });
+
+// Found while preparing this branch for review, not by review. The midpoint test only proves the
+// pair straddles SOME closed instant. Over a longer span the CLOSED predicate flips many times, so
+// each bisection converges on whichever boundary is nearest its own end — and both prints can sit
+// within an honest maxLagSecs of a genuine bell while belonging to different closures.
+test('prints from different closures settle nothing, however close to a bell they sit', () => {
+  // Fri 2026-08-07 19:55Z (OPEN) → Wed 2026-08-12 13:35Z (OPEN). The midpoint lands Mon 04:45Z,
+  // which is CLOSED, so the old straddle test passed. Between them: Mon and Tue trade in full.
+  const close = { price: px(10000000000), blockTime: unix(2026, 8, 7, 19, 55) };
+  const open = { price: px(9000000000), blockTime: unix(2026, 8, 12, 13, 35) };
+  const r = gap.reexec(inputs(close, open));
+
+  assert.equal(r.computation.straddles_closure, true);     // the old test still says yes
+  assert.equal(r.computation.close_instant, FRI_BELL - 1); // Friday's bell
+  assert.equal(r.computation.open_instant, unix(2026, 8, 12, 13, 30)); // ...and WEDNESDAY's
+  assert.equal(r.computation.sessions_inside, 2);          // Monday and Tuesday traded in between
+  assert.equal(r.computation.one_closure, false);
+  assert.equal(r.verdict.flag, 'STALE');
+  assert.match(r.verdict.reason, /span 2 further trading sessions rather than one closure/);
+
+  // and it is not maxLagSecs that saves us: both prints are within 300s of a real bell
+  assert.ok(r.computation.close_lag_secs <= 300 && r.computation.open_lag_secs <= 300);
+  const permissive = gap.reexec(inputs(close, open, terms({ maxLagSecs: 1_000_000 })));
+  assert.equal(permissive.verdict.flag, 'STALE');
+
+  // the honest one-closure claim over the same weekend still settles
+  const good = gap.reexec(inputs(close, { price: px(9000000000), blockTime: MON_BELL + 10 }));
+  assert.equal(good.computation.sessions_inside, 0);
+  assert.equal(good.computation.one_closure, true);
+  assert.equal(good.verdict.flag, 'RED');
+});
+
+test('a holiday-lengthened closure is still one closure', () => {
+  // Thanksgiving 2026: Wed 11-25 closes, Thu 11-26 is a holiday, Fri 11-27 is a HALF DAY (13:00 ET).
+  const wedClose = { price: px(10000000000), blockTime: unix(2026, 11, 25, 20, 59) };
+  const friOpen = { price: px(10010000000), blockTime: unix(2026, 11, 27, 14, 32) };
+  const r = gap.reexec(inputs(wedClose, friOpen, terms({ maxLagSecs: 600 })));
+  assert.equal(r.computation.sessions_inside, 0, 'a holiday adds no session');
+  assert.equal(r.computation.one_closure, true);
+  assert.equal(r.verdict.flag, 'GREEN'); // 10 bps, short of the declared 500
+});

@@ -49,6 +49,29 @@ Each surface is a pluggable module —
   or the on-chain twin.**
 - *depeg, exploit, agent-escrow — the roadmap.*
 
+### A market that does not exist yet
+
+Everyone holding a tokenized equity across a closure is exposed to the reopen, and there is no
+instrument shaped like that exposure: a perp hedges a *price*, but inside the closure the perp has no
+reference either, so it hedges a broken number with a broken number. The gap is an **event**, and the
+only unambiguous number attached to it is the reopen print.
+
+Settling that event needs one fact nobody in the trade can supply neutrally — when the closure began
+and ended. A venue that defines its own reopen instant is marking its own exam. `core/campana.mjs`
+derives it as a pure function of `(timestamp, calendar)`, so the boundary is re-executable and the
+market can exist at all.
+
+**Honest scope.** The claim does not receive the boundary instants; it **re-derives** them by
+bisection and rejects prints further than a declared `maxLagSecs` from them, which bounds — but does
+not eliminate — the pinner's freedom to choose which print to pin. Two residuals are stated rather
+than papered over. It cannot prove a pinned print is the *first* after the reopen; that is the
+omission problem, and it is closed the way `closed-market-liquidation-soundness` closes it — a
+challenger holding a print nearer the boundary disputes, and the nearer print wins. And a pair of
+prints must straddle **exactly one** closure: `maxLagSecs` alone does not enforce that, because two
+prints can each sit beside a genuine bell while belonging to different closures, which would report
+days of ordinary trading as one closure's gap. Re-execution therefore requires that no trading
+session opens between the two derived instants.
+
 ### Settling silence — and the boundary past which nobody can
 
 Every other type above settles a **safety** question: a number came out, re-execute it, and a wrong

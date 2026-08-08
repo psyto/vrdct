@@ -105,6 +105,24 @@ export function canonicalInputs(inputs) {
   return { close, open, thresholdBps, maxLagSecs, direction };
 }
 
+/// The longest US-equities closure is a holiday weekend, a little over four days. A pinned pair
+/// further apart than this cannot be describing one closure, and the cap also bounds the day walk in
+/// `sessionOpensStrictlyBetween`.
+const MAX_CLOSURE_SECS = 14 * 86400;
+
+/// How many trading sessions OPEN strictly inside (a, b). Probing one instant per ET day is enough:
+/// 15:00Z is 11:00 EDT / 10:00 EST, inside every regular and half-day session, so `session_open_ts`
+/// is exactly that day's bell. Zero is the only admissible answer — see `reexec`.
+function sessionOpensStrictlyBetween(a, b, cal = CALENDAR_2026) {
+  let n = 0;
+  for (let t = a; t < b + 86400; t += 86400) {
+    const probe = new Date(t * 1000);
+    const bell = marketStatus(Date.UTC(probe.getUTCFullYear(), probe.getUTCMonth(), probe.getUTCDate(), 15) / 1000, cal).session_open_ts;
+    if (bell !== null && bell > a && bell < b) n++;
+  }
+  return n;
+}
+
 // Last second in [lo, hi] that is not CLOSED. Requires !isClosed(lo) && isClosed(hi): over that
 // range the predicate flips exactly once, so bisection is exact. 32 evaluations of a pure function.
 function lastOpenSecond(lo, hi) {
@@ -146,12 +164,23 @@ export function reexec(inputs) {
   const straddles = closeOpen && openOpen && isClosed(midpoint);
 
   let closeInstant = null, openInstant = null, closeLagSecs = null, openLagSecs = null, lagsOk = false;
+  let sessionsInside = null, oneClosure = false;
   if (straddles) {
     closeInstant = lastOpenSecond(close.blockTime, midpoint);
     openInstant = firstOpenSecond(midpoint, open.blockTime);
+    // ONE closure, not several. The midpoint test only proves the pair straddles SOME closed
+    // instant; over a longer span the predicate flips many times and each bisection converges on
+    // whichever boundary is nearest its own end. A Friday close print with a print from the
+    // following Wednesday then derives Friday's bell and Wednesday's bell — both genuine, both
+    // within any honest maxLagSecs — and reports five days of ordinary trading, across two full
+    // sessions, as the gap one closure produced. maxLagSecs cannot catch that: the prints really
+    // are next to bells, just not to the same closure's. So require that no session opens between
+    // the two instants, which is true of exactly one closure and of nothing else.
+    sessionsInside = sessionOpensStrictlyBetween(closeInstant, openInstant);
+    oneClosure = sessionsInside === 0 && openInstant - closeInstant <= MAX_CLOSURE_SECS;
     closeLagSecs = closeInstant - close.blockTime; // how stale the close print is vs the closing bell
     openLagSecs = open.blockTime - openInstant;    // how late the reopen print is vs the opening bell
-    lagsOk = closeLagSecs <= maxLagSecs && openLagSecs <= maxLagSecs;
+    lagsOk = oneClosure && closeLagSecs <= maxLagSecs && openLagSecs <= maxLagSecs;
   }
 
   // 2. The move. Computed regardless, so a STALE claim still shows what it would have said.
@@ -164,7 +193,9 @@ export function reexec(inputs) {
   const flag = !straddles || !lagsOk ? 'STALE' : breached ? 'RED' : 'GREEN';
   const reason = !straddles
     ? 'the pinned prints do not straddle a market closure'
-    : !lagsOk
+    : !oneClosure
+      ? `the pinned prints span ${sessionsInside} further trading session${sessionsInside === 1 ? '' : 's'} rather than one closure`
+      : !lagsOk
       ? `a pinned print is further than ${maxLagSecs}s from its boundary (close ${closeLagSecs}s, open ${openLagSecs}s)`
       : breached
         ? `the closure produced ${observedBps} bps ${direction}, at or beyond the declared ${thresholdBps}`
@@ -178,6 +209,8 @@ export function reexec(inputs) {
       close_lag_secs: closeLagSecs,
       open_lag_secs: openLagSecs,
       lags_ok: lagsOk,
+      sessions_inside: sessionsInside,
+      one_closure: oneClosure,
       closure_secs: straddles ? openInstant - closeInstant : null,
       signed_bps: String(signedBps),
       observed_bps: String(observedBps),
@@ -193,6 +226,7 @@ export function checks(claim, r) {
   return [
     ['closure straddle reproduces', r.computation.straddles_closure === claim.computation.straddles_closure, `${r.computation.straddles_closure}`],
     ['boundary instants reproduce', r.computation.close_instant === claim.computation.close_instant && r.computation.open_instant === claim.computation.open_instant, `${r.computation.close_instant} → ${r.computation.open_instant}`],
+    ['exactly one closure spanned', r.computation.one_closure === claim.computation.one_closure, `${r.computation.sessions_inside} sessions inside`],
     ['print lags within terms', r.computation.lags_ok === claim.computation.lags_ok, `close ${r.computation.close_lag_secs}s · open ${r.computation.open_lag_secs}s`],
     ['gap reproduces', r.computation.observed_bps === claim.computation.observed_bps, `${r.computation.observed_bps} bps`],
   ];
