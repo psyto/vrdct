@@ -119,17 +119,27 @@ export function chunksOf(claimTypeId, bytes) {
   return out;
 }
 
-/// The full commitment: what gets pinned on-chain at `open_market`, and the chunks that settle it.
-export function inputsCommitment(claim, { calendarVersion = CAL_2026_VERSION } = {}) {
-  const { claimTypeId, nRecords, bytes } = encodeRecords(claim);
+/// The canonical input hash chain: `h_0 = sha256(header)`, then `h_i = sha256(h_{i-1} || chunk_i)`.
+/// Twinned with the program's `header_digest` plus the `feed` fold, so anyone holding only the
+/// chunks — a cache, a re-fetch, an archive — can check them against a Market's `inputs_hash`
+/// without rebuilding a claim. One implementation on purpose: a second reader of this rule is how
+/// a JS and an on-chain verdict come apart.
+export function commitmentDigest({ claimTypeId, calendarVersion, nRecords, chunks }) {
   const header = Buffer.alloc(9);
   header.writeUInt8(claimTypeId, 0);
   header.writeUInt32LE(calendarVersion, 1);
   header.writeUInt32LE(nRecords, 5);
 
   let digest = sha256(header);
-  const chunks = chunksOf(claimTypeId, bytes);
   for (const c of chunks) digest = sha256(digest, c);
+  return digest;
+}
+
+/// The full commitment: what gets pinned on-chain at `open_market`, and the chunks that settle it.
+export function inputsCommitment(claim, { calendarVersion = CAL_2026_VERSION } = {}) {
+  const { claimTypeId, nRecords, bytes } = encodeRecords(claim);
+  const chunks = chunksOf(claimTypeId, bytes);
+  const digest = commitmentDigest({ claimTypeId, calendarVersion, nRecords, chunks });
 
   return { claimTypeId, calendarVersion, nRecords, inputsHash: digest, chunks, bytes };
 }

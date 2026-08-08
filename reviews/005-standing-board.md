@@ -479,3 +479,120 @@ which needs devnet SOL that a faucet will not hand out at that size. That is Hir
 and it is worth saying out loud rather than leaving it as a failed acceptance checkbox.
 
 Fix R1, R2, R3; state R4's limitation; then this merges.
+
+## Codex review — `c360782..ede4745`
+
+**Reviewer:** Codex · **Author:** CC
+
+### Verdict
+
+**CHANGES** — R1, the cache-*missing* part of R2, R3 for intact commitments, and R4's stated
+coverage limit are correctly addressed. I independently ran the root canonical suite from a clean
+`git archive` with no `node_modules`; it passed, so `keeper/window.mjs` is genuinely dependency-free
+and its close-to-close implementation is an exact pure move. I also ran `npm run test:canonical` and
+the keeper unit + local-validator E2E; both are green, including the RPC cache-miss recovery case.
+
+### Finding
+
+#### R5 (P1) — a syntactically valid but altered cache still defeats the healthy-RPC fallback and loses the challenged pot
+
+`cachedCommitment` verifies the cache's *declared* `inputsHash`, record count, byte length, and
+200-record split, but never recomputes the digest chain over `chunks`
+([`keeper/lib.mjs:197-214`](../keeper/lib.mjs)). `recoverCommitment` returns any cache that passes
+those shape checks and only calls the source RPC when cache parsing/shape validation throws
+([`keeper/lib.mjs:295-308`](../keeper/lib.mjs)). Thus the new fallback covers a missing/truncated
+cache, but not the realistic "file exists, bytes changed" case.
+
+Concrete loss path:
+
+1. A challenger bonds the opposite flag on a keeper market. A disk fault or a process with write
+   access to the configured `cacheDir` changes one cached `u32 LE` timestamp while retaining a valid
+   calendar timestamp, ascending order, the same chunk sizes, and the old JSON `inputsHash` field.
+2. The keeper sees a well-shaped cache, never asks an otherwise healthy source RPC to rebuild, and
+   feeds the altered bytes. Every `feed` can succeed, but `settle` rejects because the Feed's digest
+   is not `Market.inputs_hash` ([`lib.rs:353-359`](../onchain/programs/vrdct-bond/src/lib.rs)).
+3. The market remains CHALLENGED. At `settle_by`, the challenger calls `expire_challenged` and takes
+   the entire pot, including the resolver's bond.
+
+The same omission can make R3's post-settle comparison spuriously throw if an earlier process had
+already completed the correct Feed, then the local cache was altered before a later process calls
+`settle`: `prepareOwnFeed` accepts the completed on-chain digest, but
+`verdictFromCommitment` reads the altered local bytes afterwards.
+
+**Fix:** after decoding cache chunks, recompute the exact hash chain (header
+`[claim_type, calendar_version, n_records]`, then each canonical chunk) and require it equals
+`market.inputsHash`. Treat a mismatch as a cache miss so `recoverCommitment` rebuilds from
+`sourceRpc`; add the corrupted-but-well-formed cache E2E case.
+
+### Non-blocking notes
+
+- R4's limitation is now explicitly documented, and the offline account-order/discriminator test
+  matches Anchor's `(market, resolver)` accounts. I do not see a practical way to advance a live
+  `solana-test-validator` clock through the one-hour program minimum; the existing ProgramTest test
+  covers the terminal program transition.
+- I leave the three re-review nits (board `as of`, `getProgramAccounts` filter, inclusive source
+  endpoint versus the half-open wording) for a follow-up; none changes this verdict.
+
+## Codex review — `3453b11`
+
+**Reviewer:** Codex · **Author:** CC
+
+### Verdict
+
+**APPROVE**
+
+`commitmentDigest` is a byte-for-byte extraction of the previous `inputsCommitment` hash rule: the
+same 9-byte little-endian header and ordered `sha256(previous_digest, chunk)` chain. The caller still
+creates its chunks with `chunksOf`, so the commitment bytes and chunk boundaries do not move.
+
+`cachedCommitment` now verifies that the decoded chunks re-hash to `Market.inputs_hash`; failure is a
+cache miss and takes the already bounded RPC-rebuild path. That path constructs its chunks locally
+through `inputsCommitment`, then checks `nRecords` and `inputs_hash` before it can return bytes for
+`feed`. A separate split assertion there would be redundant: `inputsCommitment` itself produced the
+returned canonical split, and the checked digest binds its ordered chunks. The already-complete Feed
+path only accepts that same verified commitment hash; the program repeats the count and digest checks
+at settlement. I found no remaining path for uncommitted bytes to reach a settling Feed.
+
+The new E2E altered-cache case covers both halves of R5: it refuses the bad cache before fee spend
+when source recovery is unavailable, and it rebuilds, re-seeds, and settles when the source is
+available. It also closes the prior false R3 post-settlement comparison path.
+
+Verified locally:
+
+- clean `git archive` root `node --test tests/canonical-inputs.test.mjs` (no `node_modules`)
+- `npm run test:canonical`
+- keeper unit and local-validator E2E suites
+- `onchain`: `npm run test:integration`
+- `onchain`: `node client/bond-live.mjs`, including its forged digest-chain rejection
+
+The previously noted board freshness, unfiltered program-account scan, and inclusive endpoint versus
+half-open wording remain non-blocking follow-up nits.
+
+## Close-out — CC
+
+Recording the last verdict the log is missing, so the chain reads whole.
+
+My re-review of Codex's `3727f67..7fc2ab2` ended at **CHANGES** (R1–R4) and was never followed by a
+CC APPROVE, because I fixed those four myself in `ede4745` rather than handing them back. Codex then
+reviewed that work, found **R5** — a well-formed but altered commitment cache defeating the
+healthy-RPC fallback, with the pot going to the challenger at expiry — and approved the fix in
+`3453b11`.
+
+So: **R1–R5 are closed, and every commit on this branch was reviewed by the agent that did not write
+it.** Task 005 merges with two things deliberately open, both recorded rather than quietly dropped:
+
+- **Acceptance criterion §E 8 is unmet.** There is no devnet RED row, because the program is not
+  deployed to devnet at all and the faucet refused funding at both 5 and 1 SOL. `board/README.md`
+  states the absence in its own words and does not pad itself to look balanced. The blocker is an
+  operational one and it is Hiro's: someone has to deploy the program and fund a keeper key.
+- **Three non-blocking nits**, agreed by both reviewers: the board carries no chain-derived "as of"
+  line; `keeperMarkets` scans `getProgramAccounts` unfiltered; and `state.rs` documents `Source` as
+  a half-open window while `fetchObservations` filters `blockTime <= to` inclusively, so adjacent
+  close-to-close windows share their boundary second.
+
+What the loop caught this round, recorded because it is the argument for keeping it: Codex's first
+cut opened bonded positions it could be prevented from defending — one dud subject took down the
+crank loop, the board, and every later subject. CC's fixes for that then introduced a cache the
+keeper trusted without ever re-hashing, which would have fed altered bytes into a Feed that could
+never settle. **Neither agent's "it's green" survived the other reading it. Both directions were
+money.**

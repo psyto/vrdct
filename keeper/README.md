@@ -9,13 +9,16 @@ position rather than opening another one.
 
 It scans **every** challenged market opened by its key, including positions no longer named in the
 current config, then completes its keeper-owned Feed PDA and calls `settle`. The exact canonical
-chunks are persisted locally before the bond is posted; `settle` verifies their count and digest
-against the Market commitment, so history loss at the source RPC is a board warning, not a reason
-to abandon custody. This matters: after `settle_by`, `expire_challenged` can pay the whole pot to
-the challenger. A completed feed earns the 10% cranker reward; the reward recipient is the Feed
-owner, not an arbitrary transaction caller. After `challenge_until`, the keeper also calls
-`claim_uncontested` to recover an uncontested resolver bond; it intentionally does not close the
-Market, because that PDA is the window's idempotency key.
+chunks are persisted locally before the bond is posted, and the source RPC is the fallback when that
+cache is gone — a rebuilt commitment is checked against the Market's `inputs_hash` before any fee is
+spent, and re-seeds the cache on success. Neither path is trusted alone and neither is required:
+`settle` verifies the Feed's count and digest against the Market commitment regardless, so cache
+loss and source-history loss are each survivable, and only losing both abandons custody. This
+matters: after `settle_by`, `expire_challenged` can pay the whole pot to the challenger. A completed
+feed earns the 10% cranker reward; the reward recipient is the Feed owner, not an arbitrary
+transaction caller. After `challenge_until`, the keeper also calls `claim_uncontested` to recover an
+uncontested resolver bond; it intentionally does not close the Market, because that PDA is the
+window's idempotency key.
 
 ## Configure and run
 
@@ -42,16 +45,30 @@ row contains the source, the re-executed flag, economic/deadline state, and an e
 `vrdct check` command carrying both RPC endpoints. A missing row is preferable to a row that cannot
 be independently falsified.
 
-## Local-validator test
+## Tests
 
-Start a local validator with the program binary, then run the committed E2E. It derives a
-close-to-close window from a finalized source observation's **chain blockTime**, then verifies a
-quiet subject cannot stop another open or board write; an old-question/cache-missing market cannot
-stop a cached challenged market from settling; and source loss becomes a visible board skip.
+`npm run test:unit` needs nothing — no validator, no RPC. It covers config normalization and pins
+the `claim_uncontested` account order.
+
+The E2E needs a local validator with the program binary. It derives a close-to-close window from a
+finalized source observation's **chain blockTime**, then verifies that a quiet subject cannot stop
+another open or the board write; that an old-question/cache-missing market cannot stop a cached
+challenged market from settling; that a cacheless market still recovers through the source RPC; and
+that source loss becomes a visible board skip.
 
 ```bash
 solana-test-validator --reset --bpf-program 7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS onchain/target/program-test-deploy/vrdct_bond.so
-VRDCT_NODE=/path/to/node-20-or-newer npm run test:keeper
+VRDCT_NODE=/path/to/node-20-or-newer npm run test:keeper   # unit, then E2E
 ```
 
-The test is deliberately local only; it does not need or use a devnet keypair.
+The tests are deliberately local only; they do not need or use a devnet keypair.
+
+**Known coverage gap.** The `claim_uncontested` path is not exercised end-to-end. The program's
+`MIN_CHALLENGE_WINDOW_SECS` is one hour and `solana-test-validator` cannot warp its clock, so the
+deadline is unreachable here; the program-side behaviour is covered by
+`expiry_and_uncontested_are_terminal_exits` in `onchain/tests/state_machine.rs`, and the keeper's
+instruction encoding by the unit test above. What remains untested is the two joined together.
+
+Trading-day window selection lives in [`window.mjs`](./window.mjs) and is deliberately dependency-
+free, so the root `npm run test:canonical` covers it without the root package acquiring a Solana
+client.
