@@ -170,6 +170,27 @@ better than measured, it is *proven*: because reduction is deferred to once per 
 accumulated denominator is exactly `Π (α_s.num · σ_{N(s)})`, hence at most `degree × 174` bits, so
 `γ*` cannot print longer than ~3,400 characters on any accepted graph.
 
+**Feeding it a real network** (`adapters/jito-restaking.mjs`) is where the sourced/declared line gets
+drawn in public. Jito (Re)staking on Solana mainnet supplies the *shape* — NCNs are services,
+operators are validators, an edge is an `NcnOperatorState` with both opt-in toggles active, stake
+comes from `VaultOperatorDelegation` — all decoded from public account state at offsets the account
+sizes decompose to exactly. What it does **not** supply is three things the adapter refuses to
+invent: `π_s`, `α_s` (an NCN's corruption threshold is a property of its consensus protocol, and the
+registry does not record it), and **prices**. Mainnet stake is denominated in **seventeen different
+mints**, so it is not summable at all without a declared numéraire — a result, not an obstacle. For a
+SOL liquid-staking token a floor of 1 SOL needs no oracle, since an LST only appreciates against SOL;
+anything that is not an LST does. Conversion floors, so a converted total is never larger than the
+truth — though a wrong price *ratio* between two mints tilts the graph's shape, and no rounding rule
+protects against that.
+
+Two more honest edges. Jito's stake is per `(vault, operator, NCN)` while the paper's is one `σ_v`
+backing every service a validator serves, so `σ_v` is taken as the **minimum** over that operator's
+NCNs of the stake reachable to each — under-stating it under-states both `σ_{N(s)}` and the attack
+cost `σ_B`, so the certificate can only come out weaker. And `getProgramAccounts` takes no slot, so
+nobody can ask an RPC for these accounts *as of* a past slot: **a Jito snapshot is reproducible while
+it is current and not afterwards**, the same position `reserve-solvency` is in. It is not a historical
+claim.
+
 Those limits are a defensible *computational domain*, not a finding that every live operator fits
 inside one. The consequence lands on ingestion: a snapshot with a validator past the degree cap must
 be **rejected, never truncated**. Dropping edges to make a graph admissible removes constraints, and
