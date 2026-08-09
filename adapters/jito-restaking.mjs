@@ -314,7 +314,10 @@ export function fingerprint(read) {
   return rows.join('\n');
 }
 
-/// Read the network TWICE and refuse if anything moved between the reads.
+/// Read the network TWICE and refuse if anything was seen to move between the reads.
+///
+/// Named `observe`, not `snapshot`. The old name asserted the thing three review rounds went into
+/// disproving, and a name that overclaims is how the belief survived them.
 ///
 /// WHAT THIS ESTABLISHES, AND — after three rounds of getting this wrong — WHAT IT DOES NOT.
 ///
@@ -349,7 +352,7 @@ export function witnessEndpointsEqual(a, b) {
   }
 }
 
-export async function snapshot(rpcUrl, { gapMs = 5000 } = {}) {
+export async function observe(rpcUrl, { gapMs = 5000 } = {}) {
   const a = await readOnce(rpcUrl);
   // The two witnesses have to be separated in time or they bound no window. A load-balanced endpoint
   // also serves responses from banks a slot or two apart, so the gap has to clear that jitter too —
@@ -357,7 +360,7 @@ export async function snapshot(rpcUrl, { gapMs = 5000 } = {}) {
   await sleep(gapMs);
   const b = await readOnce(rpcUrl);
   witnessEndpointsEqual(a, b);
-  // Nothing moved across [a.slotMin, b.slotMax], so every toggle is judged at the oldest slot seen —
+  // Nothing was SEEN to move between the endpoints. Every toggle is judged at the oldest slot seen —
   // the least generous reading, since an earlier slot can only make a switched-on toggle WarmUp.
   const at = a.slotMin;
   return {
@@ -404,7 +407,7 @@ export function loadTerms(path) {
 
 export async function claimFromMainnet({ rpcUrl, termsPath }) {
   const terms = loadTerms(termsPath);
-  const snap = await snapshot(rpcUrl);
+  const snap = await observe(rpcUrl);
   const graph = buildGraph({ ...snap, terms });
   return buildRestakingClaim({
     subject: { network: 'jito-restaking', chain: 'solana-mainnet' },
@@ -412,7 +415,7 @@ export async function claimFromMainnet({ rpcUrl, termsPath }) {
     services: graph.services,
     validators: graph.validators,
     source: {
-      kind: 'JITO_RESTAKING_SNAPSHOT',
+      kind: 'JITO_RESTAKING_OBSERVATION',
       restaking_program: RESTAKING_PROGRAM,
       vault_program: VAULT_PROGRAM,
       reads: snap.reads,

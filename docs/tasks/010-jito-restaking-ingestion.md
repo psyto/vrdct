@@ -201,9 +201,10 @@ it; this repo has now made that mistake twice (see task 009 F2).
 
 `getProgramAccounts` takes no slot, so the state cannot be *pinned*. What can be established is that
 it did not *move*. The adapter now reads the whole network **twice**, separated in time, and refuses
-unless every account is byte-identical at both ends. If nothing changed across `[a, b]`, the composed
-graph is the true graph at every slot in that window — a range with a witness at each end is as good
-as an instant. Anything that moved is a refusal naming the change, not a flag on a claim.
+unless every account is byte-identical at both ends. Anything that moved is a refusal naming the
+change, not a flag on a claim. *(This addendum originally argued that endpoint equality made the
+composed graph "the true graph at every slot in that window". Addendum 4 retracts that; it
+establishes endpoint equality and nothing more.)*
 
 Two details the live network forced:
 
@@ -287,3 +288,31 @@ not something to settle money on. Settlement needs a source that can address a s
 `getProgramAccounts` cannot — the same wall `reserve-solvency` is already against, and the README
 already says what would close it. Three review rounds went into learning that this adapter cannot
 reach settlement grade from public RPC, which is a more useful thing to know than a green tick.
+
+
+---
+
+## Addendum 5 — Codex: the retraction had not reached everything that asserted it
+
+Fair, and the pattern is now the interesting part. The claim body was corrected in Addendum 4, but
+three places still promised the disproven result:
+
+- **README** carried a *second* adapter honest-scope block — the numbered list further down — that
+  still said "the true graph at every slot in that window" and "as good as an instant". I had
+  rewritten one block and not noticed the other.
+- **The module** still exported `snapshot()` and stamped `JITO_RESTAKING_SNAPSHOT` on every claim,
+  and still commented "Nothing moved across". Those are the assertion, in the only form that a
+  reader of the code or of a claim's `kind` field actually sees. Renamed to `observe()` and
+  `JITO_RESTAKING_OBSERVATION`; the comment now says nothing was *seen* to move.
+- **This brief's Addendum 3** stated the old conclusion; it now carries the retraction inline rather
+  than relying on a later section to contradict it.
+
+Also: the `cooldown → slash → delegate` round trip is no longer presented as a confirmed
+current-program path. It came from `DelegationState`'s own mutators, not from a pinned exposed
+instruction, and — as Codex says — the downgrade does not need it. What the downgrade needs is that
+nothing *excludes* a return, which the struct's transitions already fail to do. A witness has to rule
+the case out, not find it implausible.
+
+The general lesson, since it is the third time in this task: **an overclaim survives in the names.**
+`witnessStable`, `snapshot`, `JITO_RESTAKING_SNAPSHOT` each asserted the property after the prose had
+retracted it, and each one is what a reader would have believed.
