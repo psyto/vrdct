@@ -44,14 +44,16 @@ NcnOperatorState          disc@0  ncn@8  operator@40  index@72
 Vault                     disc@0  base@8  vrt_mint@40  supported_mint@72  admin@104
 ```
 
-## The mapping, and the three places it does not fit
+## The mapping, and the places it does not fit
 
 `G = (S, V, E, π, σ, α)` ← Jito:
 
 - **`S` = NCNs.** Sourced.
 - **`V` = operators.** Sourced.
-- **`E`** = an `NcnOperatorState` whose *both* opt-in toggles are active at the snapshot slot
-  (`slot_added > slot_removed` on each side). Sourced.
+- **`E`** = an `NcnOperatorState` whose *both* opt-in toggles are `Active` under Jito's `SlotToggle`
+  state machine at the evaluated slot. Sourced. Stake additionally requires the operator→vault,
+  ncn→vault and vault→NCN tickets to be `Active` too — five parties, not two. *(The first version
+  asked `slot_added > slot_removed` on two toggles; see Addendum F1 for what that invented.)*
 - **`σ_v`** — see below. Sourced, with a stated reduction.
 - **`π_s`, `α_s`** — **not on chain, and not derivable.** Declared.
 
@@ -67,13 +69,18 @@ without a terms file for every NCN it contains is an error, not a claim with ass
 This is the honest half of the whole exercise: the adapter's job is to make the sourced part
 mechanical so the declared part is the only thing left to argue about.
 
-### 2. Stake is denominated per vault, and the model wants one number
+### 2. Stake is denominated per vault, and mainnet uses seventeen mints
 
 Each `Vault` has a `supported_mint`; `staked_amount` is in that mint's base units. Summing across
-mints would silently introduce a price — an off-chain input smuggled in as arithmetic. So the
-adapter **rejects a snapshot whose contributing vaults do not share one mint** rather than converting.
-(Every vault sampled so far holds JitoSOL, so this is likely to hold in practice today; it is
-enforced anyway, because "likely" is not a property.)
+mints would silently introduce a price — an off-chain input smuggled in as arithmetic. Mainnet turned
+out to hold **seventeen** different mints among contributing vaults, so it is not summable at all
+without a declared numéraire. Prices therefore become a **third declared input**, pinned in the claim
+alongside `π_s` and `α_s`: every contributing mint must carry an exact rational or the snapshot is
+refused. Conversion floors, so a converted total is never larger than the truth — though a wrong
+price *ratio* between two mints tilts the graph's shape, and no rounding rule protects against that.
+
+For a SOL liquid-staking token a floor of 1 SOL needs no oracle, since an LST only appreciates
+against SOL; at least one contributing mint (JTO) is not an LST and has no such floor.
 
 ### 3. Jito's stake is per (vault, operator, NCN); the paper's is per validator
 
@@ -129,10 +136,54 @@ being opened on a Jito verdict.
    the struct definitions and then checked against live accounts (`supported_mint@72` reads
    `J1toso…` on every sampled vault; `632` decomposes exactly). A wrong offset here is a wrong
    verdict about somebody's network.
-2. **Is the edge predicate right?** `slot_added > slot_removed` on *both* toggles. What does a
-   freshly-created state look like, and can a toggle be re-activated in a way that makes this read
-   backwards?
+2. **Is the active-stake predicate right?** All four relationships `Active` under the reproduced
+   `SlotToggle` state machine, at the oldest response slot, with `epoch_length` from `Config`. Is
+   there a lifecycle — re-added within a cooldown, an epoch boundary crossed mid-fetch — where it
+   still reads generously?
 3. **Is the `min`-over-NCNs reduction actually conservative in both roles** — as `σ_{N(s)}` in the
    denominator and as attack cost `σ_B`? I argue it is; it is the load-bearing modelling decision.
 4. **Does the adapter smuggle any declared value in as if it were sourced?** That is the failure this
    task exists to avoid, and it would be invisible in the output.
+
+
+---
+
+## Addendum — Codex review of `df91da5`, verdict CHANGES → addressed
+
+Three blockers, all pointing the same dangerous way: each one **over-stated** security, and
+over-stating security lowers `T_v`, raises `γ*`, and can turn a real `RED` into a reported `GREEN`.
+
+**F1 (P1) — stake counted before Jito considers it active.** Two mistakes in one predicate.
+`slot_added > slot_removed` is not the state machine: upstream `SlotToggle::state` returns `WarmUp`
+until the current epoch is *more than one full epoch* past `slot_added`. And Jito's active-stake
+relationship has **five** parties — NCN↔operator, operator→vault, ncn→vault, vault→NCN, and the
+delegation — of which this adapter read three. `OperatorVaultTicket` and `NcnVaultTicket` were never
+fetched at all.
+
+Fixed by reproducing the state machine (with `epoch_length` read from the program `Config`, not
+assumed) and requiring all four relationships to be `Active`. The two missing ticket types share a
+size, so they are separated by their leading discriminator — identified against mainnet as disc 5
+(operator at offset 8, 140 live) and disc 6 (NCN at offset 8, 25 live). Warmup, cooldown, re-added
+and each-missing-ticket cases are now fixtures.
+
+This was not hypothetical. At slot 438,180,179 only **124 of 140** operator→vault tickets and
+**24 of 25** ncn→vault tickets are `Active`, and requiring them drops one operator's conservative
+stake from 682,179,107,720,066 to 24,263,239,960,565 — a factor of 28 that the old adapter would have
+counted as security. Also stated, per the review: counting only `staked_amount` while Jito's
+`total_security()` includes enqueued and cooling-down amounts is a *deliberately weaker* measure, not
+a claim about Jito's.
+
+**F2 (P1) — declared prices were not pinned in the claim that used them.** The claim committed the
+*converted* stake and the words `"DECLARED, not sourced"`. A path to a terms file is not a
+commitment: a verifier saw a number that looked sourced and could not inspect or contest the
+declaration behind it — exactly the line this task exists to hold. The claim now carries the
+numéraire, the exact mint→rational map, the unit convention and every NCN's `π`/`α`, and a test
+asserts that changing any price changes the claim id.
+
+**F3 (P1) — the descriptor promised per-account pinning and a slot the claim never had.** Five
+`getProgramAccounts` calls cannot share a bank. Every response now uses `withContext`, the claim
+records each response's slot plus the range and whether it was coherent (at the run above:
+438,180,179–438,180,183, so **not** coherent), and every toggle is judged at the *oldest* slot seen —
+the least generous reading. The promised manifest now exists: 378 rows, every account that fed the
+graph by pubkey and decoded value, so a later reader can check each one individually. That is what
+survives `getProgramAccounts` having no slot parameter.
