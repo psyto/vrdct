@@ -109,7 +109,7 @@ claims, not a second reader of them — `canonicalInputs` stays the only reader.
 ## What this task does NOT close
 
 **Reconstruction.** `getProgramAccounts` has no slot parameter: a third party cannot ask an RPC for
-the program's accounts *as of* the pinned slot, only as of now. So a Jito snapshot is reproducible
+the program's accounts *as of* the pinned slot, only as of now. So a Jito observation is reproducible
 while it is current and not afterwards — the same position `reserve-solvency` is already in, and the
 README already says what closing it needs (an on-chain recorder root, or N-of-M attestation for
 historical data). The adapter therefore pins, per account, its pubkey, its decoded values and its own
@@ -216,7 +216,7 @@ Two details the live network forced:
   derived from, not our conclusion about them — and it is also what lets two reads be compared
   without the comparison drifting merely because time passed between them.
 
-A live run: stable across slots **438,196,414 – 438,196,463**, 378 manifest rows, 39/54 NCN-operator
+A live run: endpoint-equal across slots **438,196,414 – 438,196,463**, 378 manifest rows, 39/54 NCN-operator
 states and 124/140 operator→vault tickets active.
 
 Also fixed: `ac0e6ec` had again landed on the review branch rather than `cc/jito-restaking-ingestion`.
@@ -251,7 +251,7 @@ program leaves that bookkeeping untouched** — which rests on Jito always updat
 behaviour rather than something this adapter verifies. It is now in the claim itself
 (`source.stability_residual`) and in the README, not only here.
 
-Live after the fix: stable across **438,197,976 – 438,198,026**, 378 manifest rows.
+Live after the fix: endpoint-equal across **438,197,976 – 438,198,026**, 378 manifest rows.
 
 
 ---

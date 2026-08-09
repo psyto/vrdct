@@ -54,10 +54,10 @@
 //      active edge; judging a subset would be the local guarantee, which is not implemented.
 //
 // WHAT THIS DOES NOT CLOSE. `getProgramAccounts` takes no slot, so nobody can ask an RPC for these
-// accounts AS OF the pinned slot — only as of now. A Jito snapshot is therefore reproducible while it
-// is current and not afterwards, exactly where `reserve-solvency` already sits. Every account's own
-// `last_update_slot` / toggle slots are pinned alongside its value so a later verifier can at least
-// tell whether it moved. A claim from this adapter is NOT a historical claim.
+// accounts AS OF the pinned slot — only as of now. A Jito observation is therefore reproducible while
+// it is current and not afterwards, exactly where `reserve-solvency` already sits. Every account's
+// own `last_update_slot` / toggle slots are pinned alongside its value so a later verifier can at
+// least tell whether it moved. A claim from this adapter is NOT a historical claim.
 
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -422,7 +422,7 @@ export async function claimFromMainnet({ rpcUrl, termsPath }) {
       observed_from: snap.observedFrom,
       observed_to: snap.observedTo,
       certifies: 'ENDPOINT EQUALITY ONLY. Every account below had identical bytes — complete buffers, not decoded fields — at two separated observations spanning [observed_from, observed_to]. A read where anything visibly moved is refused rather than certified.',
-      does_not_certify: 'That this graph existed at any single slot. Each read is itself spread across response slots, so neither endpoint is an instant; and a change and a return inside the window is not excluded, because Jito mutates delegation_state without writing last_update_slot (only the epoch update() path writes it) and the state can return without that path — cooldown then slash then delegate restores a prior triple. This is an OBSERVATION with equal endpoints, not a snapshot of a state.',
+      does_not_certify: 'That this graph existed at any single slot. Each read is itself spread across response slots, so neither endpoint is an instant; and a change and a return inside the window is not excluded, because Jito mutates delegation_state without writing last_update_slot (only the epoch update() path writes it) and nothing in the DelegationState transitions themselves excludes a return — it has mutators that decrease each field as well as increase them. (No exposed instruction performing such a round trip has been pinned here, and none is needed: a witness has to rule the case out, not find it plausible.) This is an OBSERVATION with equal endpoints, not a state at a slot.',
       settlement_grade: 'NO. A verdict from this adapter is a board reading. Money-at-risk settlement needs a source that can address a slot, which getProgramAccounts cannot.',
       evaluated_at_slot: snap.evaluatedAt,
       epoch_length: String(snap.epochLength),

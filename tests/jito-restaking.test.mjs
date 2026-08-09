@@ -277,14 +277,14 @@ test('the manifest keeps the raw slots a state was derived from, not the conclus
 // update() path writes that slot. And the state can return without it:
 //     (100,0,0) --cooldown(100)--> (0,100,0) --slash(100)--> (0,0,0) --delegate(100)--> (100,0,0)
 // none of which a byte comparison at the two endpoints can see. So the claim must say what it has.
-test('a claim from this adapter says it is an observation, not a snapshot of a state', () => {
+test('a claim from this adapter says it is an observation, not a state at a slot', () => {
   const g = jito.buildGraph({ ...snap(), terms: baseTerms() });
   const claim = buildRestakingClaim({
     subject: { network: 'jito-restaking', chain: 'solana-mainnet' },
     terms: { gamma: { num: 1, den: 10 }, shockPsiBps: 10 },
     services: g.services, validators: g.validators,
     source: {
-      kind: 'JITO_RESTAKING_SNAPSHOT', observed_from: 100, observed_to: 200,
+      kind: 'JITO_RESTAKING_OBSERVATION', observed_from: 100, observed_to: 200,
       certifies: 'ENDPOINT EQUALITY ONLY.', does_not_certify: 'That this graph existed at any single slot.',
       settlement_grade: 'NO.',
     },

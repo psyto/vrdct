@@ -201,7 +201,7 @@ Two more honest edges. Jito's stake is per `(vault, operator, NCN)` while the pa
 backing every service a validator serves, so `σ_v` is taken as the **minimum** over that operator's
 NCNs of the stake reachable to each — under-stating it under-states both `σ_{N(s)}` and the attack
 cost `σ_B`, so the certificate can only come out weaker. And `getProgramAccounts` takes no slot, so
-nobody can ask an RPC for these accounts *as of* a past slot: **a Jito snapshot is reproducible while
+nobody can ask an RPC for these accounts *as of* a past slot: **a Jito observation is reproducible while
 it is current and not afterwards**, the same position `reserve-solvency` is in. It is not a historical
 claim. It is not an instant either — five `getProgramAccounts` calls cannot share a bank, so a graph
 assembled from them is an aggregate over a slot *range*, and an aggregate can describe a security
@@ -217,7 +217,7 @@ without writing `last_update_slot` (only the epoch `update()` path writes it) an
 transitions include decreases as well as increases. So a claim from this adapter is an **observation
 with equal endpoints**, it says so in its own committed body, and it is **not settlement-grade** —
 money-at-risk settlement needs a source that can address a slot, which `getProgramAccounts` cannot.
-It is a board reading. (A live run witnesses stability across ~50 slots.) Toggles are judged at the *oldest*
+It is a board reading. Toggles are judged at the *oldest*
 slot seen, the least generous reading, and a per-account manifest pins every account by pubkey and
 **raw** toggle slots — the numbers a state was derived from, not our conclusion about them.
 
