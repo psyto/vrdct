@@ -1,0 +1,20 @@
+{
+  "_": "EXAMPLE — NOT A VALID CLAIM. Every number below the sourced line is a DECLARED input and must be argued in public before it settles anything. Running the adapter against mainnet with this file REFUSES, and the refusal names exactly what a human still has to decide. That refusal is the point of the file.",
+
+  "numeraire": "SOL (lamports)",
+  "_numeraire": "Stake on mainnet is denominated in 17 different mints, so it is not summable without prices. Conversion floors, so a converted total is never larger than the truth — but a wrong price RATIO between two mints tilts the graph's shape, and no rounding rule protects against that.",
+
+  "gamma": { "num": 1, "den": 10 },
+  "shockPsiBps": 10,
+  "_gamma": "The buffer the market asserts: 10%. With psi = 0.1%, Theorem 1 bounds the cascade at 1.1% of total stake.",
+
+  "mints": {
+    "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn": { "num": 1000000000, "den": 1000000000 },
+    "BNso1VUJnh4zcfpZa6986Ea66P6TCp59hvtNJ8b1X85": { "num": 1000000000, "den": 1000000000 },
+    "Bybit2vBJGhPF52GBdNaQfUJ6ZpThSgHBobjWZpLPb4B": { "num": 1000000000, "den": 1000000000 }
+  },
+  "_mints": "A SOL liquid-staking token only appreciates against SOL, so a floor of 1 SOL per token is conservative and needs NO oracle — it is declared from structure, not from a feed. The three above are that case. The remaining contributing mints are deliberately absent: some are LSTs nobody here has verified as such, and at least one (jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL, JTO) is not an LST at all and has no structural floor, so it needs a real declared price. The adapter refuses until every contributing mint is present.",
+
+  "ncns": {},
+  "_ncns": "Each NCN with an active edge needs { profit, alpha }. profit is pi_s, the value an attacker gets from corrupting it, in numeraire base units — the paper assumes these are given and calls estimating them an open research direction. alpha is the fraction of stake required to corrupt it, a property of that NCN's consensus protocol which Jito's registry does not record. Neither is invented here. The ten NCNs carrying active edges at slot 438133149 were: 2oNBsa44bzSsAYHUEZ6w97ys6AYo9Eo7LLh51eTWZj4j, 5W3VVyLkMVAjkistwKjuq33FRbMiyFqe2Qq3w55tZDj8, 5qgY5nLTzjNRVNvJbFegQuwEhhqnE9Dy2RAZsDZfVP9w, 5tk17Xc59qhP3ZtRP4kuVWYn9qm8PUXkiAkUmJs4H6HU, 9hxdtU6umFNVDXKgzYzKo6XcrcttVJ9ysEM3EXCP4Yo9, AJV6PcPNMNNyGaYZJYPweEo2tYF66Q1ANvNp3frKNkXg, BGTtt2wdTdhLyFQwSGbNriLZiCxXKBbm29bDvYZ4jD6G, C5xRZSJM2nQf2X67eyNrjVXey3FUc41UN1LbSiiuPX73, jtoF4epChkmd75V2kxXSmywatczAomDqKu6VfWUQocT, rYQFkFYXuDqJPoH2FvFtZTC8oC3CntgRjtNatx6q1z1"
+}

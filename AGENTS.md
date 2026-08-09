@@ -67,6 +67,11 @@ Guidance, not a hard boundary. The quality control is the cross-review.
 
 ## Standing rules
 
+- **Both agents share one working tree, so check `git branch --show-current` before committing.**
+  Twice now a CC fix has landed on the Codex review branch created in the same directory, leaving the
+  task branch untouched while the fix was reported as pushed. The tell is that the reviewer sees the
+  old commit; the remedy is `git cherry-pick` onto the task branch. Whoever is about to commit owns
+  checking this.
 - The repo is the only shared memory.
 - Keep durable product direction in `README.md`.
 - Prefer small, reviewable changes over hidden rewrites.

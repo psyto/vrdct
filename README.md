@@ -170,6 +170,57 @@ better than measured, it is *proven*: because reduction is deferred to once per 
 accumulated denominator is exactly `Π (α_s.num · σ_{N(s)})`, hence at most `degree × 174` bits, so
 `γ*` cannot print longer than ~3,400 characters on any accepted graph.
 
+**Feeding it a real network** (`adapters/jito-restaking.mjs`) is where the sourced/declared line gets
+drawn in public. Jito (Re)staking on Solana mainnet supplies the *shape* — NCNs are services,
+operators are validators, an edge is an `NcnOperatorState` with both opt-in toggles active, stake
+comes from `VaultOperatorDelegation` — all decoded from public account state at offsets the account
+sizes decompose to exactly. What it does **not** supply is three things the adapter refuses to
+invent: `π_s`, `α_s` (an NCN's corruption threshold is a property of its consensus protocol, and the
+registry does not record it), and **prices**. Mainnet stake is denominated in **seventeen different
+mints**, so it is not summable at all without a declared numéraire — a result, not an obstacle. For a
+SOL liquid-staking token a floor of 1 SOL needs no oracle, since an LST only appreciates against SOL;
+anything that is not an LST does. Conversion floors, so a converted total is never larger than the
+truth — though a wrong price *ratio* between two mints tilts the graph's shape, and no rounding rule
+protects against that.
+
+A delegation only counts when **Jito** says the relationship is active, which is five parties, not
+two: NCN↔operator, operator→vault, ncn→vault, vault→NCN, and the delegation — each `Active` under
+Jito's own `SlotToggle` state machine at the sampled slot, where a relationship opened this epoch is
+still *warming up* and carries nothing. Getting that wrong invents security, which lowers `T_v` and
+can turn a real `RED` into a reported `GREEN`; on mainnet today it is not hypothetical, since only
+124 of 140 operator→vault tickets and 24 of 25 ncn→vault tickets are active. Only `staked_amount` is
+counted — Jito's own `total_security()` also includes enqueued and cooling-down stake, which remains
+slashable, so this is a **deliberately weaker** measure and should not be read as Jito's.
+
+Every declared judgement is **pinned in the claim itself** — the numéraire, the exact mint→rational
+price map, the unit convention, and each NCN's `π`/`α` — because a path to a terms file is not a
+commitment, and a converted number that looks sourced while resting on an unseen price is precisely
+the line this adapter exists to hold.
+
+Two more honest edges. Jito's stake is per `(vault, operator, NCN)` while the paper's is one `σ_v`
+backing every service a validator serves, so `σ_v` is taken as the **minimum** over that operator's
+NCNs of the stake reachable to each — under-stating it under-states both `σ_{N(s)}` and the attack
+cost `σ_B`, so the certificate can only come out weaker. And `getProgramAccounts` takes no slot, so
+nobody can ask an RPC for these accounts *as of* a past slot: **a Jito observation is reproducible while
+it is current and not afterwards**, the same position `reserve-solvency` is in. It is not a historical
+claim. It is not an instant either — five `getProgramAccounts` calls cannot share a bank, so a graph
+assembled from them is an aggregate over a slot *range*, and an aggregate can describe a security
+graph that existed at no slot at all. The adapter therefore **reads the network twice** and refuses
+unless every account is byte-identical at both ends — **complete buffers, not decoded fields**, so a
+value it never reads still counts as movement.
+
+**That establishes endpoint equality and nothing more**, and an earlier version of this section
+claimed otherwise — that the composed graph was "the true graph at every slot in that window". It is
+not. Neither endpoint is an instant, since each read is itself spread across response slots; and a
+change and a return inside the window is not excluded, because Jito mutates `delegation_state`
+without writing `last_update_slot` (only the epoch `update()` path writes it) and the state's own
+transitions include decreases as well as increases. So a claim from this adapter is an **observation
+with equal endpoints**, it says so in its own committed body, and it is **not settlement-grade** —
+money-at-risk settlement needs a source that can address a slot, which `getProgramAccounts` cannot.
+It is a board reading. Toggles are judged at the *oldest*
+slot seen, the least generous reading, and a per-account manifest pins every account by pubkey and
+**raw** toggle slots — the numbers a state was derived from, not our conclusion about them.
+
 Those limits are a defensible *computational domain*, not a finding that every live operator fits
 inside one. The consequence lands on ingestion: a snapshot with a validator past the degree cap must
 be **rejected, never truncated**. Dropping edges to make a graph admissible removes constraints, and
