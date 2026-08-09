@@ -183,13 +183,31 @@ anything that is not an LST does. Conversion floors, so a converted total is nev
 truth — though a wrong price *ratio* between two mints tilts the graph's shape, and no rounding rule
 protects against that.
 
+A delegation only counts when **Jito** says the relationship is active, which is five parties, not
+two: NCN↔operator, operator→vault, ncn→vault, vault→NCN, and the delegation — each `Active` under
+Jito's own `SlotToggle` state machine at the sampled slot, where a relationship opened this epoch is
+still *warming up* and carries nothing. Getting that wrong invents security, which lowers `T_v` and
+can turn a real `RED` into a reported `GREEN`; on mainnet today it is not hypothetical, since only
+124 of 140 operator→vault tickets and 24 of 25 ncn→vault tickets are active. Only `staked_amount` is
+counted — Jito's own `total_security()` also includes enqueued and cooling-down stake, which remains
+slashable, so this is a **deliberately weaker** measure and should not be read as Jito's.
+
+Every declared judgement is **pinned in the claim itself** — the numéraire, the exact mint→rational
+price map, the unit convention, and each NCN's `π`/`α` — because a path to a terms file is not a
+commitment, and a converted number that looks sourced while resting on an unseen price is precisely
+the line this adapter exists to hold.
+
 Two more honest edges. Jito's stake is per `(vault, operator, NCN)` while the paper's is one `σ_v`
 backing every service a validator serves, so `σ_v` is taken as the **minimum** over that operator's
 NCNs of the stake reachable to each — under-stating it under-states both `σ_{N(s)}` and the attack
 cost `σ_B`, so the certificate can only come out weaker. And `getProgramAccounts` takes no slot, so
 nobody can ask an RPC for these accounts *as of* a past slot: **a Jito snapshot is reproducible while
 it is current and not afterwards**, the same position `reserve-solvency` is in. It is not a historical
-claim.
+claim — and it is not an instant either. Five `getProgramAccounts` calls cannot share a bank, so the
+claim records **every response's own slot** and states the range it spans rather than naming one slot
+it never had; toggles are judged at the *oldest* slot seen, which is the least generous reading. What
+survives is a per-account manifest — every account that fed the graph, by pubkey and decoded value —
+so a later reader can check each one individually.
 
 Those limits are a defensible *computational domain*, not a finding that every live operator fits
 inside one. The consequence lands on ingestion: a snapshot with a validator past the degree cap must

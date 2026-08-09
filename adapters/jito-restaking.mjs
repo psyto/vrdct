@@ -5,9 +5,23 @@
 // are SOURCED and which are DECLARED. The adapter's whole job is to make the sourced part mechanical
 // so the declared part is the only thing left to argue about.
 //
-// WHAT IS SOURCED. Services are NCNs, validators are operators, an edge is an `NcnOperatorState`
-// whose two opt-in toggles are both active, and stake comes from `VaultOperatorDelegation`. All of
-// it is public Solana account state, decoded here at byte offsets verified against live accounts.
+// WHAT IS SOURCED. Services are NCNs, validators are operators, and stake comes from
+// `VaultOperatorDelegation`. All of it is public Solana account state, decoded at byte offsets
+// verified against live accounts.
+//
+// A DELEGATION ONLY COUNTS WHEN JITO SAYS IT IS ACTIVE, and that took a review to get right. The
+// first version asked `slot_added > slot_removed` on two toggles. That is not the state machine:
+// upstream `SlotToggle::state` returns WarmUp until the current epoch is more than one full epoch
+// past `slot_added`, so a relationship opted in this epoch is not yet carrying stake. And two of the
+// five parties were not read at all — Jito's active-stake relationship is NCN↔operator,
+// operator→vault, vault→NCN AND ncn→vault, plus the delegation. Missing either bilateral ticket
+// produced invented security, which lowers T_v and can turn a real RED into a reported GREEN: the
+// one direction that must never be possible. All four relationships are now fetched and each must be
+// `Active` at the sampled slot, under the epoch length read from the program `Config`.
+//
+// Only `staked_amount` is counted. Jito's own `total_security()` also includes the enqueued and
+// cooling-down amounts, because those remain slashable — so this is a DELIBERATELY WEAKER measure of
+// security, chosen because it rounds against the network, and it should not be read as Jito's.
 //
 // WHAT IS DECLARED, AND THIS ADAPTER WILL NOT INVENT IT. π_s (profit from corrupting an NCN) is not
 // chain state — the paper itself calls estimating it an open research direction. Nor is α_s, the
@@ -54,7 +68,11 @@ export const VAULT_PROGRAM = 'Vau1t6sLNxnzB7ZDsef8TLbPLfyZMYXH8WTNqUdm9g8';
 
 /// Account sizes are the discriminator plus the struct, and they are how each account type is
 /// selected — `632 = 8 + 32 + 32 + 280 + 8 + 8 + 1 + 263` is `VaultOperatorDelegation` exactly.
-export const SIZE = { NCN: 592, OPERATOR: 520, NCN_OPERATOR_STATE: 440, VAULT: 1111, VAULT_OPERATOR_DELEGATION: 632, VAULT_NCN_TICKET: 392 };
+export const SIZE = { CONFIG: 360, NCN: 592, OPERATOR: 520, NCN_OPERATOR_STATE: 440, TICKET_392: 392, VAULT: 1111, VAULT_OPERATOR_DELEGATION: 632, VAULT_NCN_TICKET: 392 };
+/// `OperatorVaultTicket` and `NcnVaultTicket` are both 392 bytes, so they are separated by the
+/// leading u64 discriminator rather than by size. Identified against mainnet: disc 5 has an operator
+/// at offset 8 (140 live), disc 6 has an NCN there (25 live).
+export const DISC = { OPERATOR_VAULT_TICKET: 5, NCN_VAULT_TICKET: 6 };
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 /// Base58, so this file stays zero-dependency like everything else that decides a verdict.
@@ -73,18 +91,40 @@ const u64 = (b, o) => b.readBigUInt64LE(o);
 // Offsets derived from the struct definitions and then checked against live accounts. A wrong
 // offset here is a wrong verdict about somebody's network, so each is a tested regression.
 
-/// A `SlotToggle` is active when it was added more recently than it was removed.
-export const toggleActive = (b, o) => u64(b, o) > u64(b, o + 8);
+/// Jito's `SlotToggle` state machine, reproduced from upstream rather than approximated. An epoch is
+/// `slot / epoch_length`; a toggle turned on becomes `Active` only once the current epoch is MORE
+/// than one full epoch past the one it was added in, and a toggle turned off stays `Cooldown` for
+/// the same window. Equal slots are `Inactive`. Asking `slot_added > slot_removed` — which is what
+/// this adapter did before review — counts a warming-up relationship as if it already carried stake.
+export const TOGGLE = { INACTIVE: 'Inactive', WARM_UP: 'WarmUp', ACTIVE: 'Active', COOLDOWN: 'Cooldown' };
+export function toggleState(b, o, slot, epochLength) {
+  const added = u64(b, o), removed = u64(b, o + 8);
+  const epoch = (x) => x / BigInt(epochLength);
+  const now = epoch(BigInt(slot));
+  if (added === removed) return TOGGLE.INACTIVE;
+  if (added < removed) return now > epoch(removed) + 1n ? TOGGLE.INACTIVE : TOGGLE.COOLDOWN;
+  return now > epoch(added) + 1n ? TOGGLE.ACTIVE : TOGGLE.WARM_UP;
+}
+export const toggleActive = (b, o, slot, epochLength) => toggleState(b, o, slot, epochLength) === TOGGLE.ACTIVE;
 
-export const decodeNcnOperatorState = (pk, b) => ({
+/// `epoch_length` is consensus for every toggle below, so it is read from the program's own Config
+/// rather than assumed. Config is `8 + admin(32) + vault_program(32) + ncn_count + operator_count +
+/// epoch_length + bump + reserved(263)` = 360.
+export const decodeConfig = (pk, b) => ({
+  pubkey: pk, ncnCount: u64(b, 72), operatorCount: u64(b, 80), epochLength: u64(b, 88),
+});
+export const decodeNcnOperatorState = (pk, b, slot, epochLength) => ({
   pubkey: pk,
   ncn: key(b, 8),
   operator: key(b, 40),
-  ncnOptIn: toggleActive(b, 80),
-  operatorOptIn: toggleActive(b, 128),
-  ncnAddedSlot: u64(b, 80),
-  operatorAddedSlot: u64(b, 128),
-  active: toggleActive(b, 80) && toggleActive(b, 128),
+  ncnState: toggleState(b, 80, slot, epochLength),
+  operatorState: toggleState(b, 128, slot, epochLength),
+  active: toggleActive(b, 80, slot, epochLength) && toggleActive(b, 128, slot, epochLength),
+});
+/// operator→vault (disc 5) and ncn→vault (disc 6) share a size and a shape.
+export const decodeTicket392 = (pk, b, slot, epochLength) => ({
+  pubkey: pk, disc: b.readUInt8(0), owner: key(b, 8), vault: key(b, 40),
+  state: toggleState(b, 80, slot, epochLength), active: toggleActive(b, 80, slot, epochLength),
 });
 export const decodeVaultOperatorDelegation = (pk, b) => ({
   pubkey: pk,
@@ -94,8 +134,9 @@ export const decodeVaultOperatorDelegation = (pk, b) => ({
   cooling: u64(b, 88),
   lastUpdateSlot: u64(b, 352),
 });
-export const decodeVaultNcnTicket = (pk, b) => ({
-  pubkey: pk, vault: key(b, 8), ncn: key(b, 40), active: toggleActive(b, 80),
+export const decodeVaultNcnTicket = (pk, b, slot, epochLength) => ({
+  pubkey: pk, vault: key(b, 8), ncn: key(b, 40),
+  state: toggleState(b, 80, slot, epochLength), active: toggleActive(b, 80, slot, epochLength),
 });
 export const decodeVault = (pk, b) => ({ pubkey: pk, supportedMint: key(b, 72) });
 
@@ -106,7 +147,7 @@ const refuse = (msg) => { throw new OutOfDomain(msg); };
 
 /// PURE: decoded accounts + declared terms → the restaking graph the claim-type consumes.
 /// Everything that decides a number lives here, so the network fetch below is not part of the logic.
-export function buildGraph({ states, delegations, ncnTickets, vaults, terms }) {
+export function buildGraph({ states, delegations, ncnTickets, operatorVaultTickets, ncnVaultTickets, vaults, terms }) {
   const edges = states.filter((s) => s.active);
   const ncnsWithEdges = [...new Set(edges.map((e) => e.ncn))].sort();
 
@@ -129,8 +170,11 @@ export function buildGraph({ states, delegations, ncnTickets, vaults, terms }) {
     return (amount * BigInt(num)) / BigInt(den);
   };
 
-  // stake reachable to NCN s through operator v: vaults delegated to v that are also opted into s
-  const vaultOptIn = new Set(ncnTickets.filter((t) => t.active).map((t) => `${t.vault}|${t.ncn}`));
+  // Stake reaches NCN s through operator v via vault V only when EVERY party has said yes and every
+  // one of those toggles is Active — not merely warming up. Any missing side is invented security.
+  const vaultToNcn = new Set(ncnTickets.filter((t) => t.active).map((t) => `${t.vault}|${t.ncn}`));
+  const operatorToVault = new Set((operatorVaultTickets || []).filter((t) => t.active).map((t) => `${t.owner}|${t.vault}`));
+  const ncnToVault = new Set((ncnVaultTickets || []).filter((t) => t.active).map((t) => `${t.owner}|${t.vault}`));
   const byOperator = new Map();
   for (const d of delegations) {
     if (d.staked === 0n) continue;
@@ -138,7 +182,9 @@ export function buildGraph({ states, delegations, ncnTickets, vaults, terms }) {
     byOperator.get(d.operator).push({ ...d, value: inNumeraire(d.staked, mintOf.get(d.vault)) });
   }
   const reachable = (operator, ncn) => (byOperator.get(operator) || [])
-    .filter((d) => vaultOptIn.has(`${d.vault}|${ncn}`))
+    .filter((d) => vaultToNcn.has(`${d.vault}|${ncn}`)
+      && ncnToVault.has(`${ncn}|${d.vault}`)
+      && operatorToVault.has(`${operator}|${d.vault}`))
     .reduce((acc, d) => acc + d.value, 0n);
 
   const operators = [...new Set(edges.map((e) => e.operator))].sort();
@@ -174,27 +220,64 @@ async function rpc(url, method, params) {
   if (json.error) throw new Error(`${method}: ${JSON.stringify(json.error)}`);
   return json.result;
 }
-const accountsOfSize = async (url, programId, dataSize) =>
-  (await rpc(url, 'getProgramAccounts', [programId, { encoding: 'base64', filters: [{ dataSize }] }]))
-    .map((a) => ({ pubkey: a.pubkey, buf: Buffer.from(a.account.data[0], 'base64') }));
+/// `withContext` so every response carries the slot its bank was at. Four independent calls cannot
+/// share a bank, and pretending otherwise is what F3 was about.
+const accountsOfSize = async (url, programId, dataSize) => {
+  const r = await rpc(url, 'getProgramAccounts', [programId, { encoding: 'base64', withContext: true, filters: [{ dataSize }] }]);
+  return { slot: r.context.slot, accounts: r.value.map((a) => ({ pubkey: a.pubkey, buf: Buffer.from(a.account.data[0], 'base64') })) };
+};
 
 /// Read the live network. The slot is captured alongside so the claim states what it is a snapshot
 /// OF, even though no RPC can be asked to serve these accounts as of it again.
 export async function snapshot(rpcUrl) {
-  const [slotInfo, states, delegations, ncnTickets, vaults] = await Promise.all([
-    rpc(rpcUrl, 'getSlot', []),
+  const cfgRes = await accountsOfSize(rpcUrl, RESTAKING_PROGRAM, SIZE.CONFIG);
+  if (cfgRes.accounts.length !== 1) throw new Error(`expected exactly one restaking Config, found ${cfgRes.accounts.length}`);
+  const config = decodeConfig(cfgRes.accounts[0].pubkey, cfgRes.accounts[0].buf);
+  const epochLength = Number(config.epochLength);
+  if (!Number.isSafeInteger(epochLength) || epochLength <= 0) throw new Error(`Config.epoch_length is not usable: ${config.epochLength}`);
+
+  const [stateRes, ticket392Res, delegationRes, vaultNcnRes, vaultRes] = await Promise.all([
     accountsOfSize(rpcUrl, RESTAKING_PROGRAM, SIZE.NCN_OPERATOR_STATE),
+    accountsOfSize(rpcUrl, RESTAKING_PROGRAM, SIZE.TICKET_392),
     accountsOfSize(rpcUrl, VAULT_PROGRAM, SIZE.VAULT_OPERATOR_DELEGATION),
     accountsOfSize(rpcUrl, VAULT_PROGRAM, SIZE.VAULT_NCN_TICKET),
     accountsOfSize(rpcUrl, VAULT_PROGRAM, SIZE.VAULT),
   ]);
-  return {
-    slot: slotInfo,
-    states: states.map((a) => decodeNcnOperatorState(a.pubkey, a.buf)),
-    delegations: delegations.map((a) => decodeVaultOperatorDelegation(a.pubkey, a.buf)),
-    ncnTickets: ncnTickets.map((a) => decodeVaultNcnTicket(a.pubkey, a.buf)),
-    vaults: vaults.map((a) => decodeVault(a.pubkey, a.buf)),
+
+  // Each response is evaluated at the slot its own bank was on. The aggregate is therefore over a
+  // RANGE, and the claim says so rather than naming one slot it never had.
+  const slots = {
+    config: cfgRes.slot, ncn_operator_state: stateRes.slot, tickets_392: ticket392Res.slot,
+    vault_operator_delegation: delegationRes.slot, vault_ncn_ticket: vaultNcnRes.slot, vault: vaultRes.slot,
   };
+  const values = Object.values(slots);
+  const slotMin = Math.min(...values), slotMax = Math.max(...values);
+  const at = slotMin; // evaluate every toggle at the OLDEST slot seen: the least generous reading
+
+  const ticket392 = ticket392Res.accounts.map((a) => decodeTicket392(a.pubkey, a.buf, at, epochLength));
+  return {
+    config, epochLength, slots, slotMin, slotMax, coherent: slotMin === slotMax,
+    states: stateRes.accounts.map((a) => decodeNcnOperatorState(a.pubkey, a.buf, at, epochLength)),
+    delegations: delegationRes.accounts.map((a) => decodeVaultOperatorDelegation(a.pubkey, a.buf)),
+    ncnTickets: vaultNcnRes.accounts.map((a) => decodeVaultNcnTicket(a.pubkey, a.buf, at, epochLength)),
+    operatorVaultTickets: ticket392.filter((t) => t.disc === DISC.OPERATOR_VAULT_TICKET),
+    ncnVaultTickets: ticket392.filter((t) => t.disc === DISC.NCN_VAULT_TICKET),
+    vaults: vaultRes.accounts.map((a) => decodeVault(a.pubkey, a.buf)),
+  };
+}
+
+/// Every account that fed the graph, by pubkey and decoded value, so a later reader can check each
+/// one individually — the only thing that survives `getProgramAccounts` having no slot parameter.
+export function manifest(snap) {
+  const row = (kind, a, rest) => ({ k: kind, a: a.pubkey, ...rest });
+  return [
+    ...snap.states.map((a) => row('ncn_operator_state', a, { ncn: a.ncn, op: a.operator, ncnState: a.ncnState, opState: a.operatorState })),
+    ...snap.operatorVaultTickets.map((a) => row('operator_vault_ticket', a, { op: a.owner, vault: a.vault, state: a.state })),
+    ...snap.ncnVaultTickets.map((a) => row('ncn_vault_ticket', a, { ncn: a.owner, vault: a.vault, state: a.state })),
+    ...snap.ncnTickets.map((a) => row('vault_ncn_ticket', a, { vault: a.vault, ncn: a.ncn, state: a.state })),
+    ...snap.delegations.map((a) => row('vault_operator_delegation', a, { vault: a.vault, op: a.operator, staked: String(a.staked), cooling: String(a.cooling), lastUpdateSlot: String(a.lastUpdateSlot) })),
+    ...snap.vaults.map((a) => row('vault', a, { mint: a.supportedMint })),
+  ].sort((x, y) => (x.k === y.k ? (x.a < y.a ? -1 : 1) : x.k < y.k ? -1 : 1));
 }
 
 export function loadTerms(path) {
@@ -225,12 +308,27 @@ export async function claimFromMainnet({ rpcUrl, termsPath }) {
       kind: 'JITO_RESTAKING_SNAPSHOT',
       restaking_program: RESTAKING_PROGRAM,
       vault_program: VAULT_PROGRAM,
-      slot: snap.slot,
-      numeraire: terms.numeraire,
-      mints: graph.mints,
-      prices: 'DECLARED, not sourced — see terms.mints; conversion floors',
+      slots: snap.slots,
+      slot_min: snap.slotMin,
+      slot_max: snap.slotMax,
+      coherent: snap.coherent,
+      evaluated_at_slot: snap.slotMin,
+      epoch_length: String(snap.epochLength),
+      active_stake_rule: 'ncn_operator_state (both sides) + operator_vault_ticket + ncn_vault_ticket + vault_ncn_ticket, each Active under Jito\'s SlotToggle at evaluated_at_slot',
+      security_measure: 'staked_amount only — Jito total_security() also counts enqueued and cooling-down, which remain slashable, so this is deliberately weaker',
+      manifest: manifest(snap),
+      declared: {
+        note: 'NOT SOURCED. These are the judgements this claim rests on; everything downstream of them is mechanical.',
+        numeraire: terms.numeraire,
+        unit: 'numeraire base units per one base unit of the source mint, as an exact rational, floored on conversion',
+        // the exact map, not a pointer to a file: a path is not a commitment, and a verifier must be
+        // able to see and contest the number that turned a mint into apparent security
+        mint_prices: Object.fromEntries(graph.mints.map((m) => [m, terms.mints[m]])),
+        ncn_terms: Object.fromEntries(graph.services.map((svc) => [svc.id, { profit: svc.profit, alpha: svc.alpha }])),
+      },
+      contributing_mints: graph.mints,
       stake_reduction: 'min over the operator\'s NCNs of the stake reachable to that NCN',
-      reproducible: 'while current only — getProgramAccounts takes no slot, so this is not a historical claim',
+      reproducible: 'while current only — getProgramAccounts takes no slot, so this is an aggregate over [slot_min, slot_max], not a snapshot at an instant, and not a historical claim',
     },
   });
 }
