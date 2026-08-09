@@ -67,9 +67,10 @@ test('VaultOperatorDelegation decodes at the offsets the size decomposes to', ()
 
 test('NcnOperatorState needs BOTH sides Active, not merely opted in', () => {
   const E = 100;
-  const state = (ncnAdd, ncnRem, opAdd, opRem, slot = 900) => jito.decodeNcnOperatorState('X', acct(jito.SIZE.NCN_OPERATOR_STATE, [
-    [0, 4n], [8, pk(10)], [40, pk(11)], [80, ncnAdd], [88, ncnRem], [128, opAdd], [136, opRem],
-  ]), slot, E);
+  const state = (ncnAdd, ncnRem, opAdd, opRem, slot = 900) => jito.activateNcnOperatorState(
+    jito.decodeNcnOperatorState('X', acct(jito.SIZE.NCN_OPERATOR_STATE, [
+      [0, 4n], [8, pk(10)], [40, pk(11)], [80, ncnAdd], [88, ncnRem], [128, opAdd], [136, opRem],
+    ])), slot, E);
   assert.equal(state(200n, 100n, 200n, 100n).active, true);
   assert.equal(state(200n, 100n, 100n, 200n).active, false, 'operator opted out');
   assert.equal(state(100n, 200n, 200n, 100n).active, false, 'ncn opted out');
@@ -202,4 +203,34 @@ test('the declared prices and NCN terms are pinned in the claim, not pointed at'
   // and the price is part of what the claim id commits to: change it, change the claim
   const b = mk({ [MINT_A]: { num: 2, den: 1 } });
   assert.notEqual(b.claim_id, a.claim_id, 'a declared price must not be able to move without moving the claim');
+});
+
+// Codex, reviews/010 F3 reopened. Recording `coherent: false` was not an answer: an aggregate over a
+// slot range can describe a security graph that existed at no slot at all, and that must never
+// become a certificate. Two reads that agree witness that nothing moved across the window.
+test('a graph is only certified when two reads witness that nothing moved', () => {
+  const rawState = { pubkey: 'p1', ncn: NCN1, operator: OP, ncnAdded: 200n, ncnRemoved: 100n, operatorAdded: 200n, operatorRemoved: 100n };
+  const rawDel = { pubkey: 'p2', vault: V1, operator: OP, staked: 100n, cooling: 0n, lastUpdateSlot: 5n };
+  const read = (o = {}) => ({
+    states: [rawState], delegations: [rawDel], ncnTickets: [], operatorVaultTickets: [],
+    ncnVaultTickets: [], vaults: [{ pubkey: V1, supportedMint: MINT_A }], ...o,
+  });
+  assert.equal(jito.fingerprint(read()), jito.fingerprint(read()), 'the same state fingerprints the same');
+
+  // any moved field breaks it — including a raw toggle slot, which is why the manifest keeps them
+  assert.notEqual(jito.fingerprint(read()), jito.fingerprint(read({ delegations: [{ ...rawDel, staked: 101n }] })));
+  assert.notEqual(jito.fingerprint(read()), jito.fingerprint(read({ states: [{ ...rawState, ncnAdded: 201n }] })));
+  // and order must not matter, or a reordered RPC response would look like a change
+  const two = read({ vaults: [{ pubkey: V1, supportedMint: MINT_A }, { pubkey: V2, supportedMint: MINT_A }] });
+  const flipped = read({ vaults: [{ pubkey: V2, supportedMint: MINT_A }, { pubkey: V1, supportedMint: MINT_A }] });
+  assert.equal(jito.fingerprint(two), jito.fingerprint(flipped));
+});
+
+test('the manifest keeps the raw slots a state was derived from, not the conclusion', () => {
+  const rows = jito.manifest({
+    states: [{ pubkey: 'p1', ncn: NCN1, operator: OP, ncnAdded: 200n, ncnRemoved: 100n, operatorAdded: 700n, operatorRemoved: 0n }],
+    delegations: [], ncnTickets: [], operatorVaultTickets: [], ncnVaultTickets: [], vaults: [],
+  });
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0], { k: 'ncn_operator_state', a: 'p1', ncn: NCN1, op: OP, ncnAdded: '200', ncnRemoved: '100', opAdded: '700', opRemoved: '0' });
 });

@@ -203,11 +203,15 @@ NCNs of the stake reachable to each — under-stating it under-states both `σ_{
 cost `σ_B`, so the certificate can only come out weaker. And `getProgramAccounts` takes no slot, so
 nobody can ask an RPC for these accounts *as of* a past slot: **a Jito snapshot is reproducible while
 it is current and not afterwards**, the same position `reserve-solvency` is in. It is not a historical
-claim — and it is not an instant either. Five `getProgramAccounts` calls cannot share a bank, so the
-claim records **every response's own slot** and states the range it spans rather than naming one slot
-it never had; toggles are judged at the *oldest* slot seen, which is the least generous reading. What
-survives is a per-account manifest — every account that fed the graph, by pubkey and decoded value —
-so a later reader can check each one individually.
+claim. It is not an instant either — five `getProgramAccounts` calls cannot share a bank, so a graph
+assembled from them is an aggregate over a slot *range*, and an aggregate can describe a security
+graph that existed at no slot at all. Recording that fact is not enough, so the adapter **reads the
+network twice** and refuses unless every account is byte-identical at both ends: if nothing moved
+across `[a, b]`, the composed graph is the true graph at every slot in that window, and a range with
+a witness at each end is as good as an instant. A read where anything moved is **refused, not
+labelled**. (A live run witnesses stability across ~50 slots.) Toggles are judged at the *oldest*
+slot seen, the least generous reading, and a per-account manifest pins every account by pubkey and
+**raw** toggle slots — the numbers a state was derived from, not our conclusion about them.
 
 Those limits are a defensible *computational domain*, not a finding that every live operator fits
 inside one. The consequence lands on ingestion: a snapshot with a validator past the degree cap must

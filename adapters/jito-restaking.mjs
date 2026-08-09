@@ -113,18 +113,18 @@ export const toggleActive = (b, o, slot, epochLength) => toggleState(b, o, slot,
 export const decodeConfig = (pk, b) => ({
   pubkey: pk, ncnCount: u64(b, 72), operatorCount: u64(b, 80), epochLength: u64(b, 88),
 });
-export const decodeNcnOperatorState = (pk, b, slot, epochLength) => ({
-  pubkey: pk,
-  ncn: key(b, 8),
-  operator: key(b, 40),
-  ncnState: toggleState(b, 80, slot, epochLength),
-  operatorState: toggleState(b, 128, slot, epochLength),
-  active: toggleActive(b, 80, slot, epochLength) && toggleActive(b, 128, slot, epochLength),
+/// Decoding keeps the RAW toggle slots and nothing derived. Activation depends on which slot you ask
+/// about, so it is a separate step — which is also what lets two reads be compared for stability
+/// without the comparison drifting just because time passed between them.
+export const decodeNcnOperatorState = (pk, b) => ({
+  pubkey: pk, ncn: key(b, 8), operator: key(b, 40),
+  ncnAdded: u64(b, 80), ncnRemoved: u64(b, 88),
+  operatorAdded: u64(b, 128), operatorRemoved: u64(b, 136),
 });
 /// operator→vault (disc 5) and ncn→vault (disc 6) share a size and a shape.
-export const decodeTicket392 = (pk, b, slot, epochLength) => ({
+export const decodeTicket392 = (pk, b) => ({
   pubkey: pk, disc: b.readUInt8(0), owner: key(b, 8), vault: key(b, 40),
-  state: toggleState(b, 80, slot, epochLength), active: toggleActive(b, 80, slot, epochLength),
+  added: u64(b, 80), removed: u64(b, 88),
 });
 export const decodeVaultOperatorDelegation = (pk, b) => ({
   pubkey: pk,
@@ -134,10 +134,30 @@ export const decodeVaultOperatorDelegation = (pk, b) => ({
   cooling: u64(b, 88),
   lastUpdateSlot: u64(b, 352),
 });
-export const decodeVaultNcnTicket = (pk, b, slot, epochLength) => ({
-  pubkey: pk, vault: key(b, 8), ncn: key(b, 40),
-  state: toggleState(b, 80, slot, epochLength), active: toggleActive(b, 80, slot, epochLength),
+export const decodeVaultNcnTicket = (pk, b) => ({
+  pubkey: pk, vault: key(b, 8), ncn: key(b, 40), added: u64(b, 80), removed: u64(b, 88),
 });
+
+/// Raw toggle slots → the state at a given slot. Separated from decoding on purpose: `slot_min` is
+/// the least generous reading (earlier makes a switched-on toggle WarmUp rather than Active, and a
+/// switched-off one is never Active at any slot), so this is applied once, at the oldest slot seen.
+const stateAt = (added, removed, slot, epochLength) => {
+  const epoch = (x) => x / BigInt(epochLength);
+  const now = epoch(BigInt(slot));
+  if (added === removed) return TOGGLE.INACTIVE;
+  if (added < removed) return now > epoch(removed) + 1n ? TOGGLE.INACTIVE : TOGGLE.COOLDOWN;
+  return now > epoch(added) + 1n ? TOGGLE.ACTIVE : TOGGLE.WARM_UP;
+};
+export const activateNcnOperatorState = (r, slot, e) => ({
+  ...r,
+  ncnState: stateAt(r.ncnAdded, r.ncnRemoved, slot, e),
+  operatorState: stateAt(r.operatorAdded, r.operatorRemoved, slot, e),
+  active: stateAt(r.ncnAdded, r.ncnRemoved, slot, e) === TOGGLE.ACTIVE && stateAt(r.operatorAdded, r.operatorRemoved, slot, e) === TOGGLE.ACTIVE,
+});
+export const activateTicket = (r, slot, e) => {
+  const state = stateAt(r.added, r.removed, slot, e);
+  return { ...r, state, active: state === TOGGLE.ACTIVE };
+};
 export const decodeVault = (pk, b) => ({ pubkey: pk, supportedMint: key(b, 72) });
 
 // ── the graph ─────────────────────────────────────────────────────────────────────────────────
@@ -214,11 +234,18 @@ export function buildGraph({ states, delegations, ncnTickets, operatorVaultTicke
 
 // ── the network boundary ──────────────────────────────────────────────────────────────────────
 
-async function rpc(url, method, params) {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
-  const json = await res.json();
-  if (json.error) throw new Error(`${method}: ${JSON.stringify(json.error)}`);
-  return json.result;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/// Reading the network twice is twelve calls, which public RPC rate-limits. Backoff is transport,
+/// not logic: it changes how long a read takes and nothing about what it observes.
+async function rpc(url, method, params, { attempts = 5 } = {}) {
+  for (let i = 0; ; i++) {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+    const json = await res.json();
+    if (!json.error) return json.result;
+    const rateLimited = json.error.code === 429 || res.status === 429;
+    if (!rateLimited || i >= attempts - 1) throw new Error(`${method}: ${JSON.stringify(json.error)}`);
+    await sleep(1000 * 2 ** i);
+  }
 }
 /// `withContext` so every response carries the slot its bank was at. Four independent calls cannot
 /// share a bank, and pretending otherwise is what F3 was about.
@@ -229,7 +256,9 @@ const accountsOfSize = async (url, programId, dataSize) => {
 
 /// Read the live network. The slot is captured alongside so the claim states what it is a snapshot
 /// OF, even though no RPC can be asked to serve these accounts as of it again.
-export async function snapshot(rpcUrl) {
+/// One read of every account set. Each response carries the slot its own bank was on; four
+/// independent calls cannot share one.
+async function readOnce(rpcUrl) {
   const cfgRes = await accountsOfSize(rpcUrl, RESTAKING_PROGRAM, SIZE.CONFIG);
   if (cfgRes.accounts.length !== 1) throw new Error(`expected exactly one restaking Config, found ${cfgRes.accounts.length}`);
   const config = decodeConfig(cfgRes.accounts[0].pubkey, cfgRes.accounts[0].buf);
@@ -243,42 +272,84 @@ export async function snapshot(rpcUrl) {
     accountsOfSize(rpcUrl, VAULT_PROGRAM, SIZE.VAULT_NCN_TICKET),
     accountsOfSize(rpcUrl, VAULT_PROGRAM, SIZE.VAULT),
   ]);
-
-  // Each response is evaluated at the slot its own bank was on. The aggregate is therefore over a
-  // RANGE, and the claim says so rather than naming one slot it never had.
   const slots = {
     config: cfgRes.slot, ncn_operator_state: stateRes.slot, tickets_392: ticket392Res.slot,
     vault_operator_delegation: delegationRes.slot, vault_ncn_ticket: vaultNcnRes.slot, vault: vaultRes.slot,
   };
-  const values = Object.values(slots);
-  const slotMin = Math.min(...values), slotMax = Math.max(...values);
-  const at = slotMin; // evaluate every toggle at the OLDEST slot seen: the least generous reading
-
-  const ticket392 = ticket392Res.accounts.map((a) => decodeTicket392(a.pubkey, a.buf, at, epochLength));
+  const ticket392 = ticket392Res.accounts.map((a) => decodeTicket392(a.pubkey, a.buf));
   return {
-    config, epochLength, slots, slotMin, slotMax, coherent: slotMin === slotMax,
-    states: stateRes.accounts.map((a) => decodeNcnOperatorState(a.pubkey, a.buf, at, epochLength)),
+    config, epochLength, slots,
+    slotMin: Math.min(...Object.values(slots)), slotMax: Math.max(...Object.values(slots)),
+    states: stateRes.accounts.map((a) => decodeNcnOperatorState(a.pubkey, a.buf)),
     delegations: delegationRes.accounts.map((a) => decodeVaultOperatorDelegation(a.pubkey, a.buf)),
-    ncnTickets: vaultNcnRes.accounts.map((a) => decodeVaultNcnTicket(a.pubkey, a.buf, at, epochLength)),
+    ncnTickets: vaultNcnRes.accounts.map((a) => decodeVaultNcnTicket(a.pubkey, a.buf)),
     operatorVaultTickets: ticket392.filter((t) => t.disc === DISC.OPERATOR_VAULT_TICKET),
     ncnVaultTickets: ticket392.filter((t) => t.disc === DISC.NCN_VAULT_TICKET),
     vaults: vaultRes.accounts.map((a) => decodeVault(a.pubkey, a.buf)),
   };
 }
 
-/// Every account that fed the graph, by pubkey and decoded value, so a later reader can check each
-/// one individually — the only thing that survives `getProgramAccounts` having no slot parameter.
-export function manifest(snap) {
-  const row = (kind, a, rest) => ({ k: kind, a: a.pubkey, ...rest });
+/// A canonical, order-independent fingerprint of everything a read observed. BigInts become strings
+/// so two reads compare as data rather than as objects.
+export function fingerprint(raw) {
+  const rows = manifestRows(raw).map((r) => JSON.stringify(r));
+  rows.sort();
+  return rows.join('\n');
+}
+
+/// Read the network TWICE and refuse unless nothing moved in between.
+///
+/// This is the whole of F3, and recording `coherent: false` was not an answer to it. Five
+/// `getProgramAccounts` calls cannot share a bank, so a graph assembled from them is an aggregate
+/// over a slot RANGE — and an aggregate can describe a security graph that existed at no slot at
+/// all, which is exactly what must never become a certificate. `getProgramAccounts` takes no slot,
+/// so the state cannot be pinned; what CAN be established is that it did not move. If two reads
+/// spanning `[a_min … b_max]` are byte-identical, then no account changed across that window, so the
+/// composed graph is the true graph at every slot in it — and a range with a witness at each end is
+/// as good as an instant. If anything moved, this refuses and says what.
+export async function snapshot(rpcUrl, { gapMs = 5000 } = {}) {
+  const a = await readOnce(rpcUrl);
+  // The two witnesses have to be separated in time or they bound no window. A load-balanced endpoint
+  // also serves responses from banks a slot or two apart, so the gap has to clear that jitter too —
+  // and the check below is on the slots actually returned, never on how long we waited.
+  await sleep(gapMs);
+  const b = await readOnce(rpcUrl);
+  if (b.slotMin <= a.slotMax) {
+    throw new OutOfDomain(`the second read did not begin after the first ended (${a.slotMax} → ${b.slotMin}); the window has no witness at its far end`);
+  }
+  const fa = fingerprint(a), fb = fingerprint(b);
+  if (fa !== fb) {
+    throw new OutOfDomain(`the network changed between reads (slots ${a.slotMin}–${b.slotMax}); a graph assembled across a change existed at no slot, so there is nothing here to certify`);
+  }
+  // Nothing moved across [a.slotMin, b.slotMax], so every toggle is judged at the oldest slot seen —
+  // the least generous reading, since an earlier slot can only make a switched-on toggle WarmUp.
+  const at = a.slotMin;
+  return {
+    ...a,
+    stableFrom: a.slotMin, stableTo: b.slotMax,
+    reads: [a.slots, b.slots],
+    evaluatedAt: at,
+    states: a.states.map((r) => activateNcnOperatorState(r, at, a.epochLength)),
+    ncnTickets: a.ncnTickets.map((r) => activateTicket(r, at, a.epochLength)),
+    operatorVaultTickets: a.operatorVaultTickets.map((r) => activateTicket(r, at, a.epochLength)),
+    ncnVaultTickets: a.ncnVaultTickets.map((r) => activateTicket(r, at, a.epochLength)),
+  };
+}
+
+/// The manifest keeps RAW add/remove slots, not just the state they imply: a reader checking these
+/// accounts later needs the numbers the state was derived from, not our conclusion about them.
+export function manifestRows(snap) {
+  const row = (k, a, rest) => ({ k, a: a.pubkey, ...rest });
   return [
-    ...snap.states.map((a) => row('ncn_operator_state', a, { ncn: a.ncn, op: a.operator, ncnState: a.ncnState, opState: a.operatorState })),
-    ...snap.operatorVaultTickets.map((a) => row('operator_vault_ticket', a, { op: a.owner, vault: a.vault, state: a.state })),
-    ...snap.ncnVaultTickets.map((a) => row('ncn_vault_ticket', a, { ncn: a.owner, vault: a.vault, state: a.state })),
-    ...snap.ncnTickets.map((a) => row('vault_ncn_ticket', a, { vault: a.vault, ncn: a.ncn, state: a.state })),
+    ...snap.states.map((a) => row('ncn_operator_state', a, { ncn: a.ncn, op: a.operator, ncnAdded: String(a.ncnAdded), ncnRemoved: String(a.ncnRemoved), opAdded: String(a.operatorAdded), opRemoved: String(a.operatorRemoved) })),
+    ...snap.operatorVaultTickets.map((a) => row('operator_vault_ticket', a, { op: a.owner, vault: a.vault, added: String(a.added), removed: String(a.removed) })),
+    ...snap.ncnVaultTickets.map((a) => row('ncn_vault_ticket', a, { ncn: a.owner, vault: a.vault, added: String(a.added), removed: String(a.removed) })),
+    ...snap.ncnTickets.map((a) => row('vault_ncn_ticket', a, { vault: a.vault, ncn: a.ncn, added: String(a.added), removed: String(a.removed) })),
     ...snap.delegations.map((a) => row('vault_operator_delegation', a, { vault: a.vault, op: a.operator, staked: String(a.staked), cooling: String(a.cooling), lastUpdateSlot: String(a.lastUpdateSlot) })),
     ...snap.vaults.map((a) => row('vault', a, { mint: a.supportedMint })),
-  ].sort((x, y) => (x.k === y.k ? (x.a < y.a ? -1 : 1) : x.k < y.k ? -1 : 1));
+  ];
 }
+export const manifest = (snap) => manifestRows(snap).sort((x, y) => (x.k === y.k ? (x.a < y.a ? -1 : 1) : x.k < y.k ? -1 : 1));
 
 export function loadTerms(path) {
   const terms = JSON.parse(readFileSync(path, 'utf8'));
@@ -308,11 +379,11 @@ export async function claimFromMainnet({ rpcUrl, termsPath }) {
       kind: 'JITO_RESTAKING_SNAPSHOT',
       restaking_program: RESTAKING_PROGRAM,
       vault_program: VAULT_PROGRAM,
-      slots: snap.slots,
-      slot_min: snap.slotMin,
-      slot_max: snap.slotMax,
-      coherent: snap.coherent,
-      evaluated_at_slot: snap.slotMin,
+      reads: snap.reads,
+      stable_from: snap.stableFrom,
+      stable_to: snap.stableTo,
+      stability: 'every account below was byte-identical across two reads spanning [stable_from, stable_to], so this graph is the graph at every slot in that window — a range with a witness at each end. A read where anything moved is refused, not labelled.',
+      evaluated_at_slot: snap.evaluatedAt,
       epoch_length: String(snap.epochLength),
       active_stake_rule: 'ncn_operator_state (both sides) + operator_vault_ticket + ncn_vault_ticket + vault_ncn_ticket, each Active under Jito\'s SlotToggle at evaluated_at_slot',
       security_measure: 'staked_amount only — Jito total_security() also counts enqueued and cooling-down, which remain slashable, so this is deliberately weaker',

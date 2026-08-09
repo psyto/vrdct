@@ -187,3 +187,37 @@ records each response's slot plus the range and whether it was coherent (at the 
 the least generous reading. The promised manifest now exists: 378 rows, every account that fed the
 graph by pubkey and decoded value, so a later reader can check each one individually. That is what
 survives `getProgramAccounts` having no slot parameter.
+
+
+---
+
+## Addendum 2 — Codex re-review: F1/F2 closed, F3 reopened at graph level
+
+Right, and the distinction matters. `slot_min` is safe for a *single* toggle — that part held — but
+the finding was never about one toggle. It was that state read at one slot and delegations read at
+another can be composed into a security graph **that existed at no slot at all**, and recording
+`coherent: false` does not stop that graph becoming a certificate. Labelling a defect is not handling
+it; this repo has now made that mistake twice (see task 009 F2).
+
+`getProgramAccounts` takes no slot, so the state cannot be *pinned*. What can be established is that
+it did not *move*. The adapter now reads the whole network **twice**, separated in time, and refuses
+unless every account is byte-identical at both ends. If nothing changed across `[a, b]`, the composed
+graph is the true graph at every slot in that window — a range with a witness at each end is as good
+as an instant. Anything that moved is a refusal naming the change, not a flag on a claim.
+
+Two details the live network forced:
+
+- **The second read must begin after the first ended**, checked on the slots actually returned. The
+  first attempt refused because a load-balanced endpoint served the second read from a bank one slot
+  *behind* the first, so the witnesses were spaced in time until the check could be met honestly.
+- **Decoding now keeps raw `slot_added` / `slot_removed`** and activation is a separate step. That
+  was needed for the manifest — as the review said, a later reader needs the numbers a state was
+  derived from, not our conclusion about them — and it is also what lets two reads be compared
+  without the comparison drifting merely because time passed between them.
+
+A live run: stable across slots **438,196,414 – 438,196,463**, 378 manifest rows, 39/54 NCN-operator
+states and 124/140 operator→vault tickets active.
+
+Also fixed: `ac0e6ec` had again landed on the review branch rather than `cc/jito-restaking-ingestion`.
+Cherry-picked to `3420b16`; this work continues from there. That is twice, and the cause is that both
+agents share one working tree — worth a line in `AGENTS.md` rather than another apology.
