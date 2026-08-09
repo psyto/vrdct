@@ -60,6 +60,7 @@
 // tell whether it moved. A claim from this adapter is NOT a historical claim.
 
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { build as buildRestakingClaim } from '../claimtypes/restaking-robustness.mjs';
 import { MAX_SERVICES, MAX_VALIDATORS, MAX_SERVICES_PER_VALIDATOR, MAX_EDGES } from '../claimtypes/restaking-robustness.mjs';
 
@@ -131,6 +132,7 @@ export const decodeVaultOperatorDelegation = (pk, b) => ({
   vault: key(b, 8),
   operator: key(b, 40),
   staked: u64(b, 72),
+  enqueued: u64(b, 80),
   cooling: u64(b, 88),
   lastUpdateSlot: u64(b, 352),
 });
@@ -279,6 +281,11 @@ async function readOnce(rpcUrl) {
   const ticket392 = ticket392Res.accounts.map((a) => decodeTicket392(a.pubkey, a.buf));
   return {
     config, epochLength, slots,
+    // every byte the read saw, Config included — this is what the stability witness compares
+    buffers: {
+      config: cfgRes.accounts, ncn_operator_state: stateRes.accounts, tickets_392: ticket392Res.accounts,
+      vault_operator_delegation: delegationRes.accounts, vault_ncn_ticket: vaultNcnRes.accounts, vault: vaultRes.accounts,
+    },
     slotMin: Math.min(...Object.values(slots)), slotMax: Math.max(...Object.values(slots)),
     states: stateRes.accounts.map((a) => decodeNcnOperatorState(a.pubkey, a.buf)),
     delegations: delegationRes.accounts.map((a) => decodeVaultOperatorDelegation(a.pubkey, a.buf)),
@@ -289,10 +296,20 @@ async function readOnce(rpcUrl) {
   };
 }
 
-/// A canonical, order-independent fingerprint of everything a read observed. BigInts become strings
-/// so two reads compare as data rather than as objects.
-export function fingerprint(raw) {
-  const rows = manifestRows(raw).map((r) => JSON.stringify(r));
+/// A canonical, order-independent digest of everything a read observed — over COMPLETE ACCOUNT
+/// BUFFERS, not over decoded fields.
+///
+/// The first version fingerprinted the manifest, which is a decoded projection, and a projection can
+/// only witness the fields it happens to include. `enqueued_for_cooldown_amount` was not one of them,
+/// so two genuinely different delegation accounts fingerprinted identically and a graph that moved
+/// could be certified as stable (Codex, reviews/010 F5). Hashing the raw bytes fixes the class
+/// rather than that field: anything this adapter does not decode — today's blind spots and any field
+/// a future Jito release adds — is covered without anyone remembering to add it here.
+export function fingerprint(read) {
+  const rows = [];
+  for (const [kind, accounts] of Object.entries(read.buffers)) {
+    for (const a of accounts) rows.push(`${kind}|${a.pubkey}|${createHash('sha256').update(a.buf).digest('hex')}`);
+  }
   rows.sort();
   return rows.join('\n');
 }
@@ -307,6 +324,16 @@ export function fingerprint(raw) {
 /// spanning `[a_min … b_max]` are byte-identical, then no account changed across that window, so the
 /// composed graph is the true graph at every slot in it — and a range with a witness at each end is
 /// as good as an instant. If anything moved, this refuses and says what.
+/// PURE: two reads → refusal, or nothing. Separated from the fetch so the refusal is testable.
+export function witnessStable(a, b) {
+  if (b.slotMin <= a.slotMax) {
+    throw new OutOfDomain(`the second read did not begin after the first ended (${a.slotMax} → ${b.slotMin}); the window has no witness at its far end`);
+  }
+  if (fingerprint(a) !== fingerprint(b)) {
+    throw new OutOfDomain(`the network changed between reads (slots ${a.slotMin}–${b.slotMax}); a graph assembled across a change existed at no slot, so there is nothing here to certify`);
+  }
+}
+
 export async function snapshot(rpcUrl, { gapMs = 5000 } = {}) {
   const a = await readOnce(rpcUrl);
   // The two witnesses have to be separated in time or they bound no window. A load-balanced endpoint
@@ -314,13 +341,7 @@ export async function snapshot(rpcUrl, { gapMs = 5000 } = {}) {
   // and the check below is on the slots actually returned, never on how long we waited.
   await sleep(gapMs);
   const b = await readOnce(rpcUrl);
-  if (b.slotMin <= a.slotMax) {
-    throw new OutOfDomain(`the second read did not begin after the first ended (${a.slotMax} → ${b.slotMin}); the window has no witness at its far end`);
-  }
-  const fa = fingerprint(a), fb = fingerprint(b);
-  if (fa !== fb) {
-    throw new OutOfDomain(`the network changed between reads (slots ${a.slotMin}–${b.slotMax}); a graph assembled across a change existed at no slot, so there is nothing here to certify`);
-  }
+  witnessStable(a, b);
   // Nothing moved across [a.slotMin, b.slotMax], so every toggle is judged at the oldest slot seen —
   // the least generous reading, since an earlier slot can only make a switched-on toggle WarmUp.
   const at = a.slotMin;
@@ -345,7 +366,7 @@ export function manifestRows(snap) {
     ...snap.operatorVaultTickets.map((a) => row('operator_vault_ticket', a, { op: a.owner, vault: a.vault, added: String(a.added), removed: String(a.removed) })),
     ...snap.ncnVaultTickets.map((a) => row('ncn_vault_ticket', a, { ncn: a.owner, vault: a.vault, added: String(a.added), removed: String(a.removed) })),
     ...snap.ncnTickets.map((a) => row('vault_ncn_ticket', a, { vault: a.vault, ncn: a.ncn, added: String(a.added), removed: String(a.removed) })),
-    ...snap.delegations.map((a) => row('vault_operator_delegation', a, { vault: a.vault, op: a.operator, staked: String(a.staked), cooling: String(a.cooling), lastUpdateSlot: String(a.lastUpdateSlot) })),
+    ...snap.delegations.map((a) => row('vault_operator_delegation', a, { vault: a.vault, op: a.operator, staked: String(a.staked), enqueued: String(a.enqueued), cooling: String(a.cooling), lastUpdateSlot: String(a.lastUpdateSlot) })),
     ...snap.vaults.map((a) => row('vault', a, { mint: a.supportedMint })),
   ];
 }
@@ -382,7 +403,8 @@ export async function claimFromMainnet({ rpcUrl, termsPath }) {
       reads: snap.reads,
       stable_from: snap.stableFrom,
       stable_to: snap.stableTo,
-      stability: 'every account below was byte-identical across two reads spanning [stable_from, stable_to], so this graph is the graph at every slot in that window — a range with a witness at each end. A read where anything moved is refused, not labelled.',
+      stability: 'every account below was byte-identical — complete buffers, not decoded fields — across two reads spanning [stable_from, stable_to], so this graph is the graph at every slot in that window. A read where anything moved is refused, not labelled.',
+      stability_residual: 'equality at both ends does not by itself exclude a change and a return inside the window. For these accounts a restored value would still have to restore its own bookkeeping — a toggle bumps slot_added/slot_removed, a delegation bumps last_update_slot — so a change-and-return is visible in the bytes UNLESS the program leaves that bookkeeping untouched. That argument rests on Jito always updating it, which is program behaviour rather than something this adapter can verify.',
       evaluated_at_slot: snap.evaluatedAt,
       epoch_length: String(snap.epochLength),
       active_stake_rule: 'ncn_operator_state (both sides) + operator_vault_ticket + ncn_vault_ticket + vault_ncn_ticket, each Active under Jito\'s SlotToggle at evaluated_at_slot',

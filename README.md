@@ -206,10 +206,15 @@ it is current and not afterwards**, the same position `reserve-solvency` is in. 
 claim. It is not an instant either — five `getProgramAccounts` calls cannot share a bank, so a graph
 assembled from them is an aggregate over a slot *range*, and an aggregate can describe a security
 graph that existed at no slot at all. Recording that fact is not enough, so the adapter **reads the
-network twice** and refuses unless every account is byte-identical at both ends: if nothing moved
-across `[a, b]`, the composed graph is the true graph at every slot in that window, and a range with
-a witness at each end is as good as an instant. A read where anything moved is **refused, not
-labelled**. (A live run witnesses stability across ~50 slots.) Toggles are judged at the *oldest*
+network twice** and refuses unless every account is byte-identical at both ends — **complete
+buffers, not decoded fields**, so a value this adapter never reads still counts as a change: if
+nothing moved across `[a, b]`, the composed graph is the true graph at every slot in that window, and
+a range with a witness at each end is as good as an instant. A read where anything moved is
+**refused, not labelled**. What that does *not* by itself exclude is a change and a return inside the
+window; for these accounts a restored value would also have to restore its own bookkeeping — a toggle
+bumps `slot_added`, a delegation bumps `last_update_slot` — so it would be visible in the bytes,
+which rests on Jito always updating them and is program behaviour rather than something verified
+here. (A live run witnesses stability across ~50 slots.) Toggles are judged at the *oldest*
 slot seen, the least generous reading, and a per-account manifest pins every account by pubkey and
 **raw** toggle slots — the numbers a state was derived from, not our conclusion about them.
 

@@ -221,3 +221,33 @@ states and 124/140 operator→vault tickets active.
 Also fixed: `ac0e6ec` had again landed on the review branch rather than `cc/jito-restaking-ingestion`.
 Cherry-picked to `3420b16`; this work continues from there. That is twice, and the cause is that both
 agents share one working tree — worth a line in `AGENTS.md` rather than another apology.
+
+
+---
+
+## Addendum 3 — Codex F5: the witness only witnessed what it decoded
+
+Correct, and it is my bug in the most ordinary way: `fingerprint()` was built from `manifestRows()`,
+which is a **decoded projection**, and a projection can only witness the fields it happens to include.
+`enqueued_for_cooldown_amount` (offset 80) is read by no decoder here, so two genuinely different
+delegation accounts hashed the same and a graph that moved could be certified as stable.
+
+Fixed at the class rather than the field: the witness now hashes **complete account buffers**, keyed
+by pubkey, across every set including `Config`. Anything this adapter does not decode — today's blind
+spots and any field a future Jito release adds — is covered without anyone remembering to add it.
+`enqueued` is also decoded now and appears in the manifest, since a reader wants it regardless.
+
+`witnessStable(a, b)` is extracted as a pure function so the refusal is testable without a network.
+The regression is exactly the case Codex named — two reads differing **only** in `enqueued` — plus
+`last_update_slot`, `staked`, an account appearing, and the slot-ordering check. Order-independence
+is tested too, since a reshuffled RPC response must not read as movement.
+
+**The lifecycle-invariant argument, stated rather than assumed.** Full-buffer equality at both ends
+does not by itself exclude a change and a return inside the window. For these accounts a restored
+value would also have to restore its own bookkeeping: a toggle bumps `slot_added`/`slot_removed`, and
+a delegation bumps `last_update_slot`. So a change-and-return is visible in the bytes **unless the
+program leaves that bookkeeping untouched** — which rests on Jito always updating it, and is program
+behaviour rather than something this adapter verifies. It is now in the claim itself
+(`source.stability_residual`) and in the README, not only here.
+
+Live after the fix: stable across **438,197,976 – 438,198,026**, 378 manifest rows.

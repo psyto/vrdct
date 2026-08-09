@@ -205,25 +205,62 @@ test('the declared prices and NCN terms are pinned in the claim, not pointed at'
   assert.notEqual(b.claim_id, a.claim_id, 'a declared price must not be able to move without moving the claim');
 });
 
-// Codex, reviews/010 F3 reopened. Recording `coherent: false` was not an answer: an aggregate over a
-// slot range can describe a security graph that existed at no slot at all, and that must never
-// become a certificate. Two reads that agree witness that nothing moved across the window.
-test('a graph is only certified when two reads witness that nothing moved', () => {
-  const rawState = { pubkey: 'p1', ncn: NCN1, operator: OP, ncnAdded: 200n, ncnRemoved: 100n, operatorAdded: 200n, operatorRemoved: 100n };
-  const rawDel = { pubkey: 'p2', vault: V1, operator: OP, staked: 100n, cooling: 0n, lastUpdateSlot: 5n };
-  const read = (o = {}) => ({
-    states: [rawState], delegations: [rawDel], ncnTickets: [], operatorVaultTickets: [],
-    ncnVaultTickets: [], vaults: [{ pubkey: V1, supportedMint: MINT_A }], ...o,
-  });
-  assert.equal(jito.fingerprint(read()), jito.fingerprint(read()), 'the same state fingerprints the same');
+// Codex, reviews/010 F3 reopened, then F5. Recording `coherent: false` was not an answer: an
+// aggregate over a slot range can describe a security graph that existed at no slot at all. Two
+// reads that agree witness that nothing moved — but only over what they actually compare, and the
+// first version compared a DECODED PROJECTION. `enqueued_for_cooldown_amount` was in no decoder, so
+// two genuinely different delegation accounts fingerprinted the same. The witness now hashes
+// complete account buffers, which covers every field this adapter does not read.
+const bufRead = (kind, rows, slotMin, slotMax) => ({
+  slotMin, slotMax,
+  buffers: { [kind]: rows.map(([pubkey, buf]) => ({ pubkey, buf })) },
+});
+const delegationBuf = (staked, enqueued, cooling, lastUpdate = 5n) => acct(jito.SIZE.VAULT_OPERATOR_DELEGATION, [
+  [0, 4n], [8, pk(4)], [40, pk(3)], [72, staked], [80, enqueued], [88, cooling], [352, lastUpdate],
+]);
 
-  // any moved field breaks it — including a raw toggle slot, which is why the manifest keeps them
-  assert.notEqual(jito.fingerprint(read()), jito.fingerprint(read({ delegations: [{ ...rawDel, staked: 101n }] })));
-  assert.notEqual(jito.fingerprint(read()), jito.fingerprint(read({ states: [{ ...rawState, ncnAdded: 201n }] })));
-  // and order must not matter, or a reordered RPC response would look like a change
-  const two = read({ vaults: [{ pubkey: V1, supportedMint: MINT_A }, { pubkey: V2, supportedMint: MINT_A }] });
-  const flipped = read({ vaults: [{ pubkey: V2, supportedMint: MINT_A }, { pubkey: V1, supportedMint: MINT_A }] });
-  assert.equal(jito.fingerprint(two), jito.fingerprint(flipped));
+test('the stability witness compares complete buffers, not the fields we happen to decode', () => {
+  const at = (buf, lo, hi) => bufRead('vault_operator_delegation', [['d1', buf]], lo, hi);
+  const base = delegationBuf(100n, 0n, 0n);
+
+  // identical bytes, second read strictly later → accepted
+  assert.doesNotThrow(() => jito.witnessStable(at(base, 100, 110), at(delegationBuf(100n, 0n, 0n), 111, 120)));
+
+  // ONLY enqueued_for_cooldown_amount differs. No decoder reads it, and the old manifest-based
+  // fingerprint called these two accounts the same.
+  assert.throws(
+    () => jito.witnessStable(at(base, 100, 110), at(delegationBuf(100n, 7n, 0n), 111, 120)),
+    (e) => e instanceof jito.OutOfDomain && /the network changed between reads/.test(e.message),
+  );
+  // so must any other byte, decoded or not
+  assert.throws(() => jito.witnessStable(at(base, 100, 110), at(delegationBuf(100n, 0n, 0n, 6n), 111, 120)), jito.OutOfDomain);
+  assert.throws(() => jito.witnessStable(at(base, 100, 110), at(delegationBuf(101n, 0n, 0n), 111, 120)), jito.OutOfDomain);
+
+  // an account appearing or disappearing is a change too
+  assert.throws(() => jito.witnessStable(
+    at(base, 100, 110),
+    bufRead('vault_operator_delegation', [['d1', base], ['d2', base]], 111, 120),
+  ), jito.OutOfDomain);
+
+  // and the second read must begin after the first ended, on the slots actually returned
+  assert.throws(
+    () => jito.witnessStable(at(base, 100, 110), at(base, 110, 120)),
+    (e) => e instanceof jito.OutOfDomain && /did not begin after the first ended/.test(e.message),
+  );
+});
+
+test('the witness is order-independent, so a reshuffled RPC response is not a change', () => {
+  const a = delegationBuf(1n, 0n, 0n), b = delegationBuf(2n, 0n, 0n);
+  const one = bufRead('vault_operator_delegation', [['d1', a], ['d2', b]], 100, 110);
+  const two = bufRead('vault_operator_delegation', [['d2', b], ['d1', a]], 111, 120);
+  assert.doesNotThrow(() => jito.witnessStable(one, two));
+});
+
+test('the delegation decoder now reads the field the witness caught it missing', () => {
+  const d = jito.decodeVaultOperatorDelegation('X', delegationBuf(100n, 7n, 9n));
+  assert.equal(d.staked, 100n);
+  assert.equal(d.enqueued, 7n, 'enqueued_for_cooldown_amount at offset 80');
+  assert.equal(d.cooling, 9n);
 });
 
 test('the manifest keeps the raw slots a state was derived from, not the conclusion', () => {
