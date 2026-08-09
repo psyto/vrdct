@@ -41,8 +41,12 @@ observed: { close: {price, blockTime}, open: {price, blockTime} }
 
 Design points worth reviewing as decisions, not details:
 
-1. **Boundary instants are re-derived, never supplied.** Bisection over the `isClosed` predicate,
-   32 evaluations of a pure function, so campana's logic is used rather than duplicated.
+1. **Boundary instants are re-derived, never supplied.** The closure comes from the close print's
+   own session — `campana` reports the session an instant belongs to, so the closing bell is
+   `session_close_ts − 1` and the reopen is the first bell after it — and the reopen print is
+   admitted only if its session *is* that reopen. campana's logic is used, never duplicated.
+   *(The first version searched for both instants by bisection; see Addendum F1 for why that had to
+   go rather than be repaired.)*
 2. **Prices are pinned as `{ value, exp }` integers.** A float never touches a verdict.
 3. **`maxLagSecs` bounds the cherry-pick.** Whoever pins the observation chooses which print to pin;
    pin one three hours after the reopen and you can often choose the answer. Prints further than the
@@ -82,9 +86,10 @@ Friday half-day open) is still one closure, and is tested as such.
 1. **Is the one-closure guard actually sufficient?** It probes one instant per ET day at 15:00Z —
    11:00 EDT / 10:00 EST, inside every regular and half-day session — and reads `session_open_ts`.
    Is there a day shape in `CALENDAR_2026` where that probe misses or misidentifies a bell?
-2. **Is the bisection exact now that its precondition is enforced downstream rather than upstream?**
-   The guard rejects multi-closure pairs *after* bisecting. Is there a pair that survives the guard
-   while the bisection still returned a boundary that is not the one bounding its own closure?
+2. **Is deriving from the close print the right asymmetry?** A claim is anchored by whichever print
+   is earlier, so a pinner who wants a particular closure picks the close print to get it. That
+   reads correct — a closure is a property of the session that ends — but it is a pinner freedom
+   worth naming.
 3. **`direction` and `moveBps`**: signed integer arithmetic floored toward zero, scaling both prices
    to a common exponent. Check that a `DOWN` market cannot be settled by a rally, and that the
    floor's direction cannot flatter either side of the market.

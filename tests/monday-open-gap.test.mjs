@@ -29,7 +29,7 @@ test('boundary instants are re-derived, not supplied', () => {
     { price: px(10000000000), blockTime: MON_BELL + 100 },
   ));
   assert.equal(r.computation.straddles_closure, true);
-  // bisection finds the last non-CLOSED second and the first non-CLOSED second
+  // both instants come from the close print's own session: its closing bell, then the next one
   assert.equal(r.computation.close_instant, FRI_BELL - 1);
   assert.equal(r.computation.open_instant, MON_BELL);
   assert.equal(r.computation.close_lag_secs, 99);
