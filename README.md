@@ -37,6 +37,10 @@ Each surface is a pluggable module —
 - `reserve-solvency` — is a protocol's recomputed backing ≥ its liability? *(Redde lineage)*
 - `closed-market-liquidation-soundness` — does a venue liquidate tokenized equities against a price
   that updated while the underlying market was closed, with no guard? *(Vesper lineage)*
+- `monday-open-gap` — did a market closure move the price by a threshold declared before it began?
+  Offline-complete, **not yet wired to `encode.mjs` or the on-chain twin.** Unlike the others this
+  one is not a verdict on someone's conduct: it settles an event people are already exposed to and
+  cannot hedge, so it is the first claim-type that describes a market that does not exist yet.
 - `obligated-liveness` — did an obligor miss more of its schedule than the network assumption the
   market declared can excuse? The first type that settles a party doing **nothing** rather than doing
   something wrong. Offline-complete, **not yet wired to `encode.mjs` or the on-chain twin.**
@@ -44,6 +48,34 @@ Each surface is a pluggable module —
   certify, and how far can a small shock cascade? Offline-complete, **not yet wired to `encode.mjs`
   or the on-chain twin.**
 - *depeg, exploit, agent-escrow — the roadmap.*
+
+### A market that does not exist yet
+
+Everyone holding a tokenized equity across a closure is exposed to the reopen, and there is no
+instrument shaped like that exposure: a perp hedges a *price*, but inside the closure the perp has no
+reference either, so it hedges a broken number with a broken number. The gap is an **event**, and the
+only unambiguous number attached to it is the reopen print.
+
+Settling that event needs one fact nobody in the trade can supply neutrally — when the closure began
+and ended. A venue that defines its own reopen instant is marking its own exam. `core/campana.mjs`
+derives it as a pure function of `(timestamp, calendar)`, so the boundary is re-executable and the
+market can exist at all.
+
+**Honest scope.** The claim does not receive the boundary instants. It derives the closure from the
+**close print's own session** — the bell that ends it, then the first bell after that — and admits
+the reopen print only if the session *it* belongs to is that reopen. Nothing is searched for, so
+there is no boundary a print can be paired with except the one its own session gives it.
+
+The residual that remains is **unclosed, and this type has no mechanism that closes it.** It cannot
+prove a pinned print is the closest one to its boundary; `maxLagSecs` bounds how far the pinner may
+reach, and within that bound the pinner chooses. An earlier version of this section said a challenger
+holding a nearer print disputes and the nearer print wins. **That was false and is worth saying
+plainly rather than deleting:** a market commits to `inputs_hash`, a challenge asserts a different
+*flag* over those same pinned prints, and `settle` accepts only a feed matching that commitment — so
+a nearer print is a *different market*, not a correction to this one. Closing it needs a
+reconstructible source descriptor and a canonical first-print rule, the way CMLS has one; until then
+a gap verdict says the prints were near their bells, and says nothing about what other prints
+existed.
 
 ### Settling silence — and the boundary past which nobody can
 
@@ -301,6 +333,19 @@ Three residual assumptions, all named rather than hidden:
    A CMLS verdict counts every normal US-equities session and every calendared half-day session
    (through its 13:00 ET close) as **open**; only updates outside those sessions count toward its
    closed-market liveness signal.
+
+   `monday-open-gap` pins two prints and cannot prove either is the *closest* one to its boundary —
+   the same omission problem, on two observations instead of thousands. It bounds the choice rather
+   than removing it: the terms declare `maxLagSecs`, re-execution derives the closure from the close
+   print's own session and admits a reopen print only from the session that ends that closure, and a
+   print outside the declared lag returns `STALE`. So a settled verdict always rests on prints inside
+   the right two sessions and near their bells.
+
+   **Unlike the cases above, this one is unsourced and therefore genuinely open.** This type has no
+   source descriptor and no reconstruction rule, so a challenger holding a nearer print cannot make
+   this market pay on it: `inputs_hash` commits the two prints and a challenge only asserts a
+   different flag over them. A nearer print is a different market. Nobody should read a gap verdict
+   as a claim that no closer print existed, and nobody should expect the protocol to adjudicate one.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
    A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain
