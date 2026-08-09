@@ -264,14 +264,13 @@ argument in Addendum 3 — that a change-and-return would be visible because any
 `delegation_state`; only the epoch `update()` path writes that slot.
 
 I went to the source before choosing between Codex's two options, and the stronger one is not
-available: the state can return **without** `update()` at all —
-
-```
-(100, 0, 0) --cooldown(100)--> (0, 100, 0) --slash(100)--> (0, 0, 0) --delegate(100)--> (100, 0, 0)
-```
-
-— and a byte comparison at the two endpoints cannot see any of it. There is no no-return invariant to
-prove, so the claim is downgraded, which was the other option.
+available: `DelegationState`'s own transitions include decreases as well as increases, so nothing in
+them excludes a value returning to a previous one without `update()` — and a byte comparison at the
+two endpoints could not see it. *(An earlier version of this addendum gave a concrete
+`cooldown → slash → delegate` sequence as if it were a confirmed program path. No exposed instruction
+performing that round trip was ever pinned, and the downgrade does not need one: a witness has to
+rule the case out, not find it plausible.)* There is no no-return invariant to prove, so the claim is
+downgraded, which was the other option.
 
 **What the two reads now claim: endpoint equality, and nothing more.** Every account had identical
 bytes at two separated observations. That is still worth doing — it is a filter, and a read where

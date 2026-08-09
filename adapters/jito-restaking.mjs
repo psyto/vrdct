@@ -332,12 +332,12 @@ export function fingerprint(read) {
 ///   2. A change and a return inside the window is not excluded by the bytes. An earlier version of
 ///      this comment claimed it was, on the grounds that any mutation bumps `last_update_slot`. That
 ///      is false (Codex, reviews/010 F6): `AddDelegation` and `CooldownDelegation` mutate only
-///      `delegation_state`, and only the epoch `update()` path writes that slot. And the state
-///      itself can return without `update()` — `(100,0,0)` → cooldown(100) → `(0,100,0)` →
-///      slash(100) → `(0,0,0)` → delegate(100) → `(100,0,0)`, all invisible to a byte comparison at
-///      the ends.
+///      `delegation_state`, and only the epoch `update()` path writes that slot. Nor do the
+///      `DelegationState` transitions themselves exclude a return: they include decreases as well as
+///      increases. No exposed instruction performing such a round trip has been pinned here, and
+///      none is needed — a witness has to rule the case out, not find it plausible.
 ///
-/// So this is an OBSERVATION with equal endpoints, not a snapshot of a state, and a claim built from
+/// So this is an OBSERVATION with equal endpoints, not a state at a slot, and a claim built from
 /// it says exactly that. Unlikely is not the standard this repo settles money on; the distinction
 /// between "nothing was seen to move" and "nothing moved" is the whole of the difference.
 /// PURE: two reads → refusal, or nothing. Separated from the fetch so the refusal is testable.

@@ -207,7 +207,8 @@ test('the declared prices and NCN terms are pinned in the claim, not pointed at'
 
 // Codex, reviews/010 F3 reopened, then F5. Recording `coherent: false` was not an answer: an
 // aggregate over a slot range can describe a security graph that existed at no slot at all. Two
-// reads that agree witness that nothing moved — but only over what they actually compare, and the
+// reads that agree establish ENDPOINT EQUALITY — nothing was seen to move, which is not the same as
+// nothing moving — and they establish it only over what they actually compare, and the
 // first version compared a DECODED PROJECTION. `enqueued_for_cooldown_amount` was in no decoder, so
 // two genuinely different delegation accounts fingerprinted the same. The witness now hashes
 // complete account buffers, which covers every field this adapter does not read.
@@ -274,9 +275,10 @@ test('the manifest keeps the raw slots a state was derived from, not the conclus
 
 // Codex, reviews/010 F6. The interval-stability argument was FALSE: I claimed any mutation bumps
 // last_update_slot, but AddDelegation and CooldownDelegation write only delegation_state — the epoch
-// update() path writes that slot. And the state can return without it:
-//     (100,0,0) --cooldown(100)--> (0,100,0) --slash(100)--> (0,0,0) --delegate(100)--> (100,0,0)
-// none of which a byte comparison at the two endpoints can see. So the claim must say what it has.
+// update() path writes that slot. Nor do the DelegationState transitions themselves exclude a
+// change and a return inside the window: they include decreases as well as increases. (No exposed
+// instruction performing such a round trip has been pinned; none is needed, because a witness has to
+// rule the case out rather than find it plausible.) So the claim must say only what it has.
 test('a claim from this adapter says it is an observation, not a state at a slot', () => {
   const g = jito.buildGraph({ ...snap(), terms: baseTerms() });
   const claim = buildRestakingClaim({
