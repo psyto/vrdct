@@ -314,23 +314,38 @@ export function fingerprint(read) {
   return rows.join('\n');
 }
 
-/// Read the network TWICE and refuse unless nothing moved in between.
+/// Read the network TWICE and refuse if anything moved between the reads.
 ///
-/// This is the whole of F3, and recording `coherent: false` was not an answer to it. Five
-/// `getProgramAccounts` calls cannot share a bank, so a graph assembled from them is an aggregate
-/// over a slot RANGE — and an aggregate can describe a security graph that existed at no slot at
-/// all, which is exactly what must never become a certificate. `getProgramAccounts` takes no slot,
-/// so the state cannot be pinned; what CAN be established is that it did not move. If two reads
-/// spanning `[a_min … b_max]` are byte-identical, then no account changed across that window, so the
-/// composed graph is the true graph at every slot in it — and a range with a witness at each end is
-/// as good as an instant. If anything moved, this refuses and says what.
+/// WHAT THIS ESTABLISHES, AND — after three rounds of getting this wrong — WHAT IT DOES NOT.
+///
+/// It establishes ENDPOINT EQUALITY: every account had identical bytes at two separated
+/// observations. That is a real filter, and it is why it stays: a read where anything visibly moved
+/// is refused rather than certified.
+///
+/// It does NOT establish that this graph existed at any single slot, for two independent reasons.
+///
+///   1. Each read is itself spread across response slots — five `getProgramAccounts` calls cannot
+///      share a bank — so neither endpoint is an instant either.
+///   2. A change and a return inside the window is not excluded by the bytes. An earlier version of
+///      this comment claimed it was, on the grounds that any mutation bumps `last_update_slot`. That
+///      is false (Codex, reviews/010 F6): `AddDelegation` and `CooldownDelegation` mutate only
+///      `delegation_state`, and only the epoch `update()` path writes that slot. And the state
+///      itself can return without `update()` — `(100,0,0)` → cooldown(100) → `(0,100,0)` →
+///      slash(100) → `(0,0,0)` → delegate(100) → `(100,0,0)`, all invisible to a byte comparison at
+///      the ends.
+///
+/// So this is an OBSERVATION with equal endpoints, not a snapshot of a state, and a claim built from
+/// it says exactly that. Unlikely is not the standard this repo settles money on; the distinction
+/// between "nothing was seen to move" and "nothing moved" is the whole of the difference.
 /// PURE: two reads → refusal, or nothing. Separated from the fetch so the refusal is testable.
-export function witnessStable(a, b) {
+/// Named for what it checks — the endpoints are equal — rather than for what that was once claimed
+/// to imply about the interval between them.
+export function witnessEndpointsEqual(a, b) {
   if (b.slotMin <= a.slotMax) {
     throw new OutOfDomain(`the second read did not begin after the first ended (${a.slotMax} → ${b.slotMin}); the window has no witness at its far end`);
   }
   if (fingerprint(a) !== fingerprint(b)) {
-    throw new OutOfDomain(`the network changed between reads (slots ${a.slotMin}–${b.slotMax}); a graph assembled across a change existed at no slot, so there is nothing here to certify`);
+    throw new OutOfDomain(`the network moved between reads (slots ${a.slotMin}–${b.slotMax}); a graph assembled across a visible change is not even an observation of one state`);
   }
 }
 
@@ -341,13 +356,13 @@ export async function snapshot(rpcUrl, { gapMs = 5000 } = {}) {
   // and the check below is on the slots actually returned, never on how long we waited.
   await sleep(gapMs);
   const b = await readOnce(rpcUrl);
-  witnessStable(a, b);
+  witnessEndpointsEqual(a, b);
   // Nothing moved across [a.slotMin, b.slotMax], so every toggle is judged at the oldest slot seen —
   // the least generous reading, since an earlier slot can only make a switched-on toggle WarmUp.
   const at = a.slotMin;
   return {
     ...a,
-    stableFrom: a.slotMin, stableTo: b.slotMax,
+    observedFrom: a.slotMin, observedTo: b.slotMax,
     reads: [a.slots, b.slots],
     evaluatedAt: at,
     states: a.states.map((r) => activateNcnOperatorState(r, at, a.epochLength)),
@@ -401,10 +416,11 @@ export async function claimFromMainnet({ rpcUrl, termsPath }) {
       restaking_program: RESTAKING_PROGRAM,
       vault_program: VAULT_PROGRAM,
       reads: snap.reads,
-      stable_from: snap.stableFrom,
-      stable_to: snap.stableTo,
-      stability: 'every account below was byte-identical — complete buffers, not decoded fields — across two reads spanning [stable_from, stable_to], so this graph is the graph at every slot in that window. A read where anything moved is refused, not labelled.',
-      stability_residual: 'equality at both ends does not by itself exclude a change and a return inside the window. For these accounts a restored value would still have to restore its own bookkeeping — a toggle bumps slot_added/slot_removed, a delegation bumps last_update_slot — so a change-and-return is visible in the bytes UNLESS the program leaves that bookkeeping untouched. That argument rests on Jito always updating it, which is program behaviour rather than something this adapter can verify.',
+      observed_from: snap.observedFrom,
+      observed_to: snap.observedTo,
+      certifies: 'ENDPOINT EQUALITY ONLY. Every account below had identical bytes — complete buffers, not decoded fields — at two separated observations spanning [observed_from, observed_to]. A read where anything visibly moved is refused rather than certified.',
+      does_not_certify: 'That this graph existed at any single slot. Each read is itself spread across response slots, so neither endpoint is an instant; and a change and a return inside the window is not excluded, because Jito mutates delegation_state without writing last_update_slot (only the epoch update() path writes it) and the state can return without that path — cooldown then slash then delegate restores a prior triple. This is an OBSERVATION with equal endpoints, not a snapshot of a state.',
+      settlement_grade: 'NO. A verdict from this adapter is a board reading. Money-at-risk settlement needs a source that can address a slot, which getProgramAccounts cannot.',
       evaluated_at_slot: snap.evaluatedAt,
       epoch_length: String(snap.epochLength),
       active_stake_rule: 'ncn_operator_state (both sides) + operator_vault_ticket + ncn_vault_ticket + vault_ncn_ticket, each Active under Jito\'s SlotToggle at evaluated_at_slot',

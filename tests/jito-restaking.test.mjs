@@ -219,41 +219,41 @@ const delegationBuf = (staked, enqueued, cooling, lastUpdate = 5n) => acct(jito.
   [0, 4n], [8, pk(4)], [40, pk(3)], [72, staked], [80, enqueued], [88, cooling], [352, lastUpdate],
 ]);
 
-test('the stability witness compares complete buffers, not the fields we happen to decode', () => {
+test('the endpoint witness compares complete buffers, not the fields we happen to decode', () => {
   const at = (buf, lo, hi) => bufRead('vault_operator_delegation', [['d1', buf]], lo, hi);
   const base = delegationBuf(100n, 0n, 0n);
 
   // identical bytes, second read strictly later → accepted
-  assert.doesNotThrow(() => jito.witnessStable(at(base, 100, 110), at(delegationBuf(100n, 0n, 0n), 111, 120)));
+  assert.doesNotThrow(() => jito.witnessEndpointsEqual(at(base, 100, 110), at(delegationBuf(100n, 0n, 0n), 111, 120)));
 
   // ONLY enqueued_for_cooldown_amount differs. No decoder reads it, and the old manifest-based
   // fingerprint called these two accounts the same.
   assert.throws(
-    () => jito.witnessStable(at(base, 100, 110), at(delegationBuf(100n, 7n, 0n), 111, 120)),
-    (e) => e instanceof jito.OutOfDomain && /the network changed between reads/.test(e.message),
+    () => jito.witnessEndpointsEqual(at(base, 100, 110), at(delegationBuf(100n, 7n, 0n), 111, 120)),
+    (e) => e instanceof jito.OutOfDomain && /the network moved between reads/.test(e.message),
   );
   // so must any other byte, decoded or not
-  assert.throws(() => jito.witnessStable(at(base, 100, 110), at(delegationBuf(100n, 0n, 0n, 6n), 111, 120)), jito.OutOfDomain);
-  assert.throws(() => jito.witnessStable(at(base, 100, 110), at(delegationBuf(101n, 0n, 0n), 111, 120)), jito.OutOfDomain);
+  assert.throws(() => jito.witnessEndpointsEqual(at(base, 100, 110), at(delegationBuf(100n, 0n, 0n, 6n), 111, 120)), jito.OutOfDomain);
+  assert.throws(() => jito.witnessEndpointsEqual(at(base, 100, 110), at(delegationBuf(101n, 0n, 0n), 111, 120)), jito.OutOfDomain);
 
   // an account appearing or disappearing is a change too
-  assert.throws(() => jito.witnessStable(
+  assert.throws(() => jito.witnessEndpointsEqual(
     at(base, 100, 110),
     bufRead('vault_operator_delegation', [['d1', base], ['d2', base]], 111, 120),
   ), jito.OutOfDomain);
 
   // and the second read must begin after the first ended, on the slots actually returned
   assert.throws(
-    () => jito.witnessStable(at(base, 100, 110), at(base, 110, 120)),
+    () => jito.witnessEndpointsEqual(at(base, 100, 110), at(base, 110, 120)),
     (e) => e instanceof jito.OutOfDomain && /did not begin after the first ended/.test(e.message),
   );
 });
 
-test('the witness is order-independent, so a reshuffled RPC response is not a change', () => {
+test('the witness is order-independent, so a reshuffled RPC response is not movement', () => {
   const a = delegationBuf(1n, 0n, 0n), b = delegationBuf(2n, 0n, 0n);
   const one = bufRead('vault_operator_delegation', [['d1', a], ['d2', b]], 100, 110);
   const two = bufRead('vault_operator_delegation', [['d2', b], ['d1', a]], 111, 120);
-  assert.doesNotThrow(() => jito.witnessStable(one, two));
+  assert.doesNotThrow(() => jito.witnessEndpointsEqual(one, two));
 });
 
 test('the delegation decoder now reads the field the witness caught it missing', () => {
@@ -270,4 +270,30 @@ test('the manifest keeps the raw slots a state was derived from, not the conclus
   });
   assert.equal(rows.length, 1);
   assert.deepEqual(rows[0], { k: 'ncn_operator_state', a: 'p1', ncn: NCN1, op: OP, ncnAdded: '200', ncnRemoved: '100', opAdded: '700', opRemoved: '0' });
+});
+
+// Codex, reviews/010 F6. The interval-stability argument was FALSE: I claimed any mutation bumps
+// last_update_slot, but AddDelegation and CooldownDelegation write only delegation_state — the epoch
+// update() path writes that slot. And the state can return without it:
+//     (100,0,0) --cooldown(100)--> (0,100,0) --slash(100)--> (0,0,0) --delegate(100)--> (100,0,0)
+// none of which a byte comparison at the two endpoints can see. So the claim must say what it has.
+test('a claim from this adapter says it is an observation, not a snapshot of a state', () => {
+  const g = jito.buildGraph({ ...snap(), terms: baseTerms() });
+  const claim = buildRestakingClaim({
+    subject: { network: 'jito-restaking', chain: 'solana-mainnet' },
+    terms: { gamma: { num: 1, den: 10 }, shockPsiBps: 10 },
+    services: g.services, validators: g.validators,
+    source: {
+      kind: 'JITO_RESTAKING_SNAPSHOT', observed_from: 100, observed_to: 200,
+      certifies: 'ENDPOINT EQUALITY ONLY.', does_not_certify: 'That this graph existed at any single slot.',
+      settlement_grade: 'NO.',
+    },
+  });
+  const src = claim.inputs.observed.source;
+  assert.match(src.certifies, /ENDPOINT EQUALITY ONLY/);
+  assert.match(src.does_not_certify, /existed at any single slot/);
+  assert.match(src.settlement_grade, /^NO/);
+  // and none of it is decoration: it is inside the body the claim id commits to
+  const tampered = { ...claim, inputs: { ...claim.inputs, observed: { ...claim.inputs.observed, source: { ...src, settlement_grade: 'YES.' } } } };
+  assert.equal(verify(tampered).ok, false, 'the scope statement must not be editable without breaking the claim');
 });

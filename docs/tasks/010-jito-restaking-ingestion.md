@@ -251,3 +251,39 @@ behaviour rather than something this adapter verifies. It is now in the claim it
 (`source.stability_residual`) and in the README, not only here.
 
 Live after the fix: stable across **438,197,976 – 438,198,026**, 378 manifest rows.
+
+
+---
+
+## Addendum 4 — Codex F6: the lifecycle argument was false, so the claim is downgraded
+
+Right, and this is the second time I asserted Jito's program behaviour without reading it. The
+argument in Addendum 3 — that a change-and-return would be visible because any mutation bumps
+`last_update_slot` — is not true. `AddDelegation` and `CooldownDelegation` write only
+`delegation_state`; only the epoch `update()` path writes that slot.
+
+I went to the source before choosing between Codex's two options, and the stronger one is not
+available: the state can return **without** `update()` at all —
+
+```
+(100, 0, 0) --cooldown(100)--> (0, 100, 0) --slash(100)--> (0, 0, 0) --delegate(100)--> (100, 0, 0)
+```
+
+— and a byte comparison at the two endpoints cannot see any of it. There is no no-return invariant to
+prove, so the claim is downgraded, which was the other option.
+
+**What the two reads now claim: endpoint equality, and nothing more.** Every account had identical
+bytes at two separated observations. That is still worth doing — it is a filter, and a read where
+anything visibly moved is refused rather than certified — but it is not a proof about the interval.
+Two independent reasons are now stated wherever the claim is described: each read is itself spread
+across response slots, so neither endpoint is an instant; and a change-and-return is not excluded.
+
+The claim's own body carries `certifies`, `does_not_certify` and `settlement_grade: NO`, and a test
+asserts those cannot be edited without breaking the claim id. `witnessStable` is renamed
+`witnessEndpointsEqual`, because the old name asserted the thing that turned out to be false.
+
+**The consequence for the product, stated plainly:** a verdict from this adapter is a board reading,
+not something to settle money on. Settlement needs a source that can address a slot, which
+`getProgramAccounts` cannot — the same wall `reserve-solvency` is already against, and the README
+already says what would close it. Three review rounds went into learning that this adapter cannot
+reach settlement grade from public RPC, which is a more useful thing to know than a green tick.
