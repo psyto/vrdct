@@ -52,11 +52,11 @@ Design points worth reviewing as decisions, not details:
 
 ## Honest scope
 
-- **The omission problem.** The type cannot prove a pinned print is the *first* after the reopen. It
-  is closed the same way `closed-market-liquidation-soundness` closes it: a challenger holding a
-  print nearer the boundary disputes, and the nearer print wins. That is an obligation on
-  participants, and it is stated in the README.
-- **Exactly one closure.** See the finding below.
+- **The omission problem, and it is OPEN.** The type cannot prove a pinned print is the *first*
+  after the reopen. `maxLagSecs` bounds how far the pinner may reach; inside that bound the pinner
+  chooses. This brief originally said the residual was closed the way CMLS closes it — a challenger
+  with a nearer print disputes and wins. That was false; see Addendum F2.
+- **Exactly one closure.** See the finding below and Addendum F1.
 - **Offline-complete.** `core/encode.mjs`, `CLAIM_TYPE_ID` and the Rust twin are not wired.
 
 ## Finding fixed before review — prints from different closures
@@ -97,3 +97,42 @@ instead. It is written now, before review, because AGENTS.md asks for one and be
 reviews since (007, 008) both used the brief's review-focus section to good effect. The branch has
 also been merged up to `main` (claim-types #4 and #5 landed since), and its test file — which the
 original branch added but never wired — now runs inside `npm run test:canonical`.
+
+
+---
+
+## Addendum — Codex review of `3079791`, verdict CHANGES → addressed
+
+Both blockers were real, and both were cases of a guard that looked right from the inside.
+
+**F1 (P1) — the one-closure guard compared the wrong two things.** It bisected first and then asked
+whether a session opened between the two *selected* instants. That proves nothing about the raw
+prints, because bisection needs the `CLOSED` predicate to flip exactly once in its range and over a
+multi-closure span it flips many times, so each search settles on whichever boundary sits nearest its
+own end. Codex's case: a Friday 2026-01-02 close print with a Tuesday 2026-01-06 open print and
+`maxLagSecs: 86400`. The right-hand search selects **Monday's** bell, the guard sees a clean single
+closure, the Tuesday print is exactly 86,400 s past the wrongly selected bell so `lags_ok` holds, and
+the claim settles `RED` over a span containing Monday's entire session. My own Friday→Wednesday
+regression missed it only because that shape happened to select Wednesday.
+
+Fixed by removing the search rather than patching the guard, along the lines Codex suggested. The
+closure is now derived **from the close print alone**: `campana` reports the session an instant
+belongs to, so the closing bell is `session_close_ts − 1`, the reopen is the first bell after it, and
+the open print is admitted only if `marketStatus(open).session_open_ts` **is** that reopen. There is
+no instant either print can be paired with except the one its own session gives it, so the entire
+class is gone rather than one shape of it. Both directions are now tested — a reopen print one
+session too late (the January reproducer, with the large declared lag) and a close print one session
+too early. The day walk is bounded by its own loop limit rather than checked after running, which
+was Codex's third note.
+
+**F2 (P1) — "a closer print wins" is not a mechanism this market has.** Correct, and it is the same
+failure as task 007's F1: a sentence this repo published that the architecture does not implement.
+`inputs_hash` commits the two prints, a challenge asserts a different *flag* over those same prints,
+and `settle` accepts only a feed matching that commitment — so a nearer print is a **different
+market**, not a correction to this one. CMLS can make that promise because it has a source descriptor
+its inputs are reconstructed from; this type has none.
+
+The README, the module header and this brief now say the residual is **unsourced and open**, and the
+correction is stated rather than quietly deleted, so a reader who saw the old claim learns it was
+wrong. Closing it properly needs a reconstructible source descriptor and a canonical first-print
+rule — that is a future task, not a wording change.

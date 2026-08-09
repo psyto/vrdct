@@ -61,16 +61,21 @@ and ended. A venue that defines its own reopen instant is marking its own exam. 
 derives it as a pure function of `(timestamp, calendar)`, so the boundary is re-executable and the
 market can exist at all.
 
-**Honest scope.** The claim does not receive the boundary instants; it **re-derives** them by
-bisection and rejects prints further than a declared `maxLagSecs` from them, which bounds — but does
-not eliminate — the pinner's freedom to choose which print to pin. Two residuals are stated rather
-than papered over. It cannot prove a pinned print is the *first* after the reopen; that is the
-omission problem, and it is closed the way `closed-market-liquidation-soundness` closes it — a
-challenger holding a print nearer the boundary disputes, and the nearer print wins. And a pair of
-prints must straddle **exactly one** closure: `maxLagSecs` alone does not enforce that, because two
-prints can each sit beside a genuine bell while belonging to different closures, which would report
-days of ordinary trading as one closure's gap. Re-execution therefore requires that no trading
-session opens between the two derived instants.
+**Honest scope.** The claim does not receive the boundary instants. It derives the closure from the
+**close print's own session** — the bell that ends it, then the first bell after that — and admits
+the reopen print only if the session *it* belongs to is that reopen. Nothing is searched for, so
+there is no boundary a print can be paired with except the one its own session gives it.
+
+The residual that remains is **unclosed, and this type has no mechanism that closes it.** It cannot
+prove a pinned print is the closest one to its boundary; `maxLagSecs` bounds how far the pinner may
+reach, and within that bound the pinner chooses. An earlier version of this section said a challenger
+holding a nearer print disputes and the nearer print wins. **That was false and is worth saying
+plainly rather than deleting:** a market commits to `inputs_hash`, a challenge asserts a different
+*flag* over those same pinned prints, and `settle` accepts only a feed matching that commitment — so
+a nearer print is a *different market*, not a correction to this one. Closing it needs a
+reconstructible source descriptor and a canonical first-print rule, the way CMLS has one; until then
+a gap verdict says the prints were near their bells, and says nothing about what other prints
+existed.
 
 ### Settling silence — and the boundary past which nobody can
 
@@ -331,11 +336,16 @@ Three residual assumptions, all named rather than hidden:
 
    `monday-open-gap` pins two prints and cannot prove either is the *closest* one to its boundary —
    the same omission problem, on two observations instead of thousands. It bounds the choice rather
-   than removing it: the terms declare `maxLagSecs`, re-execution re-derives both boundary instants
-   from the calendar by bisection and returns `STALE` for a print outside that lag, so a settled
-   verdict always rests on prints near the bell. **The obligation this puts on a participant:** a
-   challenger holding a print closer to a boundary must dispute with it, and the closer print wins.
-   Nobody should read a gap verdict as a claim that no closer print existed.
+   than removing it: the terms declare `maxLagSecs`, re-execution derives the closure from the close
+   print's own session and admits a reopen print only from the session that ends that closure, and a
+   print outside the declared lag returns `STALE`. So a settled verdict always rests on prints inside
+   the right two sessions and near their bells.
+
+   **Unlike the cases above, this one is unsourced and therefore genuinely open.** This type has no
+   source descriptor and no reconstruction rule, so a challenger holding a nearer print cannot make
+   this market pay on it: `inputs_hash` commits the two prints and a challenge only asserts a
+   different flag over them. A nearer print is a different market. Nobody should read a gap verdict
+   as a claim that no closer print existed, and nobody should expect the protocol to adjudicate one.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
    A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain

@@ -10,6 +10,7 @@ const unix = (y, m, d, hour, minute = 0, second = 0) => Math.floor(Date.UTC(y, m
 // A real closure: Friday 2026-08-07 close (20:00Z = 16:00 ET) → Monday 2026-08-10 open (13:30Z = 09:30 ET).
 const FRI_BELL = unix(2026, 8, 7, 20, 0, 0);
 const MON_BELL = unix(2026, 8, 10, 13, 30, 0);
+const MON_CLOSE = unix(2026, 8, 10, 20, 0);
 
 const px = (value, exp = 8) => ({ value: String(value), exp });
 const terms = (o = {}) => ({ thresholdBps: 500, maxLagSecs: 300, direction: 'ABS', ...o });
@@ -80,7 +81,9 @@ test('prints that never straddle a closure settle nothing', () => {
   ));
   assert.equal(r.verdict.flag, 'STALE');
   assert.equal(r.computation.straddles_closure, false);
-  assert.equal(r.computation.close_instant, null);
+  // the close print's own session bell is still reported — it is a fact about the print, and this
+  // type shows what it derived even when it refuses to settle
+  assert.equal(r.computation.close_instant, MON_CLOSE - 1);
   assert.match(r.verdict.reason, /do not straddle a market closure/);
 });
 
@@ -148,22 +151,23 @@ test('prints from different closures settle nothing, however close to a bell the
   const open = { price: px(9000000000), blockTime: unix(2026, 8, 12, 13, 35) };
   const r = gap.reexec(inputs(close, open));
 
-  assert.equal(r.computation.straddles_closure, true);     // the old test still says yes
-  assert.equal(r.computation.close_instant, FRI_BELL - 1); // Friday's bell
-  assert.equal(r.computation.open_instant, unix(2026, 8, 12, 13, 30)); // ...and WEDNESDAY's
-  assert.equal(r.computation.sessions_inside, 2);          // Monday and Tuesday traded in between
+  assert.equal(r.computation.straddles_closure, true);
+  assert.equal(r.computation.close_instant, FRI_BELL - 1);   // Friday's bell, from the close print's session
+  assert.equal(r.computation.open_instant, MON_BELL);        // the reopen that ENDS that closure
+  assert.equal(r.computation.reopen_session_open, unix(2026, 8, 12, 13, 30)); // the print sits in Wednesday's
   assert.equal(r.computation.one_closure, false);
   assert.equal(r.verdict.flag, 'STALE');
-  assert.match(r.verdict.reason, /span 2 further trading sessions rather than one closure/);
+  assert.match(r.verdict.reason, /belongs to a later session/);
 
-  // and it is not maxLagSecs that saves us: both prints are within 300s of a real bell
-  assert.ok(r.computation.close_lag_secs <= 300 && r.computation.open_lag_secs <= 300);
+  // and it was not maxLagSecs that used to save us: each print sits within 300s of a genuine bell —
+  // its OWN session's — which is exactly why comparing two searched instants proved nothing
+  assert.ok(r.computation.close_lag_secs <= 300);
+  assert.ok(open.blockTime - r.computation.reopen_session_open <= 300);
   const permissive = gap.reexec(inputs(close, open, terms({ maxLagSecs: 1_000_000 })));
   assert.equal(permissive.verdict.flag, 'STALE');
 
   // the honest one-closure claim over the same weekend still settles
   const good = gap.reexec(inputs(close, { price: px(9000000000), blockTime: MON_BELL + 10 }));
-  assert.equal(good.computation.sessions_inside, 0);
   assert.equal(good.computation.one_closure, true);
   assert.equal(good.verdict.flag, 'RED');
 });
@@ -173,7 +177,45 @@ test('a holiday-lengthened closure is still one closure', () => {
   const wedClose = { price: px(10000000000), blockTime: unix(2026, 11, 25, 20, 59) };
   const friOpen = { price: px(10010000000), blockTime: unix(2026, 11, 27, 14, 32) };
   const r = gap.reexec(inputs(wedClose, friOpen, terms({ maxLagSecs: 600 })));
-  assert.equal(r.computation.sessions_inside, 0, 'a holiday adds no session');
-  assert.equal(r.computation.one_closure, true);
+  assert.equal(r.computation.one_closure, true, 'a holiday adds no session');
   assert.equal(r.verdict.flag, 'GREEN'); // 10 bps, short of the declared 500
+});
+
+// Codex, reviews/009 F1. The first guard compared the two BISECTED instants against each other, so
+// it proved nothing about the raw prints: when the right-hand search settled on the EARLIER bell,
+// the guard saw a clean single closure while the pinned reopen print sat a session later. A large —
+// but legally declarable — maxLagSecs then covered the distance.
+test('a reopen print one session too late is rejected however large the declared lag', () => {
+  // 2026-01-01 is a holiday, so Friday 01-02 trades, Monday 01-05 trades in full, Tuesday 01-06 opens.
+  const friClose = unix(2026, 1, 2, 21, 0);   // 16:00 ET, EST = UTC-5
+  const monBell = unix(2026, 1, 5, 14, 30);   // 09:30 ET
+  const tueBell = unix(2026, 1, 6, 14, 30);
+  assert.equal(marketStatus(friClose - 1).status, STATUS.OPEN);
+  assert.equal(marketStatus(monBell + 60).status, STATUS.OPEN, 'Monday must trade for this to be the bug');
+
+  const close = { price: px(10000000000), blockTime: friClose - 1 };
+  const open = { price: px(10100000000), blockTime: tueBell };
+  const r = gap.reexec(inputs(close, open, terms({ thresholdBps: 1, maxLagSecs: 86_400 })));
+
+  assert.equal(r.computation.close_instant, friClose - 1);
+  assert.equal(r.computation.open_instant, monBell, 'the closure that starts at Friday ends on Monday');
+  assert.equal(r.computation.reopen_session_open, tueBell, 'but the print is in Tuesday');
+  assert.equal(r.computation.one_closure, false);
+  assert.equal(r.verdict.flag, 'STALE');
+
+  // the same shape with the Monday print is the honest claim, and settles
+  const honest = gap.reexec(inputs(close, { price: px(10100000000), blockTime: monBell + 5 }, terms({ thresholdBps: 1, maxLagSecs: 86_400 })));
+  assert.equal(honest.computation.one_closure, true);
+  assert.equal(honest.verdict.flag, 'RED');
+});
+
+// The other side of F1: a print from BEFORE the closure's own session cannot be paired either.
+test('a close print one session too early is rejected too', () => {
+  const thuClose = unix(2026, 8, 6, 20, 0);
+  const early = { price: px(10000000000), blockTime: thuClose - 10 }; // Thursday, not Friday
+  const r = gap.reexec(inputs(early, { price: px(9000000000), blockTime: MON_BELL + 10 }, terms({ maxLagSecs: 500_000 })));
+  assert.equal(r.computation.close_instant, thuClose - 1);
+  assert.equal(r.computation.open_instant, unix(2026, 8, 7, 13, 30), "Thursday's closure reopens on Friday");
+  assert.equal(r.computation.one_closure, false);
+  assert.equal(r.verdict.flag, 'STALE');
 });

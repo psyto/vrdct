@@ -26,10 +26,16 @@
 // declare `maxLagSecs`, and re-execution rejects any print further than that from the boundary
 // instant it re-derives itself. That bounds the choice; it does not eliminate it.
 //
-// HONEST RESIDUAL. This type cannot prove a pinned print is the FIRST print after the reopen — that
-// is the omission problem, and a claim alone never closes it. It is closed the same way it is for
-// `closed-market-liquidation-soundness`: a challenger who holds a print closer to the boundary
-// disputes, and the closer print wins. Said plainly so no one reads more into a verdict than it has.
+// HONEST RESIDUAL, AND IT IS OPEN. This type cannot prove a pinned print is the FIRST print after
+// the reopen. `maxLagSecs` bounds how far the pinner may reach; inside that bound the pinner still
+// chooses. This comment used to say the residual was closed the way it is for
+// `closed-market-liquidation-soundness` — a challenger holding a nearer print disputes and the
+// nearer print wins. That was wrong (Codex, reviews/009 F2): a market commits to `inputs_hash`, a
+// challenge asserts a different FLAG over those same pinned prints, and `settle` accepts only a feed
+// matching that commitment, so a nearer print is a different market rather than a correction to this
+// one. CMLS can close it because it has a source descriptor its inputs are reconstructed from; this
+// type has none yet. Until it does, a gap verdict says the prints sat in the right two sessions near
+// their bells, and says nothing about what other prints existed.
 //
 // FOLLOW-UP (not done here). `core/encode.mjs` / `CLAIM_TYPE_ID` and the Rust twin under
 // `onchain/programs/vrdct-bond/src/reexec/` are byte-parity surfaces; this type is offline-complete
@@ -105,40 +111,24 @@ export function canonicalInputs(inputs) {
   return { close, open, thresholdBps, maxLagSecs, direction };
 }
 
-/// The longest US-equities closure is a holiday weekend, a little over four days. A pinned pair
-/// further apart than this cannot be describing one closure, and the cap also bounds the day walk in
-/// `sessionOpensStrictlyBetween`.
+/// The longest US-equities closure is a holiday weekend, a little over four days. Nothing further
+/// apart than this is one closure, and the cap is what bounds the day walk below — checked as the
+/// walk's own limit rather than after it has already run.
 const MAX_CLOSURE_SECS = 14 * 86400;
+const MAX_CLOSURE_DAYS = MAX_CLOSURE_SECS / 86400 + 2;
 
-/// How many trading sessions OPEN strictly inside (a, b). Probing one instant per ET day is enough:
-/// 15:00Z is 11:00 EDT / 10:00 EST, inside every regular and half-day session, so `session_open_ts`
-/// is exactly that day's bell. Zero is the only admissible answer — see `reexec`.
-function sessionOpensStrictlyBetween(a, b, cal = CALENDAR_2026) {
-  let n = 0;
-  for (let t = a; t < b + 86400; t += 86400) {
-    const probe = new Date(t * 1000);
-    const bell = marketStatus(Date.UTC(probe.getUTCFullYear(), probe.getUTCMonth(), probe.getUTCDate(), 15) / 1000, cal).session_open_ts;
-    if (bell !== null && bell > a && bell < b) n++;
+/// The first session bell strictly after `t`, or null if none inside `MAX_CLOSURE_SECS`. Probing one
+/// instant per ET day is enough: 15:00Z is 11:00 EDT / 10:00 EST, inside every regular and half-day
+/// session, so `session_open_ts` is exactly that day's bell.
+function nextSessionOpen(t, cal = CALENDAR_2026) {
+  for (let day = 0; day <= MAX_CLOSURE_DAYS; day++) {
+    const probe = new Date((t + day * 86400) * 1000);
+    const at15 = Date.UTC(probe.getUTCFullYear(), probe.getUTCMonth(), probe.getUTCDate(), 15) / 1000;
+    if (at15 < CALENDAR_2026.validFrom || at15 >= CALENDAR_2026.validUntil) return null;
+    const bell = marketStatus(at15, cal).session_open_ts;
+    if (bell !== null && bell > t) return bell - t <= MAX_CLOSURE_SECS ? bell : null;
   }
-  return n;
-}
-
-// Last second in [lo, hi] that is not CLOSED. Requires !isClosed(lo) && isClosed(hi): over that
-// range the predicate flips exactly once, so bisection is exact. 32 evaluations of a pure function.
-function lastOpenSecond(lo, hi) {
-  while (lo + 1 < hi) {
-    const mid = lo + Math.floor((hi - lo) / 2);
-    if (isClosed(mid)) hi = mid; else lo = mid;
-  }
-  return lo;
-}
-// First second in [lo, hi] that is not CLOSED. Requires isClosed(lo) && !isClosed(hi).
-function firstOpenSecond(lo, hi) {
-  while (lo + 1 < hi) {
-    const mid = lo + Math.floor((hi - lo) / 2);
-    if (isClosed(mid)) lo = mid; else hi = mid;
-  }
-  return hi;
+  return null;
 }
 
 // Signed move in basis points, floored toward zero, in integer arithmetic.
@@ -157,30 +147,38 @@ export function reexec(inputs) {
   const q = canonicalInputs(inputs);
   const { close, open, thresholdBps, maxLagSecs, direction } = q;
 
-  // 1. Re-derive the closure from the calendar. A claim that does not straddle one settles nothing.
-  const closeOpen = !isClosed(close.blockTime);
-  const openOpen = !isClosed(open.blockTime);
-  const midpoint = close.blockTime + Math.floor((open.blockTime - close.blockTime) / 2);
-  const straddles = closeOpen && openOpen && isClosed(midpoint);
+  // 1. Re-derive the closure from the calendar — FROM THE CLOSE PRINT ALONE, then check the open
+  //    print against it.
+  //
+  //    The first version bisected the CLOSED predicate inward from both prints. Bisection needs the
+  //    predicate to flip exactly once in its range, and over a multi-closure span it flips many
+  //    times, so each search settled on whichever boundary sat nearest its own end — an instant that
+  //    is real but is not necessarily the one bounding its own print's session. Guarding the two
+  //    selected instants against each other then proved nothing about the raw prints: a Friday close
+  //    print with a Tuesday open print derives Friday's bell and MONDAY's, sees no session between
+  //    them, and settles a claim that contains Monday's entire session (Codex, reviews/009 F1).
+  //
+  //    So no search. `campana` already reports the session an instant belongs to, so the closing
+  //    bell of the close print's session is exact, the reopen is the first bell after it, and the
+  //    open print is ADMITTED only if the session it belongs to is that reopen. There is no instant
+  //    either print can be paired with except the one its own session gives it.
+  const closeSession = marketStatus(close.blockTime);
+  const openSession = marketStatus(open.blockTime);
+  const bothInSession = closeSession.session_close_ts !== null && openSession.session_open_ts !== null;
 
-  let closeInstant = null, openInstant = null, closeLagSecs = null, openLagSecs = null, lagsOk = false;
-  let sessionsInside = null, oneClosure = false;
-  if (straddles) {
-    closeInstant = lastOpenSecond(close.blockTime, midpoint);
-    openInstant = firstOpenSecond(midpoint, open.blockTime);
-    // ONE closure, not several. The midpoint test only proves the pair straddles SOME closed
-    // instant; over a longer span the predicate flips many times and each bisection converges on
-    // whichever boundary is nearest its own end. A Friday close print with a print from the
-    // following Wednesday then derives Friday's bell and Wednesday's bell — both genuine, both
-    // within any honest maxLagSecs — and reports five days of ordinary trading, across two full
-    // sessions, as the gap one closure produced. maxLagSecs cannot catch that: the prints really
-    // are next to bells, just not to the same closure's. So require that no session opens between
-    // the two instants, which is true of exactly one closure and of nothing else.
-    sessionsInside = sessionOpensStrictlyBetween(closeInstant, openInstant);
-    oneClosure = sessionsInside === 0 && openInstant - closeInstant <= MAX_CLOSURE_SECS;
-    closeLagSecs = closeInstant - close.blockTime; // how stale the close print is vs the closing bell
-    openLagSecs = open.blockTime - openInstant;    // how late the reopen print is vs the opening bell
-    lagsOk = oneClosure && closeLagSecs <= maxLagSecs && openLagSecs <= maxLagSecs;
+  let closeInstant = null, openInstant = null, closeLagSecs = null, openLagSecs = null;
+  let oneClosure = false, lagsOk = false, straddles = false;
+  if (bothInSession) {
+    closeInstant = closeSession.session_close_ts - 1;   // last second the market was open
+    openInstant = nextSessionOpen(closeInstant);        // the reopen that ends THIS closure
+    straddles = openInstant !== null && openSession.session_open_ts > closeInstant;
+    if (straddles) {
+      // the open print must sit in the reopening session itself, not in a later one
+      oneClosure = openSession.session_open_ts === openInstant;
+      closeLagSecs = closeInstant - close.blockTime; // how stale the close print is vs the closing bell
+      openLagSecs = open.blockTime - openInstant;    // how late the reopen print is vs the opening bell
+      lagsOk = oneClosure && closeLagSecs <= maxLagSecs && openLagSecs <= maxLagSecs;
+    }
   }
 
   // 2. The move. Computed regardless, so a STALE claim still shows what it would have said.
@@ -194,7 +192,7 @@ export function reexec(inputs) {
   const reason = !straddles
     ? 'the pinned prints do not straddle a market closure'
     : !oneClosure
-      ? `the pinned prints span ${sessionsInside} further trading session${sessionsInside === 1 ? '' : 's'} rather than one closure`
+      ? 'the reopen print belongs to a later session than the one that ends this closure'
       : !lagsOk
       ? `a pinned print is further than ${maxLagSecs}s from its boundary (close ${closeLagSecs}s, open ${openLagSecs}s)`
       : breached
@@ -209,8 +207,8 @@ export function reexec(inputs) {
       close_lag_secs: closeLagSecs,
       open_lag_secs: openLagSecs,
       lags_ok: lagsOk,
-      sessions_inside: sessionsInside,
       one_closure: oneClosure,
+      reopen_session_open: openSession.session_open_ts,
       closure_secs: straddles ? openInstant - closeInstant : null,
       signed_bps: String(signedBps),
       observed_bps: String(observedBps),
@@ -226,7 +224,7 @@ export function checks(claim, r) {
   return [
     ['closure straddle reproduces', r.computation.straddles_closure === claim.computation.straddles_closure, `${r.computation.straddles_closure}`],
     ['boundary instants reproduce', r.computation.close_instant === claim.computation.close_instant && r.computation.open_instant === claim.computation.open_instant, `${r.computation.close_instant} → ${r.computation.open_instant}`],
-    ['exactly one closure spanned', r.computation.one_closure === claim.computation.one_closure, `${r.computation.sessions_inside} sessions inside`],
+    ['the reopen print is in the reopening session', r.computation.one_closure === claim.computation.one_closure, `${r.computation.reopen_session_open}`],
     ['print lags within terms', r.computation.lags_ok === claim.computation.lags_ok, `close ${r.computation.close_lag_secs}s · open ${r.computation.open_lag_secs}s`],
     ['gap reproduces', r.computation.observed_bps === claim.computation.observed_bps, `${r.computation.observed_bps} bps`],
   ];
