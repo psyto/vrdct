@@ -113,3 +113,72 @@ not silently aggregated.
   `SlotToggle` as `Inactive` / `WarmUp` / `Active` / `Cooldown` and defines the two omitted ticket
   account types.  Its `DelegationState::total_security()` includes staked, enqueued, and cooling
   amounts.
+
+---
+
+# Re-review — Task 010, Jito restaking ingestion (`ac0e6ec`)
+
+## Verdict
+
+**CHANGES — F1 and F2 are fixed; F3 is only honest in wording, not yet safe in the graph it
+produces.**
+
+The upstream discriminator enum independently confirms `OperatorVaultTicket = 5` and
+`NcnVaultTicket = 6`; the new decoder's split is correct.  The reproduced `SlotToggle` state
+machine, Config-derived epoch length, all-four-relationship predicate, and deliberately weaker
+`staked_amount` measure address F1.  The exact declared price/NCN-term maps are now committed in
+the source body, which addresses F2.
+
+For a **single current `SlotToggle` record**, evaluating it at `slot_min` cannot make it more active:
+the add branch moves `WarmUp → Active` as time advances, while the remove branch is always
+non-Active (`Cooldown → Inactive`).  It can create false negatives for a historical reactivation,
+but not invented active stake.  That local monotonicity does not, however, make the aggregate over
+independently fetched account classes a conservative graph.
+
+I ran `npm run test:canonical`: 69 JS tests, 162 committed parity vectors, 2 definition vectors,
+and 20 Rust tests pass.  A read-only mainnet run of the fixed adapter fetched slots
+438,180,986–438,180,987, `epoch_length = 432000`, 140 operator→vault tickets (124 Active), 25
+ncn→vault tickets (24 Active), and a 378-row manifest.  The discriminator/live-count report is
+therefore reproducible.  It happened to obtain all graph-account classes at the latter slot; that
+does not establish the behavior for a split-context run.
+
+## Finding
+
+### F4 (P1) — a non-coherent aggregate can still combine security that never coexisted
+
+`snapshot()` records `coherent: false` but still returns a graph, and `claimFromMainnet()` always
+builds a claim from it (`adapters/jito-restaking.mjs:239-266`, `:298-330`).  Applying `slot_min` only
+to the toggles does not constrain the positive `VaultOperatorDelegation.staked` values fetched from
+another, later bank.
+
+Concrete schedule:
+
+1. At response slot A, `NcnOperatorState` is Active, so that response supplies an active edge.
+2. Between A and a later delegation response B, the NCN/operator relationship is cooled down and a
+   vault delegation is added (or increased).
+3. The adapter decodes the state response at A as Active and accepts the later positive delegation
+   from B.  It can also accept tickets that were already active at A.
+
+There is no point at which that active edge and that stake coexist.  Nevertheless `buildGraph()`
+counts it, increasing `σ_N(s)` and potentially producing the forbidden stronger certificate.  The
+manifest and the prose “aggregate over a range” disclose the defect but do not prevent a GREEN claim
+over a graph that Jito never had.
+
+The manifest also still omits the raw `slot_added` / `slot_removed` fields.  It stores only the
+derived state label (`ncnState`, `state`), even though the brief and module header say toggle slots
+are pinned.  A later reader consequently cannot independently re-evaluate the state at the declared
+slot or tell a changed-but-still-Active toggle from the committed input.
+
+**Fix:** refuse to produce a certificate unless all account classes that determine the graph come
+from a coherent bank, or switch to a source capable of a single slot-addressable view.  Merely
+publishing `coherent: false` is not a conservative reduction.  If a deliberately non-atomic mode is
+kept for diagnostics, it must return no claim/verdict.  Include raw add/remove slots for every
+toggle in the manifest (and test a split-context RPC response which is refused).  A digest/sidecar
+can reduce body size only if the claim commits the digest and the sidecar has a defined, available
+retrieval rule; otherwise it recreates the unpinned-source problem F3 was meant to close.
+
+## Handoff hygiene
+
+`ac0e6ec` is currently a child of this Codex review branch (`8b8be70`); it is **not** reachable from
+`cc/jito-restaking-ingestion`, which still points to `df91da5`.  The substantive fixes must be moved
+to the stated CC branch before any subsequent review or merge.
