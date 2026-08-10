@@ -1,4 +1,9 @@
-# 012 — the recorder: a design brief, not a build
+# 013 — the recorder: a design brief, not a build
+
+> **Renumbered from 012.** Another window was already using 012 for `dividend-funding-fidelity`, six
+> commits and a Codex review ahead of this one. Two windows numbering tasks from the same sequence
+> against one shared repo is the same class of problem as two windows sharing one working tree — see
+> `AGENTS.md`.
 
 **Frame:** thin (what the wall is, what would clear it, and what it would cost) → CC writes, Codex reviews.
 **Status:** decision material. Nothing is implemented.
