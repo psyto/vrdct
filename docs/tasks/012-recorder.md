@@ -186,3 +186,54 @@ Not "build the recorder" versus "do nothing". It is now:
 A is smaller than anything the brief contemplated and does more for the surfaces that already exist.
 B is still the eventual answer and is not urgent. Neither changes the observation the brief ended on:
 the demand signal is still zero, and this is still a feasibility answer.
+
+---
+
+## Addendum 2 — "available today" was overstated, and Slice A is largely illusory
+
+I wrote in Addendum 1 that off-chain checking is *"available today, by anyone willing to verify a
+canonical snapshot"*, and proposed Slice A on that basis. I then measured what that sentence costs,
+and it does not hold. Third correction in this document, and the same shape as the first two: a
+sentence written from a plausible inference rather than from a measured fact.
+
+What verifying against the lattice hash actually involves
+([SIMD-0220](https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0220-snapshots-use-accounts-lattice-hash.md),
+[snapshot verification](https://docs.anza.xyz/implemented-proposals/snapshot-verification)):
+
+1. **It is validator-scale, not challenger-scale.** A snapshot holds *every* account; verification
+   means unpacking it and recomputing the lattice hash across all of them. That is what a node does
+   when it boots. It is not something a would-be challenger does with an RPC before deciding whether
+   to bond, which was the entire use I claimed for it.
+2. **It is snapshot-slot granularity, not arbitrary slots.** State is verifiable at the slots
+   snapshots were taken at — a full-snapshot interval, not the slot a claim's window happens to name.
+3. **And it does not reach back.** Public snapshots are recent — a validator boots from one *usually
+   within the past 24 hours*. So this does nothing for a window last week, which is the case every
+   claim in this repo actually has.
+
+Point 3 is decisive on its own. Slice A was supposed to raise `reserve-solvency` and the Jito adapter
+from *unsourced* to *checkable before bonding*. It cannot: the thing it would check against does not
+exist for the windows those claims cover, and where it does exist, checking it is a node-boot rather
+than a check.
+
+### So the conclusion reverts, and the reason it reverted is worth more than the conclusion
+
+- **The wall stands** for a challenger with an RPC, which is the only party whose ability to check
+  makes a market a market rather than a coin flip.
+- **The recorder is the answer again** — Slice B, not A — and for the reason Addendum 1 narrowed it
+  to: a succinct inclusion proof is the thing nothing else provides, and now it is also the thing
+  nothing else provides *cheaply enough to use*.
+- **What genuinely changed** is smaller than Addendum 1 said and still real: snapshots are now
+  self-verifying, so an archival service that re-executes and checks against the lattice hash has a
+  sound basis. That makes *someone else's* archive trustworthy-in-principle. It does not make it
+  trustless to you, and this repo's whole position is the difference between those.
+
+### Standing state of this brief
+
+The design in the body is unchanged and still small. Its premise was wrong in one clause (there is a
+per-block state commitment), the correction to that premise was itself overstated (it does not help
+in practice), and the net effect on what to build is: **nothing changed**. The recorder is the answer,
+it is not urgent, and the demand observation the brief ends on is untouched.
+
+The measurements still owed before any code are 1, 2 and 3 from the body — cost per leaf, which
+accounts and who chooses, and proof verification cost inside `settle` — plus finishing 4 properly by
+checking whether the unverified coprocessor is real.
