@@ -112,3 +112,72 @@ If the answer is yes, the first slice is `reserve-solvency` and the measurements
 any code. If the answer is no, the honest outcome is that this repo's claim-types are settlement-grade
 over their inputs and their sources are not, that this is written down in four places, and that the
 next move is on the demand side rather than this one.
+
+---
+
+## Addendum — measurement 4 first, and it moved the premise
+
+The brief said four things had to be measured before any code, and that the cheapest and most
+decisive was *"whether an existing recorder already does this — building one that exists would be the
+most expensive kind of mistake available here."* Doing that one first changed the brief's own premise.
+
+### Solana now has a per-block state commitment, and it is activated
+
+[SIMD-0215, Accounts Lattice Hash](https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0215-accounts-lattice-hash.md)
+— status **Activated**, feature `LTHasHQX6661DaDD4S6A2TFi6QBuiwXKv66fB1obfHq`. Every block's bank hash
+now mixes in a hash over the **total** account state, updated incrementally: the new total is the
+prior total plus the accounts modified in that block.
+
+So the flat claim this repo has been repeating — *"no historical state root"* — is out of date, and I
+had been repeating it from memory rather than checking. That is the same error this session kept
+finding in my work, applied to a premise rather than to a program.
+
+### But it does not do the thing a recorder would do
+
+The specification is explicit: **the Accounts Lattice Hash does not support inclusion or exclusion
+proofs.** It is a homomorphic sum, not a Merkle tree — which is exactly what makes it cheap to update
+incrementally, and exactly what makes "prove account A held bytes B at slot S" impossible from it
+alone. Verifying a particular account means recomputing over the whole account set.
+
+That splits the wall in two, and the two halves have different answers:
+
+| | what is needed | status |
+| --- | --- | --- |
+| **Off-chain check, before bonding** — `vrdct check`, `verify`, a would-be challenger | recompute a snapshot and confirm it against the lattice hash | **available today**, and it is a re-execution argument, which is this repo's whole thesis |
+| **On-chain settlement** — a proof `vrdct-bond` can verify inside `settle` | a succinct inclusion proof | **not available**; the lattice hash explicitly cannot, and this is the recorder's actual and only unique contribution |
+
+### What that changes
+
+The recorder is **narrower and better justified** than the brief argued, and also less urgent:
+
+- Its value is no longer "make history verifiable at all". History is verifiable off-chain now, by
+  anyone willing to verify a canonical snapshot. Its value is *succinct inclusion proofs for on-chain
+  settlement*, which is a real gap and a much smaller claim.
+- Consequently `reserve-solvency`, the Jito adapter and any would-be challenger can be raised from
+  "unsourced" toward "checkable before bonding" **without building anything on chain** — by verifying
+  against a canonical snapshot. That is a smaller, cheaper, and more useful next slice than the
+  recorder, and it did not exist as an option when the brief was written.
+- The recorder only becomes the binding constraint at the moment a market actually settles on chain
+  against historical state. Nothing does yet.
+
+### One thing I could not verify, and am therefore not citing
+
+A search result named a "verifiable historical-state coprocessor for Solana" at `yorecoprocessor.com`.
+Fetching it failed TLS validation — the certificate presented belongs to an unrelated domain — so I
+have no evidence it is a real, live product and am recording it as **unverified** rather than as a
+finding. It should be checked before any build starts, because if something like it is real, that is
+measurement 4 answered in the other direction.
+
+### The decision, restated
+
+Not "build the recorder" versus "do nothing". It is now:
+
+> **Slice A** — verify claims against a canonical snapshot confirmed by the accounts lattice hash.
+> Off-chain, no program, raises existing surfaces from *unsourced* to *checkable before bonding*.
+>
+> **Slice B** — the recorder, for succinct inclusion proofs inside `settle`. Only binding once
+> something settles on chain against historical state.
+
+A is smaller than anything the brief contemplated and does more for the surfaces that already exist.
+B is still the eventual answer and is not urgent. Neither changes the observation the brief ended on:
+the demand signal is still zero, and this is still a feasibility answer.
