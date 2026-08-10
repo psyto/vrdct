@@ -172,3 +172,55 @@ carry the retracted claim after the prose elsewhere had retracted it. Corrected 
 the test that asserts the acceptance criterion: selection removes the **choice**; omission is a
 property of the **set**, and observing it needs a rebuild that does not exist. Necessary condition,
 not sufficient one.
+
+---
+
+## Addendum 3 — the rebuilder cannot be built against this account, and the reason is structural
+
+The remaining work was named as "a price-decoding adapter for the specific oracle account". Before
+writing one, I went to look at the account this repo has already committed to — the one the CMLS
+corpus pins, `A2GDb4Um4Tr42iKgPz5fQ2d7pYTnaUuHN3d5V41Cywff`, Jupiter Lend's SPYx price account, so
+that no new choice of venue or asset was smuggled in as an engineering decision.
+
+It is owned by Jupiter Lend's oracle program, `jupnw4B6Eqs7ft6rxpzYLJZYSnrpRgPcr589n5Kv4oc`, whose
+IDL is public. The `Oracle` account has exactly three fields:
+
+```
+Oracle { nonce: u16, sources: Vec<Sources>, bump: u8 }
+Sources { source: pubkey, invert: bool, multiplier: u128, divisor: u128, source_type: SourceType }
+```
+
+**There is no price in it.** The account is a *configuration*: a chain of up to four sources — Pyth,
+Chainlink, Chainlink Data Streams, stake pools, DEX peg oracles — each contributing by multiplication
+or division, evaluated **at read time**. The live account for SPYx declares a four-source chain.
+
+That is why CMLS works against this account and `monday-open-gap` cannot: CMLS needs only the
+*timestamps* at which the account was written, which `getSignaturesForAddress` gives. A gap claim
+needs the *price the venue used at an instant*, and that value was never stored — reproducing it
+means re-evaluating the source chain against the state each of those four accounts held at that
+instant. Historical account state is precisely what this repo has already recorded as unavailable
+(README, honest scope: closing the unsourced case needs an on-chain recorder root or N-of-M
+attestation for historical data).
+
+So the residual left open by this task **cannot be closed against this account by writing an
+adapter**. It is not a matter of effort or of the right layout; the number is not on chain.
+
+**What I did not do, deliberately.** I tried to decode the live account's `Sources` vector and got
+nonsense — `invert = 115`, `source_type = 172` where only eleven variants exist — which means my
+assumed field alignment is wrong. I stopped rather than iterate on it, because the conclusion above
+rests only on the IDL's field list, which is unambiguous, and because guessing at someone else's byte
+layout is exactly the error this branch and task 010 were repeatedly reviewed for. A correct decode
+would change nothing: there is still no price field to find.
+
+### What this leaves
+
+Three routes, and the first two are the honest ones:
+
+1. **Accept that `monday-open-gap` stays unsourced** against venue-computed prices, and say so —
+   which the module and README now do.
+2. **Anchor the type on a source that stores a price with a timestamp.** Chainlink Data Streams has
+   an on-chain cache account in this same IDL carrying `price: u128` and `last_update_timestamp_price`
+   — a feed whose value at an instant *is* recorded. That is a different subject than "the price
+   Jupiter Lend used", and choosing it is a product decision, not an engineering one.
+3. **The recorder.** The general answer already written into the README, which would close this and
+   `reserve-solvency` together.
