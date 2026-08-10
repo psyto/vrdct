@@ -1,8 +1,11 @@
 # 012 — the recorder: a design brief, not a build
 
 **Frame:** thin (what the wall is, what would clear it, and what it would cost) → CC writes, Codex reviews.
-**Status:** decision material. Nothing is implemented, and nothing should be until the question at the
-end is answered.
+**Status:** decision material. Nothing is implemented.
+> **Read the Addendum first.** The body below rests on *"Solana has no historical state root"*, which
+> I took from memory and did not check. It is **out of date** — SIMD-0215 is activated. The Addendum
+> establishes what that changes and what it does not. The body is left standing because the premise it
+> assumed is the thing worth seeing.
 
 ## The wall, from three places that hit it independently
 
@@ -15,9 +18,11 @@ sentence from different directions:
 | Jito adapter (task 010) | `getProgramAccounts` takes no slot. Two reads establish endpoint equality only, and the claim carries `settlement_grade: NO`. |
 | `monday-open-gap` (task 011) | The price the venue used at an instant was never stored — it is computed at read time from four other accounts, whose state at that instant is equally unavailable. |
 
-One wall: **you cannot ask Solana what an account held at a past slot.** No historical state root, no
-light client, no DA anchor. Every claim-type in this repo is settlement-grade over its *inputs*; what
-is not settlement-grade is the claim that those inputs were the real chain state.
+One wall: **you cannot ask Solana what an account held at a past slot.** *(As written: "no historical
+state root, no light client, no DA anchor." The first of those is no longer true — see the Addendum.
+There is now a per-block commitment to total account state; what it does not give is an inclusion
+proof.)* Every claim-type in this repo is settlement-grade over its *inputs*; what is not
+settlement-grade is the claim that those inputs were the real chain state.
 
 ## What a recorder is, and the one property that makes it worth anything
 
