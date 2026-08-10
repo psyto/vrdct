@@ -106,14 +106,42 @@ the observed boundary, and its own `sha256` over the body
 (`7fb7a6994339f790d16873520a8c4c2350a33fd366a30a59b01d7f5912206e3e`). It is committed because
 `samples.jsonl` is not: a growing stream is not evidence, a pinned slice is.
 
-Two honest notes on it. **The capture has a hole** — 2,481 s between `23:11:04Z` and `23:52:25Z`,
-almost certainly a machine suspend. It appears in the slice as a `capture_gaps` entry rather than as
-an absence the reader has to notice, which is the whole reason each record carries its own fetch
-time. And **the boundary is not yet reconciled with the issuer**: 00:09:23Z is 20:09 ET on the 9th,
-which is not obviously *"the morning of the ex-dividend date"* the venue documents. That may be a
-misreading of the documented window, a different window than assumed, or something else. It is not
-reported here as a discrepancy — it is the reason task 012's first step is retrieving the actual
-declaration rather than writing a module.
+**The capture has a hole** — 2,481 s between `23:11:04Z` and `23:52:25Z`, almost certainly a machine
+suspend. It appears in the slice as a `capture_gaps` entry rather than as an absence the reader has
+to notice, which is the whole reason each record carries its own fetch time.
+
+### Reconciled against the issuer
+
+From Apple's own investor relations dividend history — the issuer statement, not an aggregator:
+
+> **declared 2026-07-30, $0.27 per share, record date 2026-08-10, payable 2026-08-13.**
+
+US settlement is T+1, so the ex-date is the record date: **Monday 2026-08-10**. The venue's
+documented window is *"from the previous business day (ex_date - 1) to the morning of the
+ex-dividend date"* — Friday 2026-08-07 through Monday morning — with a one-hour funding interval
+inside it and `reduce_only` at 18:00 ET.
+
+Against that, what was observed:
+
+| | |
+| --- | --- |
+| `funding_interval_s: 3600` already in effect | 2026-08-09T22:17Z — Sunday 18:17 ET |
+| reverted to `28800` | 2026-08-10T00:09:23Z — Sunday 20:09 ET |
+| ex-date session opens | 2026-08-10T13:30Z — Monday 09:30 ET |
+
+**The shortened-funding phase ended about 13.4 hours before the morning of the ex-dividend date.**
+
+That is a specific, dated question rather than a finding, and two readings are open because **the
+opening edge was never observed** — the first sample already showed `3600`:
+
+1. the window ran from Friday as documented and ended early, or
+2. the venue used ex_date − 1 as a **calendar** day (Sunday) rather than a business day, starting at
+   18:00 ET Sunday — in which case the whole window was about two hours and the documented sentence
+   describes something else.
+
+Nothing here distinguishes them, and **the special funding payment itself was not observed at all** —
+that requires decoding the identifier space in `FeeBatchProcessed`, which is exactly the gate task
+012 says it must pass before a module is written. The next window is a quarter away.
 
 ## What this establishes
 

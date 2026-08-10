@@ -113,10 +113,15 @@ valid outcome and the right time to reach it is now, before a module exists.
   a payment matched a declaration. It says nothing about the index, the quotes, the mark, or whether
   anyone was filled fairly — and the measurement record is explicit that those cannot be re-executed
   at all from public data.
-- **The ex-date window observed on 2026-08-09 is not confirmed against an issuer declaration.** The
-  `funding_interval_s: 3600` reading is the venue's own signal. The corresponding declaration has not
-  been retrieved, and that check is step 1, not a formality: if the venue's window and the issuer's
-  ex-date disagree, that is either the first real finding or a fault in this brief's premise.
+- **The declaration has now been retrieved, and the two do not obviously agree.** Apple's own
+  investor-relations history: declared 2026-07-30, $0.27 per share, record 2026-08-10, payable
+  2026-08-13; under T+1 the ex-date is the record date, **Monday 2026-08-10**. The venue's documented
+  window therefore runs Friday 2026-08-07 through Monday morning. Observed: the one-hour funding
+  interval was already in effect at 2026-08-09T22:17Z and reverted at **2026-08-10T00:09:23Z** —
+  Sunday 20:09 ET, about **13.4 hours before the ex-date session opens**. The opening edge was never
+  observed, so this does not distinguish *"the window ended early"* from *"ex_date − 1 is being taken
+  as a calendar day, not a business day"*. It is a dated question, not a finding, and the next window
+  is a quarter away.
 - **Cross-chain.** Every existing claim-type re-executes Solana state. This subject is on Arbitrum,
   so an adapter here needs an EVM read path the repo does not have. That is a real cost and it is a
   reason to be sure of the surface before paying it.
@@ -124,8 +129,11 @@ valid outcome and the right time to reach it is now, before a module exists.
 ## Acceptance criteria (if it proceeds past the objection)
 
 1. The `uint128` identifier space is mapped from public data, or the task is closed as not
-   admissible and the reason is recorded.
-2. The AAPL declaration is retrieved and matched against the observed window.
+   admissible and the reason is recorded. **Open, and it is the gate.**
+2. ~~The AAPL declaration is retrieved and matched against the observed window.~~ **Done.** Retrieved
+   from the issuer (2026-07-30, $0.27, record and therefore ex 2026-08-10) and matched: the observed
+   window closed ~13.4 h before the documented boundary, with two readings this capture cannot
+   separate. Distinguishing them needs the *opening* edge, so it needs the next window.
 3. Only then: `claimtypes/dividend-funding-fidelity.mjs` + tests, registered through the existing
    registry, `core/` untouched, `canonicalInputs` the only reader of raw claim JSON.
 
