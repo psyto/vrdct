@@ -3,26 +3,57 @@
 **Frame:** thin (what counts as a surface, and whether this one is admissible at all) → CC drafts,
 Codex reviews. **Branch:** `cc/dividend-funding-fidelity`
 
-This brief ships with **no module**. It ships a measurement record
-([`evidence/variational-2026-08/`](../../evidence/variational-2026-08/README.md)) and a proposal, and
-its first job is to survive the objection in *"Why this might not belong here"* below. Nothing should
-be implemented until that is settled.
+> ## CLOSED — not admissible
+>
+> **Codex REJECTED this claim-type** ([`reviews/012`](../../reviews/012-dividend-funding-fidelity.md),
+> commit `4650375`). The brief is kept, with its verdict, because the repo's log of what it tried and
+> refused is worth more than a clean roadmap.
+>
+> The reason is the objection this brief raised against itself, and it does not survive: *"the issuer
+> declared $D"* is the external fact the market would have to decide, and pinning it does not make it
+> re-executable. A builder can pin a number Apple never declared, select a favourable subset of
+> payment records, and obtain a fully deterministic `GREEN`. A challenge only asserts a different
+> flag over that same committed body, so it cannot substitute the true declaration. **That is a
+> payout-controlling oracle assertion wearing re-execution's clothes.**
+>
+> The `restaking-robustness` precedent does not cover it, and the difference is sharp enough to be
+> worth keeping: there, `π_s` and the mint-price numéraire are openly *modelling assumptions*, and
+> the certificate says it holds **under that declared assumption**. Here, issuer authorship and the
+> amount are the thing being asserted about the world. Reframing the verdict as *"the payment matched
+> the number the market terms selected"* would be deterministic — and would no longer be a claim
+> about what Apple declared, which is the only thing that made the surface interesting.
+>
+> Reconsider only with a design that authenticates **and** reconstructs the issuer declaration as
+> well as a complete, source-bound payment and position set. Cross-chain cost is not the objection;
+> an EVM adapter could be a future surface for a predicate that meets the contract first.
+
+This brief shipped with **no module**, which is what made the decision cheap. It ships a measurement
+record ([`evidence/variational-2026-08/`](../../evidence/variational-2026-08/README.md)) and a
+proposal, and its first job was to survive the objection in *"Why this might not belong here"* below.
+It did not.
 
 ## What the measurement found, and why it forced a new shape
 
-The record surveys Variational Omni — an RFQ perp venue on Arbitrum One with 534 markets, a single
-counterparty quoting all of them, and bilateral on-chain escrow. It publishes four mainnet addresses.
-Two have no code. The one it names **Oracle Contract** emitted, over 42 hours, only
-`FeeBatchProcessed`, `WithdrawalsProcessed` and `OLPToPoolTransfer`.
+The record scans **five named** Variational Omni addresses — an RFQ perp venue on Arbitrum One with
+534 markets, a single counterparty quoting all of them, and bilateral on-chain escrow. Three of the
+five have no code. The one it names **Oracle Contract** emitted, over ~42 hours, only
+`FeeBatchProcessed`, `WithdrawalsProcessed` and `OLPToPoolTransfer`. The list is named and dated, not
+derived: an earlier version of this brief called it "the four addresses Variational publishes" and
+was wrong on both the count and the exhaustiveness.
 
-So: the on-chain record covers **custody and money movement**, and carries **no price**. Quoted,
-index and mark price, the funding rate and the liquidation trigger are all produced off-chain by the
-party that is also the counterparty to every trade.
+The measured proposition is narrow, and the original version of this paragraph was not. It said the
+chain "carries no price" and that every price input is produced off-chain. **The scan does not
+support that**: it counted event topics on a named list of addresses over a bounded window, without
+reading storage, tracing calls, or establishing that the list is exhaustive — and the list was in
+fact incomplete when written. What was measured is only:
 
-Every claim-type in this repo so far re-executes a **number the subject published on chain** —
-a reserve balance, a price account's update history, a set of stake accounts, a schedule of
-transactions. Against a venue shaped like this one, all of them are simply inapplicable. There is
-nothing to pin.
+> over the scanned interval, the named addresses emitted no price-bearing event.
+
+Every claim-type in this repo so far re-executes a **number the subject published on chain** — a
+reserve balance, a price account's update history, a set of stake accounts, a schedule of
+transactions. Whether any of them could reach a venue shaped like this one is an **open question**,
+not the settled impossibility this brief originally asserted as its motivation. That the motivation
+was overstated is part of why the proposal below fails.
 
 That is the interesting part. It rules out the obvious surface — "was the fill fair?" — because a
 fairness verdict needs the venue's quotes, which are not public, and a claim that needs the subject's
@@ -63,9 +94,13 @@ Design points that are decisions, not details:
 2. **The reference is the issuer's declaration, pinned before the fact.** Not the venue's number,
    not ours.
 3. **Amounts are `{value, exp}` integers.** A float never touches a verdict.
-4. **`UNKNOWN` is a first-class outcome**, on the `obligated-liveness` precedent: when the terms or
-   the available evidence cannot support a judgement, the type refuses to produce one rather than
-   defaulting to the party holding the funds.
+4. ~~**`UNKNOWN` is a first-class outcome**, on the `obligated-liveness` precedent.~~ **Wrong, and
+   the correction generalises past this task.** `obligated-liveness` returns `UNKNOWN` at a
+   *theorem-proven attribution boundary*: the inputs are well-formed and no valid evidence could
+   move the flag. An unmapped `uint128` identifier space is not that. It is a failure to form
+   canonical inputs at all — the type cannot say which payments or positions the predicate is even
+   about. That makes a claim **inadmissible before re-execution, and a market must not open**;
+   resolving it to `UNKNOWN` would dress a missing input up as a decided one.
 
 ## Why this might not belong here — the objection to settle first
 
@@ -126,7 +161,10 @@ valid outcome and the right time to reach it is now, before a module exists.
   so an adapter here needs an EVM read path the repo does not have. That is a real cost and it is a
   reason to be sure of the surface before paying it.
 
-## Acceptance criteria (if it proceeds past the objection)
+## Acceptance criteria — moot, retained for the record
+
+It did not proceed past the objection, so none of this was reached. Criterion 1 was named the gate
+and was never passed; criterion 2 was completed and is the one durable result here.
 
 1. The `uint128` identifier space is mapped from public data, or the task is closed as not
    admissible and the reason is recorded. **Open, and it is the gate.**

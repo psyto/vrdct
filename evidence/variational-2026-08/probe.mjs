@@ -9,13 +9,17 @@
 const RPC = process.env.ARB_RPC ?? 'https://arb1.arbitrum.io/rpc';
 const USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'; // native USDC on Arbitrum One
 
-// The four addresses Variational publishes at docs.variational.io/technical-documentation/
-// mainnet-contracts, under the heading "Mainnet Contracts", with the names it gives them.
-const PUBLISHED = [
+// An explicitly named, dated list — NOT "everything Variational publishes". The docs page is a
+// moving target: `mainnet-contracts.captured.md` in this directory is a hashed capture showing
+// four entries at 2026-08-10T23:16:16Z, while review of this branch read the same page listing
+// `Loss Refund Pool` as a fifth. That address is real and is included below on its own merits.
+// Nothing here depends on the page's contents at any moment; see README.md.
+const NAMED = [
   ['Protocol Treasury', '0x5e91b40467fb8902c46a7b6cb90482363188d645'],
   ['Core OLP Vault', '0x74bbbb0e7f0bad6938509dd4b556a39a4db1f2cd'],
   ['Settlement Pool Factory', '0x0F820B9afC270d658a9fD7D16B1Bdc45b70f074C'],
   ['Oracle Contract', '0x84BE56470d45b7f6629A66A219a38681F6BA6172'],
+  ['Loss Refund Pool', '0xc47756133753280c37b227c24782984e021c4544'],
 ];
 
 // Resolved against api.openchain.xyz/signature-database, each with hasVerifiedContract: true.
@@ -30,16 +34,29 @@ const SIGNATURES = {
     'PoolCreated(address,address[],uint128,address,uint128,uint128,address,uint256)',
 };
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// The public endpoint rate-limits a full scan. Retrying is not a convenience here: a scan that
+// silently ends early would under-count logs, and under-counting is the direction that flatters
+// this record's conclusion. So a chunk either answers or the run dies.
 let id = 0;
-async function rpc(method, params) {
-  const r = await fetch(RPC, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
-  });
-  const j = await r.json();
-  if (j.error) throw new Error(`${method}: ${j.error.message}`);
-  return j.result;
+async function rpc(method, params, attempt = 0) {
+  let err;
+  try {
+    const r = await fetch(RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
+    });
+    const j = await r.json();
+    if (!j.error) return j.result;
+    err = j.error.message;
+  } catch (e) {
+    err = e.message;
+  }
+  if (attempt >= 7) throw new Error(`${method}: ${err} (after ${attempt} retries)`);
+  await sleep(500 * 2 ** attempt);
+  return rpc(method, params, attempt + 1);
 }
 
 const hex = (n) => '0x' + n.toString(16);
@@ -63,8 +80,8 @@ const older = await rpc('eth_getBlockByNumber', [hex(head - 100000), false]);
 const secPerBlock = (headTs - Number(older.timestamp)) / 100000;
 console.log(`block rate   ${secPerBlock.toFixed(4)} s/block (sampled over 100000 blocks)\n`);
 
-console.log('--- the four published addresses -------------------------------------------');
-for (const [name, addr] of PUBLISHED) {
+console.log('--- the named addresses -----------------------------------------------------');
+for (const [name, addr] of NAMED) {
   const code = await rpc('eth_getCode', [addr, 'latest']);
   const size = code === '0x' ? 0 : (code.length - 2) / 2;
   const nonce = Number(await rpc('eth_getTransactionCount', [addr, 'latest']));
@@ -75,8 +92,8 @@ for (const [name, addr] of PUBLISHED) {
   );
 }
 
-console.log('\n--- every event topic each contract emitted, over the scanned span ---------');
-for (const [name, addr] of PUBLISHED) {
+console.log('\n--- every event topic each of them emitted, over the scanned span ----------');
+for (const [name, addr] of NAMED) {
   const code = await rpc('eth_getCode', [addr, 'latest']);
   if (code === '0x') {
     console.log(`\n${name}: no code, so no events by construction.`);
@@ -94,6 +111,7 @@ for (const [name, addr] of PUBLISHED) {
     total += logs.length;
     scanned += chunk;
     to = from;
+    await sleep(120);
   }
   const hours = ((scanned * secPerBlock) / 3600).toFixed(1);
   console.log(`\n${name} ${addr}`);
