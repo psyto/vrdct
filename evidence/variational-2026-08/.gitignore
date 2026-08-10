@@ -1,0 +1,4 @@
+# A live, growing capture. A claim built from it commits a frozen, content-addressed
+# slice — not the stream.
+samples.jsonl
+sampler.log

@@ -47,6 +47,10 @@ Each surface is a pluggable module —
 - `restaking-robustness` — what overcollateralization buffer does a restaking network actually
   certify, and how far can a small shock cascade? Offline-complete, **not yet wired to `encode.mjs`
   or the on-chain twin.**
+- `dividend-funding-fidelity` — did a venue pay the corporate-action funding the **issuer** declared,
+  in the window the venue itself documented? **Brief only** ([`docs/tasks/012`](./docs/tasks/012-dividend-funding-fidelity.md)),
+  no module. It is proposed against a subject whose prices are not on chain at all, and the objection
+  that it is an oracle in disguise is deliberately left open for review.
 - *depeg, exploit, agent-escrow — the roadmap.*
 
 ### A market that does not exist yet
@@ -236,6 +240,30 @@ are pinned in the claim and declared before the fact, and the verdict is a claim
 *under that estimate*. The estimate is public and contestable; everything downstream of it is
 mechanical. This also implements the **global** guarantee only; the paper's local, per-coalition
 guarantees (§5) need attack headers and stable attacks and are not here.
+
+### When the payout inputs are not on chain at all
+
+Every type above re-executes a number its subject published on chain. That assumption is doing more
+work than it looks, and [`evidence/variational-2026-08/`](./evidence/variational-2026-08/README.md)
+is a measured case where it fails outright.
+
+Variational Omni is an RFQ perp venue on Arbitrum One — 534 markets, one counterparty quoting all of
+them, trades settled into bilateral on-chain escrow. It publishes four mainnet addresses. **Two have
+no code**: the treasury and the liquidity provider's vault are keys holding ~$19.8M of USDC, not
+programs. The address it names **Oracle Contract** emitted, over 42 hours and 7,618 logs, only
+`FeeBatchProcessed`, `WithdrawalsProcessed` and `OLPToPoolTransfer` — **no event carrying a price**.
+
+So the chain record covers custody and money movement, while quoted price, index price, mark price,
+funding and the liquidation trigger are produced off-chain by the party that is also the counterparty
+to every trade. A venue can be trust-minimised about custody and carry no public record of
+valuation — and valuation is the half that decides the payout.
+
+That is a boundary on this repo, not a finding against anyone: **no claim-type here can re-execute
+that venue's prices, because there is no public price record to pin.** What remains is quantities
+that do appear on chain, checked against a reference from outside the venue entirely, which is what
+task 012 proposes and has not yet earned. The record's *"what this does NOT establish"* section is
+the part to read: absence of a price *event* is not absence of an on-chain price, and nothing there
+was searched beyond the four published addresses.
 
 ## Standing board
 

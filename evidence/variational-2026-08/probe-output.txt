@@ -1,0 +1,28 @@
+chain head   block 492898231  ts 1786319625  2026-08-09T23:53:45.000Z
+block rate   0.2519 s/block (sampled over 100000 blocks)
+
+--- the four published addresses -------------------------------------------
+Protocol Treasury        0x5e91b40467fb8902c46a7b6cb90482363188d645  code=     0B  nonce=731092   USDC=5,753,972
+Core OLP Vault           0x74bbbb0e7f0bad6938509dd4b556a39a4db1f2cd  code=     0B  nonce=745999   USDC=14,080,143
+Settlement Pool Factory  0x0F820B9afC270d658a9fD7D16B1Bdc45b70f074C  code=  4695B  nonce=176604   USDC=0
+Oracle Contract          0x84BE56470d45b7f6629A66A219a38681F6BA6172  code= 18917B  nonce=1        USDC=0
+
+--- every event topic each contract emitted, over the scanned span ---------
+
+Protocol Treasury: no code, so no events by construction.
+
+Core OLP Vault: no code, so no events by construction.
+
+Settlement Pool Factory 0x0F820B9afC270d658a9fD7D16B1Bdc45b70f074C
+  600000 blocks (~42.0 h), 302 logs, 1 distinct topics
+      302  0x0b33722ea9d97f05fb7128e0987e4060c182350308a3d0a19f8ec53512fe1493
+           PoolCreated(address,address[],uint128,address,uint128,uint128,address,uint256)
+
+Oracle Contract 0x84BE56470d45b7f6629A66A219a38681F6BA6172
+  600000 blocks (~42.0 h), 7618 logs, 3 distinct topics
+     4470  0x4a3129464c3bef589740fdd0e7faf83552f717ecb1db94a73029fc24ce1e3307
+           FeeBatchProcessed((uint128,uint256,uint128)[],(uint128,string)[])
+     2905  0xdd1970ff01eb96a1fe75426a8e12aaf9305395fd62c4b0a8e2f2f7564f9529a6
+           WithdrawalsProcessed(address,uint128[],(uint128,string)[])
+      243  0xaee17f268cfda6c6787f3e0e75b314686950a24b91678e628274c9f73cdccb3c
+           OLPToPoolTransfer(address,address,uint128,uint256,uint128,uint128)
