@@ -67,11 +67,17 @@ Guidance, not a hard boundary. The quality control is the cross-review.
 
 ## Standing rules
 
-- **Both agents share one working tree, so check `git branch --show-current` before committing.**
-  Twice now a CC fix has landed on the Codex review branch created in the same directory, leaving the
-  task branch untouched while the fix was reported as pushed. The tell is that the reviewer sees the
-  old commit; the remedy is `git cherry-pick` onto the task branch. Whoever is about to commit owns
-  checking this.
+- **One window, one worktree — and the reviewer gets its own.** This rule replaces an earlier one
+  that said "check the branch before committing". That rule failed: a third misplaced commit happened
+  anyway, because the check was in one turn and the commit in a later one, after the tree had moved.
+  Discipline is the wrong instrument. Two worktrees cannot hold the same branch — git *refuses* — so
+  the collision becomes an error instead of a silence. Task 007's review ran in its own worktree and
+  nothing went wrong; from 008 onward reviews ran in the shared directory, and that is exactly where
+  the three misplaced commits are. See `HANDOFF.md` for what it cost.
+- **Task numbers are a shared resource too.** Two windows numbered a task 012 on the same day. Read
+  `docs/tasks/` before claiming a number.
+- **Stage by path, never `git add -A`.** In a shared tree it will pick up another window's untracked
+  files; it came within one commit of doing so.
 - The repo is the only shared memory.
 - Keep durable product direction in `README.md`.
 - Prefer small, reviewable changes over hidden rewrites.
