@@ -3,6 +3,7 @@ import test from 'node:test';
 import * as gap from '../claimtypes/monday-open-gap.mjs';
 import { verify } from '../core/verify.mjs';
 import { resolve } from '../core/resolution.mjs';
+import { claimId } from '../core/claim.mjs';
 import { marketStatus, STATUS } from '../core/campana.mjs';
 
 const unix = (y, m, d, hour, minute = 0, second = 0) => Math.floor(Date.UTC(y, m - 1, d, hour, minute, second) / 1000);
@@ -21,8 +22,8 @@ const up = (blockTime, value, o = {}) => ({ blockTime, price: px(value), slot: o
 const terms = (o = {}) => ({ anchorTs: SAT, thresholdBps: 500, maxLagSecs: 300, direction: 'ABS', ...o });
 // A descriptor wide enough that a rebuild of it would have contained whatever selection picks.
 const ACCOUNT = '7j3VCB9fLmZ8kRt2QwXyPnDvE4aHsGuKbNcMqTrWyZ1a';
-const src = (o = {}) => ({ kind: 'SOLANA_ACCOUNT_PRICE_UPDATES', account: ACCOUNT, from_ts: FRI_BELL - 86400, to_ts: MON_BELL + 86400, ...o });
-const inputs = (updates, t = terms(), source = src()) => ({ terms: t, observed: { source, updates } });
+const src = (o = {}) => ({ kind: 'SOLANA_ACCOUNT_PRICE_UPDATES', chain: 'solana-mainnet', account: ACCOUNT, from_ts: FRI_BELL - 86400, to_ts: MON_BELL + 86400, ...o });
+const inputs = (updates, t = terms(), source = src()) => ({ trusted: { calendar: 202601 }, terms: t, observed: { source, updates } });
 const run = (updates, t = terms(), source = src()) => gap.reexec(inputs(updates, t, source));
 
 // the honest baseline: one update just inside the last session, one just after the reopen
@@ -215,11 +216,13 @@ test('the source descriptor is consensus, not a label', () => {
   // omitted entirely — the default parameter must not paper over a missing descriptor
   assert.throws(
     () => gap.canonicalInputs({ terms: terms(), observed: { updates: baseline() } }),
-    /must be an object \{ kind, account, from_ts, to_ts \}/,
+    /must be an object \{ kind, chain, account, from_ts, to_ts \}/,
   );
   bad(null, /must be an object/);
   bad('a price account somewhere', /must be an object/);
   bad(src({ kind: 'TEST' }), /kind must be 'SOLANA_ACCOUNT_PRICE_UPDATES'/);
+  bad(src({ chain: 'solana-devnet' }), /chain must be 'solana-mainnet'/);
+  bad(src({ chain: undefined }), /chain must be 'solana-mainnet'/);
   bad(src({ account: 'PriceAccountUnderTest' }), /account must be a base58 Solana address/);
   bad(src({ account: 'not!base58' }), /account must be a base58 Solana address/);
   bad(src({ from_ts: MON_BELL, to_ts: FRI_BELL }), /to_ts must be after/);
@@ -269,4 +272,45 @@ test('a claim cannot be about one account and sourced from another', () => {
   const v = verify(swapped);
   assert.equal(v.ok, false);
   assert.equal(v.checks.find(([label]) => label.startsWith('subject names the account'))[1], false);
+});
+
+// Codex, reviews/011 F5. A base58 pubkey is not globally unique to a cluster: the same 32 bytes name
+// unrelated accounts on devnet, on a fork, or elsewhere. And metadata copied into a claim without
+// being validated — the chain, the calendar version, a display count — lets a claim present a
+// different source context and still verify, because verify() re-executes the inputs and checks the
+// hash, and a hash over a wrong field is still a consistent hash.
+//
+// These are HAND-AUTHORED claims with claim_id recomputed after the edit. Construction-only tests
+// would not have caught any of it: build() is not the verifier boundary.
+test('a claim cannot present a different chain, calendar or count and still verify', () => {
+  const subject = { chain: 'solana-mainnet', priceAccount: ACCOUNT };
+  const honest = gap.build({ subject, terms: terms(), updates: baseline(), source: src() });
+  assert.equal(verify(honest).ok, true);
+
+  const reseal = (c) => ({ ...c, claim_id: claimId(c) });
+
+  // the subject's chain, restamped so the content hash agrees with the lie
+  const otherChain = reseal({ ...honest, subject: { ...honest.subject, chain: 'ethereum-mainnet' } });
+  assert.equal(claimId(otherChain), otherChain.claim_id, 'the fixture must be self-consistent, or it proves nothing');
+  const v = verify(otherChain);
+  assert.equal(v.ok, false);
+  assert.equal(v.checks.find(([l]) => l.startsWith('subject names the chain'))[1], false);
+
+  // the descriptor's own chain
+  const devnet = reseal({ ...honest, inputs: { ...honest.inputs, observed: { ...honest.inputs.observed, source: { ...honest.inputs.observed.source, chain: 'solana-devnet' } } } });
+  assert.equal(verify(devnet).ok, false);
+
+  // the calendar the boundaries were derived under
+  const otherCal = reseal({ ...honest, inputs: { ...honest.inputs, trusted: { calendar: 202501 } } });
+  assert.equal(verify(otherCal).ok, false);
+
+  // and the display count is simply gone, so it cannot disagree with the set
+  assert.equal(honest.inputs.observed.count, undefined);
+  assert.equal(honest.inputs.trusted.chain, undefined, 'chain belongs to the parsed descriptor, not to unvalidated metadata');
+
+  // build() refuses the subject/source chain mismatch too, so it cannot be made by accident
+  assert.throws(
+    () => gap.build({ subject: { chain: 'solana-devnet', priceAccount: ACCOUNT }, terms: terms(), updates: baseline(), source: src() }),
+    /must be the chain the source descriptor reads/,
+  );
 });

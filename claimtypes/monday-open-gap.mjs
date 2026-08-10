@@ -26,7 +26,7 @@
 // declare `maxLagSecs`, and re-execution rejects any print further than that from the boundary
 // instant it re-derives itself. That bounds the choice; it does not eliminate it.
 //
-// THE RESIDUAL, AND HOW IT IS CLOSED — which took two wrong answers first.
+// THE RESIDUAL, WHICH IS STILL OPEN — and the two wrong answers that came before this one.
 //
 // While a claim carried two prints its builder had chosen, nothing could prove either was the
 // closest to its bell. The first answer was that a challenger holding a nearer print disputes and
@@ -110,9 +110,15 @@ export const MAX_UPDATES = 100_000;
 /// set — it did nothing about the set itself, which is the omission the residual is about. Naming
 /// reconstructibility as the fix while leaving the thing a rebuild would target unvalidated is the
 /// same failure this repo has now made in three tasks: a mechanism asserted rather than implemented.
+export const SOURCE_CHAIN = 'solana-mainnet';
 function sourceDescriptor(name, v) {
-  if (!isObject(v)) throw new Error(`${name} must be an object { kind, account, from_ts, to_ts }`);
+  if (!isObject(v)) throw new Error(`${name} must be an object { kind, chain, account, from_ts, to_ts }`);
   if (v.kind !== 'SOLANA_ACCOUNT_PRICE_UPDATES') throw new Error(`${name}.kind must be 'SOLANA_ACCOUNT_PRICE_UPDATES'`);
+  // A base58 pubkey is not globally unique to a cluster: the same 32 bytes name unrelated accounts on
+  // devnet, on a fork, or on another chain entirely. Without this a claim can present an account as
+  // belonging somewhere it does not, and a rebuilder has no canonical answer to which cluster to
+  // query (Codex, reviews/011 F5).
+  if (v.chain !== SOURCE_CHAIN) throw new Error(`${name}.chain must be '${SOURCE_CHAIN}'`);
   if (typeof v.account !== 'string' || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v.account)) {
     throw new Error(`${name}.account must be a base58 Solana address`);
   }
@@ -122,7 +128,7 @@ function sourceDescriptor(name, v) {
   if (fromTs < CALENDAR_2026.validFrom || toTs > CALENDAR_2026.validUntil) {
     throw new Error(`${name} window is outside calendar ${CALENDAR_2026.version}'s validity range`);
   }
-  return { kind: v.kind, account: v.account, fromTs, toTs };
+  return { kind: v.kind, chain: v.chain, account: v.account, fromTs, toTs };
 }
 
 function observation(name, o) {
@@ -148,6 +154,11 @@ export function canonicalInputs(inputs) {
     throw new Error('inputs.observed and inputs.terms must be objects');
   }
   const source = sourceDescriptor('observed.source', inputs.observed.source);
+  // `trusted.calendar` decides which holiday table every boundary is derived from, so it is an input,
+  // not a label. Unvalidated, a claim could name a calendar it was not re-executed under.
+  if (inputs.trusted?.calendar !== CALENDAR_2026.version) {
+    throw new Error(`inputs.trusted.calendar must be ${CALENDAR_2026.version}, the calendar this re-execution uses`);
+  }
   if (!Array.isArray(inputs.observed.updates)) throw new Error('observed.updates must be an array');
   if (inputs.observed.updates.length === 0) throw new Error('observed.updates must be non-empty');
   if (inputs.observed.updates.length > MAX_UPDATES) throw new Error(`observed.updates must hold at most ${MAX_UPDATES} records`);
@@ -314,6 +325,7 @@ export function reexec(inputs) {
       open_lag_secs: openLagSecs,
       lags_ok: lagsOk,
       updates_pinned: updates.length,
+      source_chain: source.chain,
       source_account: source.account,
       source_window: { from: source.fromTs, to: source.toTs },
       window_covers_closure: windowCovers,
@@ -340,8 +352,11 @@ export function checks(claim, r) {
   // which is the only place in this engine that can enforce it.
   const subjectAccount = claim?.subject?.priceAccount;
   const sourceAccount = claim?.inputs?.observed?.source?.account;
+  const subjectChain = claim?.subject?.chain;
+  const sourceChain = claim?.inputs?.observed?.source?.chain;
   return [
     ['subject names the account the inputs came from', typeof subjectAccount === 'string' && subjectAccount === sourceAccount, `${subjectAccount ?? 'missing'} vs ${sourceAccount ?? 'missing'}`],
+    ['subject names the chain the inputs came from', typeof subjectChain === 'string' && subjectChain === sourceChain, `${subjectChain ?? 'missing'} vs ${sourceChain ?? 'missing'}`],
     ['closure straddle reproduces', r.computation.straddles_closure === claim.computation.straddles_closure, `${r.computation.straddles_closure}`],
     ['boundary instants reproduce', r.computation.close_instant === claim.computation.close_instant && r.computation.open_instant === claim.computation.open_instant, `${r.computation.close_instant} → ${r.computation.open_instant}`],
     ['the same two prints are selected', JSON.stringify(r.computation.selected_close) === JSON.stringify(claim.computation.selected_close) && JSON.stringify(r.computation.selected_open) === JSON.stringify(claim.computation.selected_open), `${r.computation.selected_close?.sig ?? 'none'} → ${r.computation.selected_open?.sig ?? 'none'}`],
@@ -356,15 +371,22 @@ export function build({ subject, terms, updates, source }) {
   if (subject?.priceAccount !== source?.account) {
     throw new Error(`subject.priceAccount (${subject?.priceAccount ?? 'missing'}) must be the account the source descriptor reads (${source?.account ?? 'missing'})`);
   }
+  if (subject?.chain !== source?.chain) {
+    throw new Error(`subject.chain (${subject?.chain ?? 'missing'}) must be the chain the source descriptor reads (${source?.chain ?? 'missing'})`);
+  }
   return buildClaim({
     type,
     subject,
     inputs: {
-      trusted: { chain: subject.chain, calendar: CALENDAR_2026.version },
+      // Only the calendar, and it is validated on the way back in. `chain` lived here too and was
+      // copied from the subject unchecked; it now belongs to the descriptor, which is parsed. A
+      // display `count` lived in `observed` and could disagree with `updates.length`. Both are gone:
+      // a field nothing validates is a field that can claim a different source context.
+      trusted: { calendar: CALENDAR_2026.version },
       oracle_inputs: [],
       terms,
       // the SET, not two chosen prints — `source` is what a third party rebuilds it from
-      observed: { source, count: updates.length, updates },
+      observed: { source, updates },
     },
   });
 }

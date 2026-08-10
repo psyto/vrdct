@@ -224,3 +224,36 @@ Three routes, and the first two are the honest ones:
    Jupiter Lend used", and choosing it is a product decision, not an engineering one.
 3. **The recorder.** The general answer already written into the README, which would close this and
    `reserve-solvency` together.
+
+---
+
+## Addendum 4 — Codex F5/F6
+
+I nearly missed this review entirely: my previous commit landed on the reviewer's branch for the
+third time, so the branch I was working on never showed their findings. The rule added to `AGENTS.md`
+after the second occurrence was not enough, because I checked the branch at the start of a turn and
+committed in a later one, after the working tree had moved under me. The check has to be immediately
+before the commit, in the same invocation.
+
+**F5 (P1) — the source network was unbound.** `subject.priceAccount === source.account` was enforced,
+but nothing tied the *chain*. A base58 pubkey is not globally unique to a cluster: the same 32 bytes
+name unrelated accounts on devnet, on a fork, or elsewhere — so a claim could present an account as
+belonging somewhere it does not, and a future rebuilder would have no canonical answer to which
+cluster to query. Codex demonstrated it by hand-authoring a claim with `subject.chain` set to
+`ethereum-mainnet`, recomputing the id, and getting `verify() === true`.
+
+The same held for every field this type copied without validating: `trusted.chain`,
+`trusted.calendar`, and a display `observed.count`. **A field nothing validates is a field that can
+claim a different source context**, and the content hash does not help — a hash over a wrong field is
+still a consistent hash.
+
+Fixed: `source.chain` is a parsed, required part of the descriptor and must be `solana-mainnet`;
+`checks` binds `subject.chain` to it, and `build` refuses the mismatch; `trusted.calendar` is
+validated against the calendar re-execution actually uses; and `trusted.chain` and `observed.count`
+are **removed** rather than validated, because the field that cannot exist cannot lie. The
+regressions are hand-authored claims with `claim_id` recomputed after each edit — as the review says,
+construction-only tests do not reach the verifier boundary, and mine had not.
+
+**F6 (P2) — the module heading still read "THE RESIDUAL, AND HOW IT IS CLOSED"** immediately above
+text explaining that it is open. That is the title form which has now survived four rounds of this
+retraction. Renamed to say what is true.
