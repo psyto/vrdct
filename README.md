@@ -61,21 +61,26 @@ and ended. A venue that defines its own reopen instant is marking its own exam. 
 derives it as a pure function of `(timestamp, calendar)`, so the boundary is re-executable and the
 market can exist at all.
 
-**Honest scope.** The claim does not receive the boundary instants. It derives the closure from the
-**close print's own session** — the bell that ends it, then the first bell after that — and admits
-the reopen print only if the session *it* belongs to is that reopen. Nothing is searched for, so
-there is no boundary a print can be paired with except the one its own session gives it.
+**Honest scope.** The claim does not receive the boundary instants, and it does not receive the two
+prints either. `terms.anchorTs` names the closure — any instant inside it — and `campana` gives the
+bell that ends the preceding session and the first bell after; no price is consulted. The claim then
+pins the **observation set** around both boundaries, and re-execution **selects** the prints from it:
+the last update at or before the closing bell, the first at or after the reopen, ordered by
+`(blockTime, slot, sig)`. `maxLagSecs` is a staleness guard, not a bound on a choice — there is no
+choice left to bound.
 
-The residual that remains is **unclosed, and this type has no mechanism that closes it.** It cannot
-prove a pinned print is the closest one to its boundary; `maxLagSecs` bounds how far the pinner may
-reach, and within that bound the pinner chooses. An earlier version of this section said a challenger
-holding a nearer print disputes and the nearer print wins. **That was false and is worth saying
-plainly rather than deleting:** a market commits to `inputs_hash`, a challenge asserts a different
-*flag* over those same pinned prints, and `settle` accepts only a feed matching that commitment — so
-a nearer print is a *different market*, not a correction to this one. Closing it needs a
-reconstructible source descriptor and a canonical first-print rule, the way CMLS has one; until then
-a gap verdict says the prints were near their bells, and says nothing about what other prints
-existed.
+That is what closes the residual, and it took two wrong answers to get there. This section used to
+promise that *"a challenger holding a nearer print disputes, and the nearer print wins"* — a mechanism
+this market does not have, since a challenge asserts a different flag over the *same* pinned inputs.
+It was then downgraded to calling the residual open, which was honest but not a fix. The fix is the
+one `closed-market-liquidation-soundness` already uses: a claim that omits the true nearest update has
+a different input set, which rebuilds to a different `inputs_hash`, which `vrdct check` reports
+**before anyone bonds**. Omission does not need adjudicating because it cannot survive inspection.
+
+**And what is still not true in practice:** that rebuild has to decode *prices* from the account, not
+merely observe that it was written to — account-layout-specific in a way CMLS's timestamp-only
+rebuild is not, and no such adapter ships here yet. So this type is reconstructible **in principle
+and not yet in practice**. Saying otherwise would repeat the first mistake exactly.
 
 ### Settling silence — and the boundary past which nobody can
 

@@ -7,215 +7,198 @@ import { marketStatus, STATUS } from '../core/campana.mjs';
 
 const unix = (y, m, d, hour, minute = 0, second = 0) => Math.floor(Date.UTC(y, m - 1, d, hour, minute, second) / 1000);
 
-// A real closure: Friday 2026-08-07 close (20:00Z = 16:00 ET) → Monday 2026-08-10 open (13:30Z = 09:30 ET).
+// A real closure: Friday 2026-08-07 close (20:00Z = 16:00 ET) → Monday 2026-08-10 open (13:30Z).
 const FRI_BELL = unix(2026, 8, 7, 20, 0, 0);
 const MON_BELL = unix(2026, 8, 10, 13, 30, 0);
-const MON_CLOSE = unix(2026, 8, 10, 20, 0);
+const SAT = unix(2026, 8, 8, 12); // any instant inside the closure names it
 
 const px = (value, exp = 8) => ({ value: String(value), exp });
-const terms = (o = {}) => ({ thresholdBps: 500, maxLagSecs: 300, direction: 'ABS', ...o });
-const inputs = (close, open, t = terms()) => ({ terms: t, observed: { source: 'test', close, open } });
+// Signatures are base58, which has no 0, O, I or l — so even the fixtures' labels have to be.
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const b58n = (n) => { let o = ''; do { o = B58[n % 58] + o; n = Math.floor(n / 58); } while (n > 0); return o; };
+let seq = 0;
+const up = (blockTime, value, o = {}) => ({ blockTime, price: px(value), slot: o.slot ?? 1000 + seq++, sig: o.sig ?? `sig${b58n(seq)}` });
+const terms = (o = {}) => ({ anchorTs: SAT, thresholdBps: 500, maxLagSecs: 300, direction: 'ABS', ...o });
+const inputs = (updates, t = terms()) => ({ terms: t, observed: { source: { kind: 'TEST' }, updates } });
+const run = (updates, t = terms()) => gap.reexec(inputs(updates, t));
 
-test('the calendar puts the closure where the market does', () => {
-  assert.equal(marketStatus(FRI_BELL - 60).status, STATUS.OPEN);
-  assert.equal(marketStatus(FRI_BELL + 60).status, STATUS.CLOSED);
-  assert.equal(marketStatus(MON_BELL - 60).status, STATUS.CLOSED);
-  assert.equal(marketStatus(MON_BELL + 60).status, STATUS.OPEN);
+// the honest baseline: one update just inside the last session, one just after the reopen
+const baseline = () => [up(FRI_BELL - 10, 10000000000), up(MON_BELL + 10, 9500000000)];
+
+test('the closure comes from the anchor and the calendar, and consults no price', () => {
+  assert.equal(marketStatus(SAT).status, STATUS.CLOSED);
+  const c = gap.closureAround(SAT);
+  assert.equal(c.closeInstant, FRI_BELL - 1);
+  assert.equal(c.openInstant, MON_BELL);
+
+  // any instant inside the same closure names the same one
+  assert.deepEqual(gap.closureAround(unix(2026, 8, 9, 3)), c);
+  assert.deepEqual(gap.closureAround(FRI_BELL + 1), c);
+  assert.deepEqual(gap.closureAround(MON_BELL - 1), c);
+
+  // an anchor while the market is open settles nothing
+  assert.equal(gap.closureAround(MON_BELL + 60), null);
+  const r = run(baseline(), terms({ anchorTs: MON_BELL + 60 }));
+  assert.equal(r.verdict.flag, 'STALE');
+  assert.match(r.verdict.reason, /does not fall inside a market closure/);
 });
 
-test('boundary instants are re-derived, not supplied', () => {
-  const r = gap.reexec(inputs(
-    { price: px(10000000000), blockTime: FRI_BELL - 100 },
-    { price: px(10000000000), blockTime: MON_BELL + 100 },
-  ));
-  assert.equal(r.computation.straddles_closure, true);
-  // bisection finds the last non-CLOSED second and the first non-CLOSED second
-  assert.equal(r.computation.close_instant, FRI_BELL - 1);
-  assert.equal(r.computation.open_instant, MON_BELL);
-  assert.equal(r.computation.close_lag_secs, 99);
-  assert.equal(r.computation.open_lag_secs, 100);
-  assert.equal(r.computation.closure_secs, MON_BELL - (FRI_BELL - 1));
+test('a holiday-lengthened closure is one closure, named by any instant in it', () => {
+  // Thanksgiving 2026: Wed 11-25 closes, Thu 11-26 holiday, Fri 11-27 is a half day (13:00 ET).
+  const wedBell = unix(2026, 11, 25, 21, 0);  // 16:00 ET, EST
+  const friBell = unix(2026, 11, 27, 14, 30); // 09:30 ET
+  const c = gap.closureAround(unix(2026, 11, 26, 12));
+  assert.equal(c.closeInstant, wedBell - 1);
+  assert.equal(c.openInstant, friBell, 'the holiday adds no session');
 });
 
-test('a gap at or beyond the threshold is RED, short of it GREEN — and the boundary is exact', () => {
-  const close = { price: px(10000000000), blockTime: FRI_BELL - 10 };
-  const red = gap.reexec(inputs(close, { price: px(9500000000), blockTime: MON_BELL + 10 }));
-  assert.equal(red.verdict.flag, 'RED');
-  assert.equal(red.computation.signed_bps, '-500');
-  assert.equal(red.computation.observed_bps, '500'); // ABS
+// The whole point of task 011: the prints are SELECTED, not supplied.
+test('the last print before the bell and the first after the reopen are selected, not chosen', () => {
+  const r = run([
+    up(FRI_BELL - 3600, 10100000000, { sig: 'eary' }),
+    up(FRI_BELL - 10, 10000000000, { sig: 'nearest' }),
+    up(MON_BELL + 5, 9500000000, { sig: 'first' }),
+    up(MON_BELL + 3600, 9900000000, { sig: 'ater' }),
+  ]);
+  assert.equal(r.computation.selected_close.sig, 'nearest');
+  assert.equal(r.computation.selected_open.sig, 'first');
+  assert.equal(r.computation.observed_bps, '500');
+  assert.equal(r.verdict.flag, 'RED');
+  assert.equal(r.computation.updates_pinned, 4);
+});
 
-  const green = gap.reexec(inputs(close, { price: px(9500100000), blockTime: MON_BELL + 10 }));
-  assert.equal(green.verdict.flag, 'GREEN');
-  assert.equal(green.computation.observed_bps, '499');
+// This is the acceptance criterion for closing task 009's residual. While a claim carried two chosen
+// prints, nothing could prove either was the closest. Under selection, a claim that omitted the true
+// nearest update is a DIFFERENT claim over a DIFFERENT set — detectable by reconstruction before
+// anyone bonds, which is how CMLS closes the same problem.
+test('adding a nearer real print changes the selection, so omitting it changes the claim', () => {
+  const omitted = [up(FRI_BELL - 3600, 10000000000, { sig: 'far' }), up(MON_BELL + 3600, 9500000000, { sig: 'ate' })];
+  const withNearer = [...omitted, up(FRI_BELL - 5, 10400000000, { sig: 'near' })];
+
+  const a = run(omitted, terms({ maxLagSecs: 7200 }));
+  const b = run(withNearer, terms({ maxLagSecs: 7200 }));
+  assert.equal(a.computation.selected_close.sig, 'far');
+  assert.equal(b.computation.selected_close.sig, 'near', 'the nearer update must win the selection');
+  assert.notEqual(b.computation.observed_bps, a.computation.observed_bps, 'and it must move the number');
+
+  // the verdict moves too: 500 bps on the omitted set, 865 on the honest one
+  assert.equal(a.computation.observed_bps, '500');
+  assert.equal(b.computation.observed_bps, '865');
+});
+
+test('two updates in the same second are ordered by (slot, sig), and array order never matters', () => {
+  const tie = [
+    up(FRI_BELL - 1, 10000000000, { slot: 500, sig: 'bbb' }),
+    up(FRI_BELL - 1, 10900000000, { slot: 500, sig: 'aaa' }),
+    up(MON_BELL, 9500000000, { slot: 900, sig: 'zzz' }),
+  ];
+  const r = run(tie);
+  assert.equal(r.computation.selected_close.sig, 'bbb', 'same slot → the higher sig is later');
+
+  const shuffled = run([tie[2], tie[1], tie[0]]);
+  assert.deepEqual(shuffled.computation, r.computation);
+
+  // slot breaks the tie before sig does
+  const bySlot = run([
+    up(FRI_BELL - 1, 10000000000, { slot: 501, sig: 'aaa' }),
+    up(FRI_BELL - 1, 10900000000, { slot: 500, sig: 'zzz' }),
+    up(MON_BELL, 9500000000, { slot: 900, sig: 'q' }),
+  ]);
+  assert.equal(bySlot.computation.selected_close.sig, 'aaa');
+});
+
+test('a window with nothing on one side of the closure settles nothing', () => {
+  const noClose = run([up(MON_BELL + 10, 9500000000)]);
+  assert.equal(noClose.verdict.flag, 'STALE');
+  assert.match(noClose.verdict.reason, /at or before the closing bell/);
+
+  const noOpen = run([up(FRI_BELL - 10, 10000000000)]);
+  assert.equal(noOpen.verdict.flag, 'STALE');
+  assert.match(noOpen.verdict.reason, /at or after the reopen/);
+});
+
+// maxLagSecs is a STALENESS guard now, not a bound on a choice — there is no choice left to bound.
+test('a selected print too far from its bell is stale, whatever it would have said', () => {
+  const late = [up(FRI_BELL - 10, 10000000000), up(MON_BELL + 301, 9000000000)];
+  assert.equal(run(late).verdict.flag, 'STALE');
+  assert.equal(run(late).computation.lags_ok, false);
+  assert.equal(run(late, terms({ maxLagSecs: 301 })).verdict.flag, 'RED');
+
+  // and the computation still shows what it would have said — the bound hides nothing
+  assert.equal(run(late).computation.observed_bps, '1000');
+});
+
+test('an update from a later session cannot be selected, so the 009 multi-closure case is gone', () => {
+  // Friday close, then Monday trades in full, then a Tuesday print. The anchor names the Fri→Mon
+  // closure, so Monday's reopen print is selected and Tuesday's is simply not the first after it.
+  const r = run([
+    up(FRI_BELL - 10, 10000000000, { sig: 'fri' }),
+    up(MON_BELL + 30, 9800000000, { sig: 'mon' }),
+    up(unix(2026, 8, 11, 13, 31), 9000000000, { sig: 'tue' }),
+  ]);
+  assert.equal(r.computation.selected_open.sig, 'mon');
+  assert.equal(r.computation.observed_bps, '200');
+  assert.equal(r.verdict.flag, 'GREEN');
 });
 
 test('direction is not decoration: a 6% rally does not settle a DOWN market', () => {
-  const close = { price: px(10000000000), blockTime: FRI_BELL - 10 };
-  const up = { price: px(10600000000), blockTime: MON_BELL + 10 };
-  assert.equal(gap.reexec(inputs(close, up, terms({ direction: 'DOWN' }))).verdict.flag, 'GREEN');
-  assert.equal(gap.reexec(inputs(close, up, terms({ direction: 'UP' }))).verdict.flag, 'RED');
-  assert.equal(gap.reexec(inputs(close, up, terms({ direction: 'ABS' }))).verdict.flag, 'RED');
-});
-
-// The attack this type exists to bound: pin a later print and choose the answer.
-test('a print pinned past the declared lag settles nothing (STALE), whatever it would have said', () => {
-  const close = { price: px(10000000000), blockTime: FRI_BELL - 10 };
-  const honest = gap.reexec(inputs(close, { price: px(9000000000), blockTime: MON_BELL + 10 }));
-  assert.equal(honest.verdict.flag, 'RED');
-
-  // same prices, but the reopen print is pinned 3 hours late — inside those 3 hours the price
-  // recovered, so a cherry-picker would rather settle on it.
-  const late = gap.reexec(inputs(close, { price: px(9990000000), blockTime: MON_BELL + 3 * 3600 }));
-  assert.equal(late.verdict.flag, 'STALE');
-  assert.equal(late.computation.lags_ok, false);
-  assert.match(late.verdict.reason, /further than 300s from its boundary/);
-  // it still shows what it would have claimed — a STALE verdict hides nothing
-  assert.equal(late.computation.observed_bps, '10');
-});
-
-test('prints that never straddle a closure settle nothing', () => {
-  // both inside the same open session
-  const r = gap.reexec(inputs(
-    { price: px(10000000000), blockTime: MON_BELL + 60 },
-    { price: px(9000000000), blockTime: MON_BELL + 120 },
-  ));
-  assert.equal(r.verdict.flag, 'STALE');
-  assert.equal(r.computation.straddles_closure, false);
-  // the close print's own session bell is still reported — it is a fact about the print, and this
-  // type shows what it derived even when it refuses to settle
-  assert.equal(r.computation.close_instant, MON_CLOSE - 1);
-  assert.match(r.verdict.reason, /do not straddle a market closure/);
+  const u = [up(FRI_BELL - 10, 10000000000), up(MON_BELL + 10, 10600000000)];
+  assert.equal(run(u, terms({ direction: 'DOWN' })).verdict.flag, 'GREEN');
+  assert.equal(run(u, terms({ direction: 'UP' })).verdict.flag, 'RED');
+  assert.equal(run(u, terms({ direction: 'ABS' })).verdict.flag, 'RED');
 });
 
 test('prices are exact integers, never floats', () => {
-  // 0.1 + 0.2 arithmetic must not reach the verdict: 3 vs 1 with different exponents.
-  const r = gap.reexec(inputs(
-    { price: { value: '3', exp: 1 }, blockTime: FRI_BELL - 10 },   // 0.3
-    { price: { value: '33', exp: 2 }, blockTime: MON_BELL + 10 },  // 0.33
-  ));
-  assert.equal(r.computation.signed_bps, '1000'); // exactly +10%
-
-  for (const bad of [{ value: 1.5, exp: 2 }, { value: '01', exp: 2 }, { value: '0', exp: 2 }, { value: '1', exp: 99 }]) {
-    assert.throws(() => gap.canonicalInputs(inputs({ price: bad, blockTime: FRI_BELL - 10 }, { price: px(1), blockTime: MON_BELL + 10 })));
-  }
+  // near the top of u64, where a float would have lost the last digits entirely
+  const r = run([up(FRI_BELL - 10, '10000000000000000000'), up(MON_BELL + 10, '9500000000000000000')]);
+  assert.equal(r.computation.observed_bps, '500');
+  const boundary = run([up(FRI_BELL - 10, 10000000000), up(MON_BELL + 10, 9500100000)]);
+  assert.equal(boundary.computation.observed_bps, '499');
+  assert.equal(boundary.verdict.flag, 'GREEN');
 });
 
-test('malformed terms are rejected, not coerced', () => {
-  const close = { price: px(10000000000), blockTime: FRI_BELL - 10 };
-  const open = { price: px(9000000000), blockTime: MON_BELL + 10 };
-  for (const bad of [{ thresholdBps: 0 }, { maxLagSecs: 0 }, { direction: 'down' }, { thresholdBps: -1 }, { thresholdBps: 1.5 }]) {
-    assert.throws(() => gap.canonicalInputs(inputs(close, open, terms(bad))));
-  }
-  // reversed order is a malformed claim, not a negative closure
-  assert.throws(() => gap.canonicalInputs(inputs(open, close)));
+test('canonicalInputs rejects what it cannot represent exactly', () => {
+  const bad = (updates, t, re) => assert.throws(() => gap.canonicalInputs(inputs(updates, t)), re);
+  bad([], terms(), /must be non-empty/);
+  bad(baseline(), terms({ anchorTs: unix(2027, 1, 1, 0) }), /outside calendar 202601/);
+  bad(baseline(), terms({ thresholdBps: 0 }), /thresholdBps must be non-zero/);
+  bad(baseline(), terms({ maxLagSecs: 0 }), /maxLagSecs must be non-zero/);
+  bad(baseline(), terms({ direction: 'SIDEWAYS' }), /direction must be/);
+  bad([{ blockTime: FRI_BELL - 10, price: px(1), slot: 1 }], terms(), /sig must be a base58 signature/);
+  bad([{ blockTime: FRI_BELL - 10, price: px(1), slot: 1, sig: 'not valid!' }], terms(), /sig must be a base58 signature/);
+  bad([up(FRI_BELL - 10, 1.5)], terms(), /canonical unsigned decimal string/);
+  bad([up(unix(2025, 12, 31, 0), 1)], terms(), /outside calendar 202601/);
+
+  // the same observation twice is not two observations
+  const dup = up(FRI_BELL - 10, 1, { slot: 7, sig: 'same' });
+  bad([dup, { ...dup }], terms(), /is a duplicate observation: 7:same/);
+
+  // and the window is bounded, like every other re-executed set in this repo
+  const flood = Array.from({ length: gap.MAX_UPDATES + 1 }, (_, i) => up(FRI_BELL - 10, 1, { slot: i, sig: `s${b58n(i + 1)}` }));
+  bad(flood, terms(), /at most 100000 records/);
 });
 
-test('the claim reproduces, and tampering with the verdict breaks both the check and the id', () => {
+test('a claim re-executes end-to-end, resists tampering, and resolves a market', () => {
+  const subject = { chain: 'solana-mainnet', priceAccount: 'PriceAccountUnderTest' };
   const claim = gap.build({
-    subject: { chain: 'solana', venue: 'test', asset: 'TEST' },
+    subject,
     terms: terms(),
-    close: { price: px(10000000000), blockTime: FRI_BELL - 10 },
-    open: { price: px(9400000000), blockTime: MON_BELL + 10 },
-    source: 'test',
+    updates: baseline(),
+    source: { kind: 'SOLANA_ACCOUNT_PRICE_UPDATES', account: 'PriceAccountUnderTest', from_ts: FRI_BELL - 3600, to_ts: MON_BELL + 3600 },
   });
   assert.equal(claim.verdict.flag, 'RED');
-  assert.equal(verify(claim).ok, true);
+  const v = verify(claim);
+  assert.equal(v.ok, true, JSON.stringify(v.checks));
+  assert.ok(v.checks.some(([label]) => label === 'the same two prints are selected'));
 
-  const tampered = structuredClone(claim);
-  tampered.verdict.flag = 'GREEN';
-  const v = verify(tampered);
-  assert.equal(v.ok, false);
-});
+  const tampered = { ...claim, verdict: { ...claim.verdict, flag: 'GREEN' } };
+  assert.equal(verify(tampered).ok, false);
 
-test('a market resolves off the re-executed verdict, not off a report of it', () => {
-  const claim = gap.build({
-    subject: { chain: 'solana', venue: 'test', asset: 'TEST' },
-    terms: terms(),
-    close: { price: px(10000000000), blockTime: FRI_BELL - 10 },
-    open: { price: px(9400000000), blockTime: MON_BELL + 10 },
-    source: 'test',
-  });
-  const r = resolve(claim, { market: 'TEST gap ≥ 5% across 2026-08-07 closure', yesWhen: ['RED'] });
-  assert.equal(r.resolved, 'YES');
-  assert.equal(r.reproduces, true);
-});
+  // dropping the nearest update is a different claim, not the same one re-verified
+  const thinned = { ...claim, inputs: { ...claim.inputs, observed: { ...claim.inputs.observed, updates: [claim.inputs.observed.updates[0]] } } };
+  assert.equal(verify(thinned).ok, false);
 
-// Found while preparing this branch for review, not by review. The midpoint test only proves the
-// pair straddles SOME closed instant. Over a longer span the CLOSED predicate flips many times, so
-// each bisection converges on whichever boundary is nearest its own end — and both prints can sit
-// within an honest maxLagSecs of a genuine bell while belonging to different closures.
-test('prints from different closures settle nothing, however close to a bell they sit', () => {
-  // Fri 2026-08-07 19:55Z (OPEN) → Wed 2026-08-12 13:35Z (OPEN). The midpoint lands Mon 04:45Z,
-  // which is CLOSED, so the old straddle test passed. Between them: Mon and Tue trade in full.
-  const close = { price: px(10000000000), blockTime: unix(2026, 8, 7, 19, 55) };
-  const open = { price: px(9000000000), blockTime: unix(2026, 8, 12, 13, 35) };
-  const r = gap.reexec(inputs(close, open));
-
-  assert.equal(r.computation.straddles_closure, true);
-  assert.equal(r.computation.close_instant, FRI_BELL - 1);   // Friday's bell, from the close print's session
-  assert.equal(r.computation.open_instant, MON_BELL);        // the reopen that ENDS that closure
-  assert.equal(r.computation.reopen_session_open, unix(2026, 8, 12, 13, 30)); // the print sits in Wednesday's
-  assert.equal(r.computation.one_closure, false);
-  assert.equal(r.verdict.flag, 'STALE');
-  assert.match(r.verdict.reason, /belongs to a later session/);
-
-  // and it was not maxLagSecs that used to save us: each print sits within 300s of a genuine bell —
-  // its OWN session's — which is exactly why comparing two searched instants proved nothing
-  assert.ok(r.computation.close_lag_secs <= 300);
-  assert.ok(open.blockTime - r.computation.reopen_session_open <= 300);
-  const permissive = gap.reexec(inputs(close, open, terms({ maxLagSecs: 1_000_000 })));
-  assert.equal(permissive.verdict.flag, 'STALE');
-
-  // the honest one-closure claim over the same weekend still settles
-  const good = gap.reexec(inputs(close, { price: px(9000000000), blockTime: MON_BELL + 10 }));
-  assert.equal(good.computation.one_closure, true);
-  assert.equal(good.verdict.flag, 'RED');
-});
-
-test('a holiday-lengthened closure is still one closure', () => {
-  // Thanksgiving 2026: Wed 11-25 closes, Thu 11-26 is a holiday, Fri 11-27 is a HALF DAY (13:00 ET).
-  const wedClose = { price: px(10000000000), blockTime: unix(2026, 11, 25, 20, 59) };
-  const friOpen = { price: px(10010000000), blockTime: unix(2026, 11, 27, 14, 32) };
-  const r = gap.reexec(inputs(wedClose, friOpen, terms({ maxLagSecs: 600 })));
-  assert.equal(r.computation.one_closure, true, 'a holiday adds no session');
-  assert.equal(r.verdict.flag, 'GREEN'); // 10 bps, short of the declared 500
-});
-
-// Codex, reviews/009 F1. The first guard compared the two BISECTED instants against each other, so
-// it proved nothing about the raw prints: when the right-hand search settled on the EARLIER bell,
-// the guard saw a clean single closure while the pinned reopen print sat a session later. A large —
-// but legally declarable — maxLagSecs then covered the distance.
-test('a reopen print one session too late is rejected however large the declared lag', () => {
-  // 2026-01-01 is a holiday, so Friday 01-02 trades, Monday 01-05 trades in full, Tuesday 01-06 opens.
-  const friClose = unix(2026, 1, 2, 21, 0);   // 16:00 ET, EST = UTC-5
-  const monBell = unix(2026, 1, 5, 14, 30);   // 09:30 ET
-  const tueBell = unix(2026, 1, 6, 14, 30);
-  assert.equal(marketStatus(friClose - 1).status, STATUS.OPEN);
-  assert.equal(marketStatus(monBell + 60).status, STATUS.OPEN, 'Monday must trade for this to be the bug');
-
-  const close = { price: px(10000000000), blockTime: friClose - 1 };
-  const open = { price: px(10100000000), blockTime: tueBell };
-  const r = gap.reexec(inputs(close, open, terms({ thresholdBps: 1, maxLagSecs: 86_400 })));
-
-  assert.equal(r.computation.close_instant, friClose - 1);
-  assert.equal(r.computation.open_instant, monBell, 'the closure that starts at Friday ends on Monday');
-  assert.equal(r.computation.reopen_session_open, tueBell, 'but the print is in Tuesday');
-  assert.equal(r.computation.one_closure, false);
-  assert.equal(r.verdict.flag, 'STALE');
-
-  // the same shape with the Monday print is the honest claim, and settles
-  const honest = gap.reexec(inputs(close, { price: px(10100000000), blockTime: monBell + 5 }, terms({ thresholdBps: 1, maxLagSecs: 86_400 })));
-  assert.equal(honest.computation.one_closure, true);
-  assert.equal(honest.verdict.flag, 'RED');
-});
-
-// The other side of F1: a print from BEFORE the closure's own session cannot be paired either.
-test('a close print one session too early is rejected too', () => {
-  const thuClose = unix(2026, 8, 6, 20, 0);
-  const early = { price: px(10000000000), blockTime: thuClose - 10 }; // Thursday, not Friday
-  const r = gap.reexec(inputs(early, { price: px(9000000000), blockTime: MON_BELL + 10 }, terms({ maxLagSecs: 500_000 })));
-  assert.equal(r.computation.close_instant, thuClose - 1);
-  assert.equal(r.computation.open_instant, unix(2026, 8, 7, 13, 30), "Thursday's closure reopens on Friday");
-  assert.equal(r.computation.one_closure, false);
-  assert.equal(r.verdict.flag, 'STALE');
+  const res = resolve(claim, { market: 'Did the closure move SPYx by 5%?', yesWhen: ['RED'] });
+  assert.equal(res.resolved, 'YES');
+  assert.equal(res.reproduces, true);
 });

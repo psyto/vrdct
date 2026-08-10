@@ -26,16 +26,28 @@
 // declare `maxLagSecs`, and re-execution rejects any print further than that from the boundary
 // instant it re-derives itself. That bounds the choice; it does not eliminate it.
 //
-// HONEST RESIDUAL, AND IT IS OPEN. This type cannot prove a pinned print is the FIRST print after
-// the reopen. `maxLagSecs` bounds how far the pinner may reach; inside that bound the pinner still
-// chooses. This comment used to say the residual was closed the way it is for
-// `closed-market-liquidation-soundness` — a challenger holding a nearer print disputes and the
-// nearer print wins. That was wrong (Codex, reviews/009 F2): a market commits to `inputs_hash`, a
-// challenge asserts a different FLAG over those same pinned prints, and `settle` accepts only a feed
-// matching that commitment, so a nearer print is a different market rather than a correction to this
-// one. CMLS can close it because it has a source descriptor its inputs are reconstructed from; this
-// type has none yet. Until it does, a gap verdict says the prints sat in the right two sessions near
-// their bells, and says nothing about what other prints existed.
+// THE RESIDUAL, AND HOW IT IS CLOSED — which took two wrong answers first.
+//
+// While a claim carried two prints its builder had chosen, nothing could prove either was the
+// closest to its bell. The first answer was that a challenger holding a nearer print disputes and
+// wins; that was false (Codex, reviews/009 F2) — a market commits to `inputs_hash`, a challenge
+// asserts a different FLAG over those same prints, so a nearer print is a DIFFERENT MARKET, not a
+// correction to this one. The second answer was to call the residual open and say so, which was
+// honest but not a fix.
+//
+// The fix is the one `closed-market-liquidation-soundness` already uses, and it is not a dispute
+// mechanism: SELECTION plus RECONSTRUCTIBILITY. A claim pins the observation SET around both
+// boundaries and re-execution SELECTS the two prints from it — the last update at or before the
+// closing bell, the first at or after the reopen. There is nothing left to choose. And because the
+// set is a pure function of (account, window), a claim that omitted the true nearest update has a
+// different set, which rebuilds to a different `inputs_hash`, which `vrdct check` reports BEFORE
+// anyone bonds. The omission does not need adjudicating because it cannot survive inspection.
+//
+// WHAT IS STILL NOT TRUE IN PRACTICE. That rebuild needs to decode PRICES from the account, not
+// merely observe that it was written to — which is account-layout-specific in a way CMLS's
+// timestamp-only rebuild is not. No such adapter ships here yet. So this type is reconstructible in
+// principle and NOT YET IN PRACTICE, and saying otherwise would repeat exactly the mistake of the
+// first answer.
 //
 // FOLLOW-UP (not done here). `core/encode.mjs` / `CLAIM_TYPE_ID` and the Rust twin under
 // `onchain/programs/vrdct-bond/src/reexec/` are byte-parity surfaces; this type is offline-complete
@@ -81,13 +93,23 @@ function price(name, value) {
   return { value: v, exp };
 }
 
+/// Re-execution has to terminate for a verifier with a laptop, and a window is a market term.
+export const MAX_UPDATES = 100_000;
+
 function observation(name, o) {
   if (!isObject(o)) throw new Error(`${name} must be an object`);
   const blockTime = u32(`${name}.blockTime`, o.blockTime);
   if (blockTime < CALENDAR_2026.validFrom || blockTime >= CALENDAR_2026.validUntil) {
     throw new Error(`${name}.blockTime is outside calendar ${CALENDAR_2026.version}'s validity range`);
   }
-  return { price: price(`${name}.price`, o.price), blockTime };
+  // `slot` and `sig` are the ordering key, the same pair CMLS orders its observations by: two updates
+  // can share a second, and a verdict must not depend on which of them a JSON array happened to list
+  // first. They are part of the input domain even though only `blockTime` enters the arithmetic.
+  const slot = u32(`${name}.slot`, o.slot);
+  if (typeof o.sig !== 'string' || !/^[1-9A-HJ-NP-Za-km-z]{1,128}$/.test(o.sig)) {
+    throw new Error(`${name}.sig must be a base58 signature`);
+  }
+  return { price: price(`${name}.price`, o.price), blockTime, slot, sig: o.sig };
 }
 
 // The sole raw-JSON reader for this surface: re-execution and any future on-chain encoder must
@@ -96,9 +118,24 @@ export function canonicalInputs(inputs) {
   if (!isObject(inputs) || !isObject(inputs.observed) || !isObject(inputs.terms)) {
     throw new Error('inputs.observed and inputs.terms must be objects');
   }
-  const close = observation('observed.close', inputs.observed.close);
-  const open = observation('observed.open', inputs.observed.open);
-  if (open.blockTime <= close.blockTime) throw new Error('observed.open.blockTime must be after observed.close.blockTime');
+  if (!Array.isArray(inputs.observed.updates)) throw new Error('observed.updates must be an array');
+  if (inputs.observed.updates.length === 0) throw new Error('observed.updates must be non-empty');
+  if (inputs.observed.updates.length > MAX_UPDATES) throw new Error(`observed.updates must hold at most ${MAX_UPDATES} records`);
+  const seen = new Set();
+  const updates = inputs.observed.updates.map((o, i) => {
+    const u = observation(`observed.updates[${i}]`, o);
+    const k = `${u.slot}:${u.sig}`;
+    if (seen.has(k)) throw new Error(`observed.updates[${i}] is a duplicate observation: ${k}`);
+    seen.add(k);
+    return u;
+  });
+
+  // The instant the market is about. Any instant inside the closure names it; the calendar does the
+  // rest. It is a market-definition term, declared before the fact like `thresholdBps`.
+  const anchorTs = u32('terms.anchorTs', inputs.terms.anchorTs);
+  if (anchorTs < CALENDAR_2026.validFrom || anchorTs >= CALENDAR_2026.validUntil) {
+    throw new Error(`terms.anchorTs is outside calendar ${CALENDAR_2026.version}'s validity range`);
+  }
 
   const thresholdBps = u32('terms.thresholdBps', inputs.terms.thresholdBps);
   if (thresholdBps === 0) throw new Error('terms.thresholdBps must be non-zero');
@@ -108,7 +145,7 @@ export function canonicalInputs(inputs) {
   if (direction !== 'ABS' && direction !== 'DOWN' && direction !== 'UP') {
     throw new Error("terms.direction must be 'ABS', 'DOWN' or 'UP'");
   }
-  return { close, open, thresholdBps, maxLagSecs, direction };
+  return { updates, anchorTs, thresholdBps, maxLagSecs, direction };
 }
 
 /// The longest US-equities closure is a holiday weekend, a little over four days. Nothing further
@@ -131,6 +168,47 @@ function nextSessionOpen(t, cal = CALENDAR_2026) {
   return null;
 }
 
+/// The closure the market is about, from the anchor and the calendar alone — no price is consulted.
+/// `anchorTs` must fall inside a closure: if the market was open at it, there is nothing to settle.
+export function closureAround(anchorTs, cal = CALENDAR_2026) {
+  if (!isClosed(anchorTs)) return null;
+  // walk back to the session that ended this closure's start, and forward to the one that ends it
+  let closeInstant = null;
+  for (let day = 0; day <= MAX_CLOSURE_DAYS && closeInstant === null; day++) {
+    const probe = new Date((anchorTs - day * 86400) * 1000);
+    const at15 = Date.UTC(probe.getUTCFullYear(), probe.getUTCMonth(), probe.getUTCDate(), 15) / 1000;
+    if (at15 < cal.validFrom || at15 >= cal.validUntil) return null;
+    const st = marketStatus(at15, cal);
+    if (st.session_close_ts !== null && st.session_close_ts <= anchorTs) closeInstant = st.session_close_ts - 1;
+  }
+  if (closeInstant === null) return null;
+  const openInstant = nextSessionOpen(closeInstant, cal);
+  return openInstant === null ? null : { closeInstant, openInstant };
+}
+
+/// PURE: the pinned set → the two prints, SELECTED rather than supplied. The last update at or before
+/// the closing bell, and the first at or after the reopen.
+///
+/// This is what closes the residual task 009 could only state. While a claim carried two prints its
+/// builder had chosen, nothing could prove either was the closest one, and the README's answer — that
+/// a challenger with a nearer print disputes and wins — was a mechanism this market does not have.
+/// Selection removes the choice instead of adjudicating it: a claim that omits the true nearest
+/// update has a DIFFERENT input set, which rebuilds to a different `inputs_hash`, which `vrdct check`
+/// reports before anyone bonds. The omission cannot survive inspection, so it does not need a
+/// remedy — the same standard `closed-market-liquidation-soundness` already meets.
+///
+/// Ordering is by (blockTime, slot, sig): two updates can share a second, and a verdict must not
+/// depend on which one a JSON array happened to list first.
+export function selectPrints(updates, closeInstant, openInstant) {
+  const ordered = [...updates].sort((a, b) => a.blockTime - b.blockTime || a.slot - b.slot || (a.sig < b.sig ? -1 : a.sig > b.sig ? 1 : 0));
+  let close = null, open = null;
+  for (const u of ordered) {
+    if (u.blockTime <= closeInstant) close = u;              // keep taking: the last one wins
+    else if (u.blockTime >= openInstant && open === null) open = u; // the first one after the reopen
+  }
+  return { close, open };
+}
+
 // Signed move in basis points, floored toward zero, in integer arithmetic.
 function moveBps(from, to) {
   // scale both to a common exponent so the ratio is exact
@@ -145,54 +223,38 @@ function moveBps(from, to) {
 
 export function reexec(inputs) {
   const q = canonicalInputs(inputs);
-  const { close, open, thresholdBps, maxLagSecs, direction } = q;
+  const { updates, anchorTs, thresholdBps, maxLagSecs, direction } = q;
 
-  // 1. Re-derive the closure from the calendar — FROM THE CLOSE PRINT ALONE, then check the open
-  //    print against it.
-  //
-  //    The first version bisected the CLOSED predicate inward from both prints. Bisection needs the
-  //    predicate to flip exactly once in its range, and over a multi-closure span it flips many
-  //    times, so each search settled on whichever boundary sat nearest its own end — an instant that
-  //    is real but is not necessarily the one bounding its own print's session. Guarding the two
-  //    selected instants against each other then proved nothing about the raw prints: a Friday close
-  //    print with a Tuesday open print derives Friday's bell and MONDAY's, sees no session between
-  //    them, and settles a claim that contains Monday's entire session (Codex, reviews/009 F1).
-  //
-  //    So no search. `campana` already reports the session an instant belongs to, so the closing
-  //    bell of the close print's session is exact, the reopen is the first bell after it, and the
-  //    open print is ADMITTED only if the session it belongs to is that reopen. There is no instant
-  //    either print can be paired with except the one its own session gives it.
-  const closeSession = marketStatus(close.blockTime);
-  const openSession = marketStatus(open.blockTime);
-  const bothInSession = closeSession.session_close_ts !== null && openSession.session_open_ts !== null;
+  // 1. The closure, from the anchor and the calendar. No price is consulted, so nothing the builder
+  //    pinned can move the boundary. (Task 009 derived it from the close print's session, which was
+  //    correct but left the boundary depending on a chosen observation.)
+  const closure = closureAround(anchorTs);
+  const straddles = closure !== null;
+  const closeInstant = closure?.closeInstant ?? null;
+  const openInstant = closure?.openInstant ?? null;
 
-  let closeInstant = null, openInstant = null, closeLagSecs = null, openLagSecs = null;
-  let oneClosure = false, lagsOk = false, straddles = false;
-  if (bothInSession) {
-    closeInstant = closeSession.session_close_ts - 1;   // last second the market was open
-    openInstant = nextSessionOpen(closeInstant);        // the reopen that ends THIS closure
-    straddles = openInstant !== null && openSession.session_open_ts > closeInstant;
-    if (straddles) {
-      // the open print must sit in the reopening session itself, not in a later one
-      oneClosure = openSession.session_open_ts === openInstant;
-      closeLagSecs = closeInstant - close.blockTime; // how stale the close print is vs the closing bell
-      openLagSecs = open.blockTime - openInstant;    // how late the reopen print is vs the opening bell
-      lagsOk = oneClosure && closeLagSecs <= maxLagSecs && openLagSecs <= maxLagSecs;
-    }
-  }
+  // 2. The prints, SELECTED from the pinned set rather than supplied.
+  const picked = straddles ? selectPrints(updates, closeInstant, openInstant) : { close: null, open: null };
+  const close = picked.close, open = picked.open;
+  const bothSides = close !== null && open !== null;
+
+  const closeLagSecs = bothSides ? closeInstant - close.blockTime : null;
+  const openLagSecs = bothSides ? open.blockTime - openInstant : null;
+  // maxLagSecs is a STALENESS guard now, not a bound on a choice — there is no choice left to bound.
+  const lagsOk = bothSides && closeLagSecs <= maxLagSecs && openLagSecs <= maxLagSecs;
 
   // 2. The move. Computed regardless, so a STALE claim still shows what it would have said.
-  const signedBps = moveBps(close.price, open.price);
+  const signedBps = bothSides ? moveBps(close.price, open.price) : 0n;
   const observedBps = direction === 'ABS' ? (signedBps < 0n ? -signedBps : signedBps)
     : direction === 'DOWN' ? -signedBps
       : signedBps;
   const breached = observedBps >= BigInt(thresholdBps);
 
-  const flag = !straddles || !lagsOk ? 'STALE' : breached ? 'RED' : 'GREEN';
+  const flag = !straddles || !bothSides || !lagsOk ? 'STALE' : breached ? 'RED' : 'GREEN';
   const reason = !straddles
-    ? 'the pinned prints do not straddle a market closure'
-    : !oneClosure
-      ? 'the reopen print belongs to a later session than the one that ends this closure'
+    ? 'terms.anchorTs does not fall inside a market closure'
+    : !bothSides
+      ? `the pinned window holds no update ${close === null ? 'at or before the closing bell' : 'at or after the reopen'}`
       : !lagsOk
       ? `a pinned print is further than ${maxLagSecs}s from its boundary (close ${closeLagSecs}s, open ${openLagSecs}s)`
       : breached
@@ -207,8 +269,11 @@ export function reexec(inputs) {
       close_lag_secs: closeLagSecs,
       open_lag_secs: openLagSecs,
       lags_ok: lagsOk,
-      one_closure: oneClosure,
-      reopen_session_open: openSession.session_open_ts,
+      updates_pinned: updates.length,
+      // which observations the rule SELECTED — reported so a reader sees the choice was made by the
+      // rule and can check it against the set, not so they have to trust it was
+      selected_close: close === null ? null : { blockTime: close.blockTime, slot: close.slot, sig: close.sig },
+      selected_open: open === null ? null : { blockTime: open.blockTime, slot: open.slot, sig: open.sig },
       closure_secs: straddles ? openInstant - closeInstant : null,
       signed_bps: String(signedBps),
       observed_bps: String(observedBps),
@@ -224,13 +289,13 @@ export function checks(claim, r) {
   return [
     ['closure straddle reproduces', r.computation.straddles_closure === claim.computation.straddles_closure, `${r.computation.straddles_closure}`],
     ['boundary instants reproduce', r.computation.close_instant === claim.computation.close_instant && r.computation.open_instant === claim.computation.open_instant, `${r.computation.close_instant} → ${r.computation.open_instant}`],
-    ['the reopen print is in the reopening session', r.computation.one_closure === claim.computation.one_closure, `${r.computation.reopen_session_open}`],
+    ['the same two prints are selected', JSON.stringify(r.computation.selected_close) === JSON.stringify(claim.computation.selected_close) && JSON.stringify(r.computation.selected_open) === JSON.stringify(claim.computation.selected_open), `${r.computation.selected_close?.sig ?? 'none'} → ${r.computation.selected_open?.sig ?? 'none'}`],
     ['print lags within terms', r.computation.lags_ok === claim.computation.lags_ok, `close ${r.computation.close_lag_secs}s · open ${r.computation.open_lag_secs}s`],
     ['gap reproduces', r.computation.observed_bps === claim.computation.observed_bps, `${r.computation.observed_bps} bps`],
   ];
 }
 
-export function build({ subject, terms, close, open, source }) {
+export function build({ subject, terms, updates, source }) {
   return buildClaim({
     type,
     subject,
@@ -238,7 +303,8 @@ export function build({ subject, terms, close, open, source }) {
       trusted: { chain: subject.chain, calendar: CALENDAR_2026.version },
       oracle_inputs: [],
       terms,
-      observed: { source, close, open },
+      // the SET, not two chosen prints — `source` is what a third party rebuilds it from
+      observed: { source, count: updates.length, updates },
     },
   });
 }
