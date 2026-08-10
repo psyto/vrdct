@@ -1,0 +1,191 @@
+{
+ "subject": "Variational Omni funding_rate vs NYSE session state",
+ "source": "GET https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/stats, 60s polling",
+ "window": {
+  "from": "2026-08-09T22:52:04.046131+00:00",
+  "to": "2026-08-10T23:33:26.321Z",
+  "samples_ok": 1398
+ },
+ "session_rule": "in_session = UTC weekday Monday AND 13:30 <= UTC time < 20:00, i.e. the single 2026-08-10 NYSE regular session inside the capture. Everything else is outside.",
+ "counts": {
+  "in_session_samples": 390,
+  "outside_samples": 1008
+ },
+ "equities": {
+  "AAPL": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 2
+  },
+  "TSLA": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "NVDA": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "MSFT": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "META": {
+   "nonzero_in_session": 125,
+   "nonzero_outside": 491
+  },
+  "AMZN": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "GOOGL": {
+   "nonzero_in_session": 10,
+   "nonzero_outside": 471
+  },
+  "MU": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 101
+  },
+  "INTC": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "QCOM": {
+   "nonzero_in_session": 25,
+   "nonzero_outside": 290
+  },
+  "TSM": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 64
+  },
+  "COIN": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 129
+  },
+  "MSTR": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 327
+  },
+  "AVGO": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 206
+  },
+  "AMD": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "JPM": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "WMT": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "COST": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "LLY": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "QQQ": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 91
+  },
+  "US500": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 150
+  },
+  "IWM": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "SOXL": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 338
+  },
+  "EWJ": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 24
+  },
+  "EWY": {
+   "nonzero_in_session": 210,
+   "nonzero_outside": 285
+  },
+  "XBI": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 31
+  },
+  "XLE": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  },
+  "UVXY": {
+   "nonzero_in_session": 115,
+   "nonzero_outside": 691
+  }
+ },
+ "controls": {
+  "BTC": {
+   "nonzero_in_session": 390,
+   "nonzero_outside": 1008
+  },
+  "ETH": {
+   "nonzero_in_session": 390,
+   "nonzero_outside": 1008
+  },
+  "SOL": {
+   "nonzero_in_session": 390,
+   "nonzero_outside": 1008
+  },
+  "HYPE": {
+   "nonzero_in_session": 390,
+   "nonzero_outside": 1008
+  },
+  "OPENAI": {
+   "nonzero_in_session": 390,
+   "nonzero_outside": 1008
+  },
+  "ANTHROPIC": {
+   "nonzero_in_session": 390,
+   "nonzero_outside": 1008
+  },
+  "SPCX": {
+   "nonzero_in_session": 124,
+   "nonzero_outside": 444
+  },
+  "CL": {
+   "nonzero_in_session": 390,
+   "nonzero_outside": 815
+  },
+  "XAU": {
+   "nonzero_in_session": 0,
+   "nonzero_outside": 0
+  }
+ },
+ "capture_gaps": [
+  {
+   "after": "2026-08-09T23:11:04.136603+00:00",
+   "seconds": 2481
+  },
+  {
+   "after": "2026-08-10T06:53:39.774Z",
+   "seconds": 2295
+  },
+  {
+   "after": "2026-08-10T07:31:54.592Z",
+   "seconds": 202
+  },
+  {
+   "after": "2026-08-10T10:18:16.641Z",
+   "seconds": 368
+  }
+ ],
+ "what_this_shows": "Every sampled equity and ETF reported funding_rate exactly 0 in all in-session samples, while several reported nonzero funding outside the session. Crypto controls reported nonzero funding in every in-session sample.",
+ "what_this_does_not_show": [
+  "a mechanism; only a correlation over one session",
+  "anything about the venue conduct",
+  "that the index was frozen at any time — index price is not returned by this endpoint",
+  "more than one session: the capture contains exactly one NYSE regular session"
+ ]
+}

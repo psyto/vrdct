@@ -10,7 +10,7 @@ Liquidity Provider) quoting all of them, trades settled into bilateral on-chain 
 publishes mainnet addresses and documents its own pricing and funding mechanics. Everything below is
 public data.
 
-Measured **2026-08-09T22:17Z – 2026-08-10T23:26Z UTC**. The `probe-output.txt` run this file quotes
+Measured **2026-08-09T22:17Z – 2026-08-10T23:33Z UTC**. The `probe-output.txt` run this file quotes
 has chain head **block 493235649** (`ts 1786404358`, `2026-08-10T23:25:58Z`), block rate 0.2510
 s/block sampled over 100,000 blocks.
 
@@ -88,10 +88,30 @@ At 22:17:32Z and 22:29:40Z on 2026-08-09 — NYSE closed until Monday 13:30 UTC,
 at 22:00 UTC, crypto continuously open — 534 markets, $439.3M 24 h volume, $145.8M TVL, $1.449B open
 interest, `loss_refund` at `pool_size: 0`, `refunded_24h: 0`.
 
-**Funding sat at zero for the markets whose underlying was closed, and nonzero everywhere else.**
-Every US single name and ETF sampled reported `funding_rate` `0.0000` (SOXL, `-0.0139`, excepted).
-Pre-IPO markets, which have no underlying session to close, carried `0.0548`/8h; crypto
-`0.0856`–`0.1095`/8h; reopened commodities `0.0885`–`0.8146`/4h.
+~~**Funding sat at zero for the markets whose underlying was closed, and nonzero everywhere else.**~~
+**That sentence was wrong, and the sampler that was left running is what disproved it.** It was
+inferred from those two snapshots, both taken while the NYSE was shut: every US single name and ETF
+read `0.0000` and it looked like a consequence of the closure.
+
+Over the full capture — 1,398 successful samples, 2026-08-09T22:52Z to 2026-08-10T23:33Z, spanning
+the entire 2026-08-10 NYSE regular session — the correlation runs the **other way**:
+
+| | in-session (390 samples) | outside (1,008 samples) |
+| --- | --- | --- |
+| every equity/ETF sampled | nonzero funding in **0** | SOXL 338, US500 150, MU 101, QQQ 91, … |
+| BTC | nonzero in **390** | — |
+
+So funding at zero does not track "underlying closed". Every sampled equity read exactly zero
+*inside* the open session, and several read nonzero *outside* it. `funding-by-session.json` is the
+frozen result, with its session rule written out, and it says in its own body that it shows a
+correlation over **one** session and no mechanism.
+
+Pre-IPO markets carried `0.0548`/8h at the snapshot, crypto `0.0856`–`0.1095`/8h, reopened
+commodities `0.0885`–`0.8146`/4h.
+
+This is the second claim in this record to be withdrawn, and it failed the same way as the first:
+a sentence that sounds causal, inferred from two samples, in the direction that made the story
+tidier.
 
 **Marks kept moving anyway.** Over those 12 minutes, with the NYSE shut, SOXL moved −47.4 bp, MSTR
 −15.9 bp, QQQ +11.9 bp, and quotes refreshed roughly every 30 s.
@@ -121,9 +141,9 @@ shasum -a 256 aapl-window-close.json
 An earlier version of this file advertised a different digest computed over an unspecified
 serialisation, with no way to check it. That was not a content address, and the string is gone.
 
-**The capture has a hole** — 2,481 s between `23:11:04Z` and `23:52:25Z`, almost certainly a machine
-suspend. It appears in the slice as a `capture_gaps` entry rather than as an absence the reader has
-to notice, which is why every record carries its own fetch time.
+**The capture has holes** — four gaps over 90 s (2,481 s, 2,295 s, 368 s, 202 s), almost certainly
+machine suspends. They appear in the frozen artefacts as `capture_gaps` entries rather than as
+absences the reader has to notice, which is why every record carries its own fetch time.
 
 From Apple's investor-relations dividend history — the issuer, not an aggregator: **declared
 2026-07-30, $0.27 per share, record date 2026-08-10, payable 2026-08-13.** US settlement is T+1, so
@@ -174,8 +194,9 @@ node probe.mjs                 # every on-chain number above; ARB_RPC to overrid
 node probe.mjs --blocks 20000  # a shorter scan
 node sampler.mjs               # append 60s samples of the public stats endpoint to samples.jsonl
 
-shasum -a 256 aapl-window-close.json mainnet-contracts.captured.md probe-output.txt
+shasum -a 256 aapl-window-close.json funding-by-session.json mainnet-contracts.captured.md probe-output.txt
 # 18d1fc39768f23430b085eda955d1c28a49f6da716795763eea4ba712212d991  aapl-window-close.json
+# 05349f7595dd8b298eaf4e52e2be546f7edc52345c0258685771cb8f1105a24e  funding-by-session.json
 # a5248decfbc03fe231e382b9dd7eb80e8292ce23c3535b698c0e47622337a8a2  mainnet-contracts.captured.md
 # 1887be7f2e757d1b4f7f920e35de4b8c97a22251f69b922ebfaaa3165b7d3143  probe-output.txt
 ```
