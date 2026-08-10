@@ -224,13 +224,13 @@ export function closureAround(anchorTs, cal = CALENDAR_2026) {
 /// PURE: the pinned set → the two prints, SELECTED rather than supplied. The last update at or before
 /// the closing bell, and the first at or after the reopen.
 ///
-/// This is what closes the residual task 009 could only state. While a claim carried two prints its
-/// builder had chosen, nothing could prove either was the closest one, and the README's answer — that
-/// a challenger with a nearer print disputes and wins — was a mechanism this market does not have.
-/// Selection removes the choice instead of adjudicating it: a claim that omits the true nearest
-/// update has a DIFFERENT input set, which rebuilds to a different `inputs_hash`, which `vrdct check`
-/// reports before anyone bonds. The omission cannot survive inspection, so it does not need a
-/// remedy — the same standard `closed-market-liquidation-soundness` already meets.
+/// This removes the CHOICE, and it does not close the residual. While a claim carried two prints its
+/// builder had picked, nothing could prove either was the closest; selection means nothing about
+/// which print is used is supplied at all. But omission is a property of the SET, and what closes
+/// that is anyone being able to REBUILD the set from the descriptor and see a mismatch before
+/// bonding. No rebuilder exists for this type — rebuilding needs to decode prices from the account,
+/// not merely observe it was written to. So: a claim that omits the true nearest update does have a
+/// different input set, and today nobody can observe that. Necessary condition, not sufficient one.
 ///
 /// Ordering is by (blockTime, slot, sig): two updates can share a second, and a verdict must not
 /// depend on which one a JSON array happened to list first.
@@ -333,7 +333,15 @@ export function reexec(inputs) {
 }
 
 export function checks(claim, r) {
+  // The subject names the account the claim is ABOUT; the descriptor names the account its inputs
+  // were read FROM. Nothing tied them together, so a claim could be subject-ed to one price account
+  // and sourced from another and verify cleanly (Codex, reviews/011 F3) — a reader trusting the
+  // subject would be reading a verdict about a different account. `checks` sees the whole claim,
+  // which is the only place in this engine that can enforce it.
+  const subjectAccount = claim?.subject?.priceAccount;
+  const sourceAccount = claim?.inputs?.observed?.source?.account;
   return [
+    ['subject names the account the inputs came from', typeof subjectAccount === 'string' && subjectAccount === sourceAccount, `${subjectAccount ?? 'missing'} vs ${sourceAccount ?? 'missing'}`],
     ['closure straddle reproduces', r.computation.straddles_closure === claim.computation.straddles_closure, `${r.computation.straddles_closure}`],
     ['boundary instants reproduce', r.computation.close_instant === claim.computation.close_instant && r.computation.open_instant === claim.computation.open_instant, `${r.computation.close_instant} → ${r.computation.open_instant}`],
     ['the same two prints are selected', JSON.stringify(r.computation.selected_close) === JSON.stringify(claim.computation.selected_close) && JSON.stringify(r.computation.selected_open) === JSON.stringify(claim.computation.selected_open), `${r.computation.selected_close?.sig ?? 'none'} → ${r.computation.selected_open?.sig ?? 'none'}`],
@@ -344,6 +352,10 @@ export function checks(claim, r) {
 }
 
 export function build({ subject, terms, updates, source }) {
+  // refuse to construct what `checks` would reject, so the mismatch cannot be made by accident
+  if (subject?.priceAccount !== source?.account) {
+    throw new Error(`subject.priceAccount (${subject?.priceAccount ?? 'missing'}) must be the account the source descriptor reads (${source?.account ?? 'missing'})`);
+  }
   return buildClaim({
     type,
     subject,

@@ -151,3 +151,24 @@ describe selection, the validated descriptor, and why the type remains in the un
 The remaining work is a price-decoding adapter for the specific oracle account, plus the `check` path
 that rebuilds a market's inputs from the descriptor bound into its address. That is a task, not a
 wording change.
+
+---
+
+## Addendum 2 — Codex F3/F4
+
+**F3 (P1) — the subject was not bound to the account the inputs came from.** `subject.priceAccount`
+names what a claim is *about*; `observed.source.account` names what its inputs were read *from*, and
+nothing tied them together — so a claim could be subject-ed to one price account, sourced from
+another, and verify cleanly. Anyone reading the subject would be reading a verdict about a different
+account. That is a worse failure than an unsourced set, because it is silent.
+
+`checks` is the only place in this engine that sees the whole claim, so the binding lives there and
+is enforced on **any** claim, including one this repo's `build()` never touched. `build()` also
+refuses to construct the mismatch, so it cannot be made by accident. Both directions are tested,
+including a hand-edited claim with a swapped subject.
+
+**F4 (P2) — the selection comment still said it closed the residual.** Third file in this branch to
+carry the retracted claim after the prose elsewhere had retracted it. Corrected in the module and in
+the test that asserts the acceptance criterion: selection removes the **choice**; omission is a
+property of the **set**, and observing it needs a rebuild that does not exist. Necessary condition,
+not sufficient one.

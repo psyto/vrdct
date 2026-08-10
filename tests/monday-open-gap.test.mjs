@@ -70,10 +70,9 @@ test('the last print before the bell and the first after the reopen are selected
   assert.equal(r.computation.updates_pinned, 4);
 });
 
-// This is the acceptance criterion for closing task 009's residual. While a claim carried two chosen
-// prints, nothing could prove either was the closest. Under selection, a claim that omitted the true
-// nearest update is a DIFFERENT claim over a DIFFERENT set — detectable by reconstruction before
-// anyone bonds, which is how CMLS closes the same problem.
+// Selection removes the CHOICE: a claim that omitted the true nearest update is a different claim
+// over a different set. It does NOT close the residual — observing that difference needs a rebuild,
+// and no rebuilder exists for this type. Necessary condition, not sufficient one.
 test('adding a nearer real print changes the selection, so omitting it changes the claim', () => {
   const omitted = [up(FRI_BELL - 3600, 10000000000, { sig: 'far' }), up(MON_BELL + 3600, 9500000000, { sig: 'ate' })];
   const withNearer = [...omitted, up(FRI_BELL - 5, 10400000000, { sig: 'near' })];
@@ -182,7 +181,7 @@ test('canonicalInputs rejects what it cannot represent exactly', () => {
 });
 
 test('a claim re-executes end-to-end, resists tampering, and resolves a market', () => {
-  const subject = { chain: 'solana-mainnet', priceAccount: 'PriceAccountUnderTest' };
+  const subject = { chain: 'solana-mainnet', priceAccount: ACCOUNT };
   const claim = gap.build({
     subject,
     terms: terms(),
@@ -250,4 +249,24 @@ test('a window that stops short of a bell cannot establish what the nearest prin
   const exact = src({ from_ts: FRI_BELL - 1 - 300, to_ts: MON_BELL + 300 });
   assert.equal(run(baseline(), terms(), exact).computation.window_covers_closure, true);
   assert.equal(run(baseline(), terms(), exact).verdict.flag, 'RED');
+});
+
+// Codex, reviews/011 F3. The subject names the account a claim is ABOUT; the descriptor names the
+// account its inputs were read FROM. Nothing tied them together, so a claim could be subject-ed to
+// one price account and sourced from another and verify cleanly — and a reader trusting the subject
+// would be reading a verdict about a different account.
+test('a claim cannot be about one account and sourced from another', () => {
+  const OTHER = '9wRt3QwXyPnDvE4aHsGuKbNcMqTrWyZ1a7j3VCB9fLmZ';
+  const mk = (subject) => gap.build({ subject, terms: terms(), updates: baseline(), source: src() });
+
+  assert.throws(() => mk({ chain: 'solana-mainnet', priceAccount: OTHER }), /must be the account the source descriptor reads/);
+  assert.throws(() => mk({ chain: 'solana-mainnet' }), /must be the account the source descriptor reads/);
+
+  // and a hand-written claim that build() never saw is caught by verify, which is what matters
+  const honest = mk({ chain: 'solana-mainnet', priceAccount: ACCOUNT });
+  assert.equal(verify(honest).ok, true);
+  const swapped = { ...honest, subject: { ...honest.subject, priceAccount: OTHER } };
+  const v = verify(swapped);
+  assert.equal(v.ok, false);
+  assert.equal(v.checks.find(([label]) => label.startsWith('subject names the account'))[1], false);
 });
