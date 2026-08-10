@@ -1,4 +1,10 @@
-# 011 — give `monday-open-gap` a source, and close the residual it currently states
+# 011 — give `monday-open-gap` a source descriptor and a selection rule
+
+> **Outcome, written after review:** this task does **not** close the residual, and the body below was
+> written as if it would. Selection is done and the descriptor is now consensus — a necessary
+> condition. Omission is closed only by a *rebuild*, which needs a price-decoding adapter that does
+> not exist. See the Addendum. The body is left standing rather than rewritten, because what it
+> assumed is the thing worth seeing.
 
 **Frame:** thin (what closes a residual, and what "closed" means here) → CC implements, Codex reviews.
 **Branch:** `cc/monday-open-gap-source`
@@ -12,7 +18,8 @@ disputes, and the closer print wins"*. Codex showed that is not a mechanism this
 prints, and `settle` accepts only a feed matching that commitment. A nearer print is a **different
 market**, not a correction to this one.
 
-So the type was downgraded to saying the residual is **unsourced and open**. This task closes it.
+So the type was downgraded to saying the residual is **unsourced and open**. This task set out to
+close it, and got half way — see the note above.
 
 ## What actually closes it, and it is not a dispute mechanism
 
@@ -52,7 +59,7 @@ Re-execution, in order, with nothing supplied that can be derived:
    cherry-pick bound. If the selected print sits further from its bell than the terms allow, the
    claim is `STALE`. It no longer has to bound a choice, because there is no choice left.
 
-### Why this closes the residual rather than restating it
+### Why this was expected to close the residual rather than restate it *(and why it does not)*
 
 The residual was *"a claim cannot prove its pinned print is the closest one"*. Under selection the
 question changes: a claim's inputs are a pure function of `(account, from_ts, to_ts)`, so a claim that
@@ -60,16 +67,17 @@ omits the true nearest print has a **different input set**, which rebuilds to a 
 `inputs_hash`**, which `vrdct check` reports before anyone bonds. The omission does not have to be
 adjudicated because it cannot survive inspection.
 
-That is the same standard CMLS meets, and it is the standard the README already sets for what
-"sourced" means.
+That is the same standard CMLS meets — and the step this argument skips is that CMLS can actually
+*rebuild*. Without a rebuilder, "has a different input set" is true and unobservable, so the argument
+establishes a necessary condition and stops there. That is what review found.
 
 ## Scope
 
 - `claimtypes/monday-open-gap.mjs` — inputs, selection, and the honest-scope comment.
 - `tests/monday-open-gap.test.mjs` — selection, ties, empty sides, the anchored closure, and the
   cherry-pick attempt now failing to change the verdict.
-- README — move `monday-open-gap` out of the unsourced list, and say what its reconstruction depends
-  on (RPC retention), exactly as CMLS's entry does.
+- README — describe selection and the validated descriptor, and say why the type **stays** in the
+  unsourced list until a rebuilder exists.
 
 **Out of scope, and it must be said rather than implied:** the `reconstruct.mjs` path for this type
 needs to decode **prices** from the account, not merely observe that it was written to — which is
@@ -86,11 +94,12 @@ binding that `cli check` uses for CMLS.
 - The closure is derived from `anchorTs` + calendar and depends on no price.
 - Both prints are selected from the pinned set; nothing about which print is used is supplied.
 - Adding a nearer real print to the set **changes the selection** — so a claim that omitted it is a
-  different claim, detectable by reconstruction.
+  different claim. *(Detectable by reconstruction only once a rebuilder exists; see the Addendum.)*
 - `maxLagSecs` is documented and tested as a staleness guard.
 - All of task 009's guarantees survive: exactly one closure, integer prices, direction, and the
   refusal to settle across sessions.
-- README honest scope updated in the same commit, including the "not yet in practice" caveat.
+- README honest scope updated in the same commit — **both** blocks, and saying the type is still in
+  the unsourced case rather than out of it.
 
 ## Review focus for Codex
 
