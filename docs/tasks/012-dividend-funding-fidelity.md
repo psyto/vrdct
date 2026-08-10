@@ -181,7 +181,65 @@ Execution quality, best execution, spread attribution, and any verdict that woul
 quotes. Also the on-chain twin and `encode.mjs` wiring — offline-complete is the ceiling here, as it
 was for types #3, #4 and #5.
 
-## Review focus for Codex
+## Handoff — where this stands, and the one thing left
+
+Written because the session that produced this branch is closing and the work continues elsewhere.
+Nothing below depends on chat history; this file and the review file are the whole state.
+
+**Branch `cc/dividend-funding-fidelity`, 6 commits ahead of `main`, pushed and in sync.**
+`codex/012-dividend-funding-fidelity-review` is also pushed. Working tree clean.
+
+| | |
+| --- | --- |
+| the claim-type | **REJECTED and closed.** Nothing to implement, ever, under this design |
+| the measurement record | **fixed after review, and NOT yet re-reviewed** ← the only open item |
+| `samples.jsonl` | 31 MB, uncommitted by design. The two results taken from it are frozen and committed; the stream itself is disposable |
+| sampler | stopped |
+
+### The one open item: re-review of the record
+
+Codex's verdict was **REJECT the claim-type, CHANGES for the public research record**. The rejection
+is accepted and closed above. The CHANGES were addressed in `f9399fe`, and a second withdrawal was
+made afterwards in `4d5a028` that **Codex has not seen**. That second one matters more than the first
+because it was not caught by review:
+
+> The record claimed funding sat at zero for markets whose underlying was closed. That was inferred
+> from two snapshots twelve minutes apart, both taken while the NYSE was shut. The sampler was left
+> running through the 2026-08-10 session, and over 1,398 samples the correlation runs the other way —
+> every sampled equity read exactly zero *in* the session (0 of 390) and several read nonzero outside
+> it, while BTC read nonzero in all 390. The sentence is withdrawn; `funding-by-session.json` is the
+> frozen result and states in its own body that it is one session and no mechanism.
+
+Two claims withdrawn in one record, failing the same way both times: a causal-sounding sentence from
+a two-sample snapshot, wrong in the direction that made the story tidier. **That pattern is the thing
+worth reviewing**, more than any individual sentence.
+
+Ask Codex for a re-review covering, in order:
+
+1. **Does the record still overclaim anywhere?** F1 was withdrawn but the withdrawn sentences are
+   quoted rather than deleted, which is repo style and also a way to keep an overclaim in view. Read
+   them as a reader would.
+2. **Is the second withdrawal correctly bounded?** `funding-by-session.json` covers exactly one NYSE
+   session. Is "one session, correlation, no mechanism" enough of a fence, or does publishing the
+   table at all imply more than one session can support?
+3. **F2's resolution.** The address list is now named and dated rather than derived, `Loss Refund
+   Pool` is scanned, and both differing reads of the source page are recorded rather than reconciled
+   (a raw capture at 2026-08-10T23:16:16Z shows four entries; review read five). Is recording both
+   the right move, or does the record still owe a resolution?
+4. **Merge or drop.** The claim-type is dead. Is the measurement record worth landing on `main` as a
+   bounded research artefact plus a refusal log, or should the branch be deleted? A REJECT that
+   leaves nothing behind is also a legitimate outcome.
+
+### Loose ends that are not this task's
+
+- **Task number 012 is used twice.** `cc/recorder-brief` carries `docs/tasks/012-recorder.md` with
+  four `docs(012):` commits. This task holds 012 with a committed `reviews/012-*.md` under that
+  number; the recorder brief has no review yet and is one file. 013 is free. Renumbering the recorder
+  is the cheaper move, but it is that task's call.
+- This branch lives in a separate worktree. If it is merged or dropped, remove the worktree — and
+  `samples.jsonl` goes with it, which is intended.
+
+## Review focus for Codex (original, pre-verdict)
 
 1. **Is the objection above actually answered?** Does a pinned issuer declaration sit inside the
    `restaking-robustness` precedent, or does it cross the line into oracle territory the README says
