@@ -35,19 +35,25 @@
 // correction to this one. The second answer was to call the residual open and say so, which was
 // honest but not a fix.
 //
-// The fix is the one `closed-market-liquidation-soundness` already uses, and it is not a dispute
-// mechanism: SELECTION plus RECONSTRUCTIBILITY. A claim pins the observation SET around both
-// boundaries and re-execution SELECTS the two prints from it — the last update at or before the
-// closing bell, the first at or after the reopen. There is nothing left to choose. And because the
-// set is a pure function of (account, window), a claim that omitted the true nearest update has a
-// different set, which rebuilds to a different `inputs_hash`, which `vrdct check` reports BEFORE
-// anyone bonds. The omission does not need adjudicating because it cannot survive inspection.
+// The route out is the one `closed-market-liquidation-soundness` uses, and it is not a dispute
+// mechanism: SELECTION plus RECONSTRUCTIBILITY. Selection is done here — a claim pins the observation
+// SET around both boundaries and re-execution picks the last update at or before the closing bell and
+// the first at or after the reopen, so nothing about WHICH print is used is supplied.
 //
-// WHAT IS STILL NOT TRUE IN PRACTICE. That rebuild needs to decode PRICES from the account, not
-// merely observe that it was written to — which is account-layout-specific in a way CMLS's
-// timestamp-only rebuild is not. No such adapter ships here yet. So this type is reconstructible in
-// principle and NOT YET IN PRACTICE, and saying otherwise would repeat exactly the mistake of the
-// first answer.
+// RECONSTRUCTIBILITY IS NOT DONE, AND THE RESIDUAL IS THEREFORE STILL OPEN. Selection removes the
+// choice within a set; it does nothing about the set. What closes omission is that anyone can REBUILD
+// the set from the descriptor and see a mismatch before bonding — and no rebuilder exists for this
+// type, because rebuilding needs to decode PRICES from the account rather than merely observe it was
+// written to, which is account-layout-specific in a way CMLS's timestamp-only rebuild is not.
+//
+// What IS now true, and is the part worth having: the descriptor is consensus rather than a label.
+// `canonicalInputs` requires a well-formed `{kind, account, from_ts, to_ts}`, rejects any update
+// outside that window, and re-execution refuses unless the window reaches `maxLagSecs` either side of
+// the closure — so a claim names exactly which account and window a rebuild must target, and a set
+// inconsistent with its own descriptor never re-executes at all. That is a necessary condition for
+// closing the residual, and not a sufficient one. The first version of this task left the descriptor
+// unparsed while calling the residual closed (Codex, reviews/011 F1); saying it is closed before a
+// rebuilder exists would be the third time this type has published a mechanism it does not have.
 //
 // FOLLOW-UP (not done here). `core/encode.mjs` / `CLAIM_TYPE_ID` and the Rust twin under
 // `onchain/programs/vrdct-bond/src/reexec/` are byte-parity surfaces; this type is offline-complete
@@ -96,6 +102,29 @@ function price(name, value) {
 /// Re-execution has to terminate for a verifier with a laptop, and a window is a market term.
 export const MAX_UPDATES = 100_000;
 
+/// The source descriptor is part of the CONSENSUS INPUT DOMAIN, not a label attached to a claim.
+///
+/// The first version of this task left it unparsed, and Codex's review (reviews/011 F1) is the whole
+/// lesson: a claim could carry `source: null`, a string, or a descriptor for some unrelated account,
+/// and it built and verified anyway. Selection then prevented choosing prints only WITHIN a supplied
+/// set — it did nothing about the set itself, which is the omission the residual is about. Naming
+/// reconstructibility as the fix while leaving the thing a rebuild would target unvalidated is the
+/// same failure this repo has now made in three tasks: a mechanism asserted rather than implemented.
+function sourceDescriptor(name, v) {
+  if (!isObject(v)) throw new Error(`${name} must be an object { kind, account, from_ts, to_ts }`);
+  if (v.kind !== 'SOLANA_ACCOUNT_PRICE_UPDATES') throw new Error(`${name}.kind must be 'SOLANA_ACCOUNT_PRICE_UPDATES'`);
+  if (typeof v.account !== 'string' || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v.account)) {
+    throw new Error(`${name}.account must be a base58 Solana address`);
+  }
+  const fromTs = u32(`${name}.from_ts`, v.from_ts);
+  const toTs = u32(`${name}.to_ts`, v.to_ts);
+  if (toTs <= fromTs) throw new Error(`${name}.to_ts must be after ${name}.from_ts`);
+  if (fromTs < CALENDAR_2026.validFrom || toTs > CALENDAR_2026.validUntil) {
+    throw new Error(`${name} window is outside calendar ${CALENDAR_2026.version}'s validity range`);
+  }
+  return { kind: v.kind, account: v.account, fromTs, toTs };
+}
+
 function observation(name, o) {
   if (!isObject(o)) throw new Error(`${name} must be an object`);
   const blockTime = u32(`${name}.blockTime`, o.blockTime);
@@ -118,6 +147,7 @@ export function canonicalInputs(inputs) {
   if (!isObject(inputs) || !isObject(inputs.observed) || !isObject(inputs.terms)) {
     throw new Error('inputs.observed and inputs.terms must be objects');
   }
+  const source = sourceDescriptor('observed.source', inputs.observed.source);
   if (!Array.isArray(inputs.observed.updates)) throw new Error('observed.updates must be an array');
   if (inputs.observed.updates.length === 0) throw new Error('observed.updates must be non-empty');
   if (inputs.observed.updates.length > MAX_UPDATES) throw new Error(`observed.updates must hold at most ${MAX_UPDATES} records`);
@@ -127,6 +157,11 @@ export function canonicalInputs(inputs) {
     const k = `${u.slot}:${u.sig}`;
     if (seen.has(k)) throw new Error(`observed.updates[${i}] is a duplicate observation: ${k}`);
     seen.add(k);
+    // An update outside the declared window cannot have come from rebuilding it, so a set that
+    // reaches past its own descriptor is rejected rather than re-executed.
+    if (u.blockTime < source.fromTs || u.blockTime > source.toTs) {
+      throw new Error(`observed.updates[${i}] lies outside the declared source window [${source.fromTs}, ${source.toTs}]`);
+    }
     return u;
   });
 
@@ -145,7 +180,7 @@ export function canonicalInputs(inputs) {
   if (direction !== 'ABS' && direction !== 'DOWN' && direction !== 'UP') {
     throw new Error("terms.direction must be 'ABS', 'DOWN' or 'UP'");
   }
-  return { updates, anchorTs, thresholdBps, maxLagSecs, direction };
+  return { source, updates, anchorTs, thresholdBps, maxLagSecs, direction };
 }
 
 /// The longest US-equities closure is a holiday weekend, a little over four days. Nothing further
@@ -223,7 +258,7 @@ function moveBps(from, to) {
 
 export function reexec(inputs) {
   const q = canonicalInputs(inputs);
-  const { updates, anchorTs, thresholdBps, maxLagSecs, direction } = q;
+  const { source, updates, anchorTs, thresholdBps, maxLagSecs, direction } = q;
 
   // 1. The closure, from the anchor and the calendar. No price is consulted, so nothing the builder
   //    pinned can move the boundary. (Task 009 derived it from the close print's session, which was
@@ -233,6 +268,13 @@ export function reexec(inputs) {
   const closeInstant = closure?.closeInstant ?? null;
   const openInstant = closure?.openInstant ?? null;
 
+  // 1b. The declared window must reach far enough either side of the closure that a rebuild of it
+  //     would have contained whatever the selection picks. A window that stops short of a bell can
+  //     produce a "nearest" print that is only nearest among what the window happened to include.
+  const coversClose = straddles && source.fromTs <= closeInstant - maxLagSecs;
+  const coversOpen = straddles && source.toTs >= openInstant + maxLagSecs;
+  const windowCovers = coversClose && coversOpen;
+
   // 2. The prints, SELECTED from the pinned set rather than supplied.
   const picked = straddles ? selectPrints(updates, closeInstant, openInstant) : { close: null, open: null };
   const close = picked.close, open = picked.open;
@@ -241,7 +283,7 @@ export function reexec(inputs) {
   const closeLagSecs = bothSides ? closeInstant - close.blockTime : null;
   const openLagSecs = bothSides ? open.blockTime - openInstant : null;
   // maxLagSecs is a STALENESS guard now, not a bound on a choice — there is no choice left to bound.
-  const lagsOk = bothSides && closeLagSecs <= maxLagSecs && openLagSecs <= maxLagSecs;
+  const lagsOk = bothSides && windowCovers && closeLagSecs <= maxLagSecs && openLagSecs <= maxLagSecs;
 
   // 2. The move. Computed regardless, so a STALE claim still shows what it would have said.
   const signedBps = bothSides ? moveBps(close.price, open.price) : 0n;
@@ -250,10 +292,12 @@ export function reexec(inputs) {
       : signedBps;
   const breached = observedBps >= BigInt(thresholdBps);
 
-  const flag = !straddles || !bothSides || !lagsOk ? 'STALE' : breached ? 'RED' : 'GREEN';
+  const flag = !straddles || !windowCovers || !bothSides || !lagsOk ? 'STALE' : breached ? 'RED' : 'GREEN';
   const reason = !straddles
     ? 'terms.anchorTs does not fall inside a market closure'
-    : !bothSides
+    : !windowCovers
+      ? `the declared source window does not reach ${maxLagSecs}s either side of the closure, so a rebuild of it could not establish what the nearest prints are`
+      : !bothSides
       ? `the pinned window holds no update ${close === null ? 'at or before the closing bell' : 'at or after the reopen'}`
       : !lagsOk
       ? `a pinned print is further than ${maxLagSecs}s from its boundary (close ${closeLagSecs}s, open ${openLagSecs}s)`
@@ -270,6 +314,9 @@ export function reexec(inputs) {
       open_lag_secs: openLagSecs,
       lags_ok: lagsOk,
       updates_pinned: updates.length,
+      source_account: source.account,
+      source_window: { from: source.fromTs, to: source.toTs },
+      window_covers_closure: windowCovers,
       // which observations the rule SELECTED — reported so a reader sees the choice was made by the
       // rule and can check it against the set, not so they have to trust it was
       selected_close: close === null ? null : { blockTime: close.blockTime, slot: close.slot, sig: close.sig },
@@ -290,6 +337,7 @@ export function checks(claim, r) {
     ['closure straddle reproduces', r.computation.straddles_closure === claim.computation.straddles_closure, `${r.computation.straddles_closure}`],
     ['boundary instants reproduce', r.computation.close_instant === claim.computation.close_instant && r.computation.open_instant === claim.computation.open_instant, `${r.computation.close_instant} → ${r.computation.open_instant}`],
     ['the same two prints are selected', JSON.stringify(r.computation.selected_close) === JSON.stringify(claim.computation.selected_close) && JSON.stringify(r.computation.selected_open) === JSON.stringify(claim.computation.selected_open), `${r.computation.selected_close?.sig ?? 'none'} → ${r.computation.selected_open?.sig ?? 'none'}`],
+    ['the declared window covers the closure', r.computation.window_covers_closure === claim.computation.window_covers_closure, `${r.computation.source_window.from}–${r.computation.source_window.to}`],
     ['print lags within terms', r.computation.lags_ok === claim.computation.lags_ok, `close ${r.computation.close_lag_secs}s · open ${r.computation.open_lag_secs}s`],
     ['gap reproduces', r.computation.observed_bps === claim.computation.observed_bps, `${r.computation.observed_bps} bps`],
   ];

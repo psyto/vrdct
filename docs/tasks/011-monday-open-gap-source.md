@@ -105,3 +105,40 @@ binding that `cli check` uses for CMLS.
    commitment and is therefore detectable pre-bond. That depends on the set being rebuildable, which
    depends on the price-decoding adapter that this task does not ship. Is the README wording about
    that honest enough, or does it still overclaim?
+
+---
+
+## Addendum — Codex review of `e32cff8`, verdict CHANGES → addressed, and the goal downgraded
+
+**F1 (P1) — `observed.source` was opaque, so nothing was closed.** `canonicalInputs` never read it: a
+claim could carry `null`, a string, or a descriptor for an unrelated account and still build and
+verify. Selection therefore prevented choosing prints only *within a supplied set*, and did nothing
+about the set — which is the omission the residual is actually about. Naming reconstructibility as
+the fix while leaving the thing a rebuild would target unvalidated is a mechanism asserted rather than
+implemented, and that is now the third task in a row where this repo did exactly that.
+
+Fixed as far as it can be without a rebuilder:
+
+- the descriptor is **consensus** — `{kind, account, from_ts, to_ts}`, validated by the only reader;
+- any pinned update outside the declared window is **rejected**, since it cannot have come from
+  rebuilding it;
+- re-execution refuses unless the window reaches `maxLagSecs` **either side of the closure**, because
+  a "nearest" print inside a window that stops short of a bell is only nearest among what the window
+  happened to include.
+
+**And the goal is downgraded, which is the substance of this addendum.** The brief said this task
+would *close* the residual. It does not. Selection removes the choice within a set; only a **rebuild**
+closes omission, and rebuilding here needs to decode *prices* from the account rather than merely
+observe it was written to — account-layout-specific in a way CMLS's timestamp-only rebuild is not, and
+no such adapter ships. What this task delivers is a **necessary condition**: a claim now names exactly
+which account and window a rebuild must target, and a set inconsistent with its own descriptor never
+re-executes. Calling that "closed" would be the third mechanism this type has published without
+having.
+
+**F2 — the README still carried task 009's two-print design** in the numbered honest-scope list, the
+*second* block again. Same miss as task 010's F8: I rewrite one block and not the other. Both now
+describe selection, the validated descriptor, and why the type remains in the unsourced case.
+
+The remaining work is a price-decoding adapter for the specific oracle account, plus the `check` path
+that rebuilds a market's inputs from the descriptor bound into its address. That is a task, not a
+wording change.

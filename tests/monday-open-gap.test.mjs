@@ -19,8 +19,11 @@ const b58n = (n) => { let o = ''; do { o = B58[n % 58] + o; n = Math.floor(n / 5
 let seq = 0;
 const up = (blockTime, value, o = {}) => ({ blockTime, price: px(value), slot: o.slot ?? 1000 + seq++, sig: o.sig ?? `sig${b58n(seq)}` });
 const terms = (o = {}) => ({ anchorTs: SAT, thresholdBps: 500, maxLagSecs: 300, direction: 'ABS', ...o });
-const inputs = (updates, t = terms()) => ({ terms: t, observed: { source: { kind: 'TEST' }, updates } });
-const run = (updates, t = terms()) => gap.reexec(inputs(updates, t));
+// A descriptor wide enough that a rebuild of it would have contained whatever selection picks.
+const ACCOUNT = '7j3VCB9fLmZ8kRt2QwXyPnDvE4aHsGuKbNcMqTrWyZ1a';
+const src = (o = {}) => ({ kind: 'SOLANA_ACCOUNT_PRICE_UPDATES', account: ACCOUNT, from_ts: FRI_BELL - 86400, to_ts: MON_BELL + 86400, ...o });
+const inputs = (updates, t = terms(), source = src()) => ({ terms: t, observed: { source, updates } });
+const run = (updates, t = terms(), source = src()) => gap.reexec(inputs(updates, t, source));
 
 // the honest baseline: one update just inside the last session, one just after the reopen
 const baseline = () => [up(FRI_BELL - 10, 10000000000), up(MON_BELL + 10, 9500000000)];
@@ -135,7 +138,7 @@ test('an update from a later session cannot be selected, so the 009 multi-closur
     up(FRI_BELL - 10, 10000000000, { sig: 'fri' }),
     up(MON_BELL + 30, 9800000000, { sig: 'mon' }),
     up(unix(2026, 8, 11, 13, 31), 9000000000, { sig: 'tue' }),
-  ]);
+  ], terms(), src({ to_ts: MON_BELL + 3 * 86400 }));
   assert.equal(r.computation.selected_open.sig, 'mon');
   assert.equal(r.computation.observed_bps, '200');
   assert.equal(r.verdict.flag, 'GREEN');
@@ -184,7 +187,7 @@ test('a claim re-executes end-to-end, resists tampering, and resolves a market',
     subject,
     terms: terms(),
     updates: baseline(),
-    source: { kind: 'SOLANA_ACCOUNT_PRICE_UPDATES', account: 'PriceAccountUnderTest', from_ts: FRI_BELL - 3600, to_ts: MON_BELL + 3600 },
+    source: src(),
   });
   assert.equal(claim.verdict.flag, 'RED');
   const v = verify(claim);
@@ -201,4 +204,50 @@ test('a claim re-executes end-to-end, resists tampering, and resolves a market',
   const res = resolve(claim, { market: 'Did the closure move SPYx by 5%?', yesWhen: ['RED'] });
   assert.equal(res.resolved, 'YES');
   assert.equal(res.reproduces, true);
+});
+
+// Codex, reviews/011 F1. The first version of this task left observed.source UNPARSED: a claim could
+// carry null, a string, or a descriptor for an unrelated account and still build and verify. So
+// selection prevented choosing prints only WITHIN a supplied set and did nothing about the set —
+// which is the omission the residual is actually about. Naming reconstructibility as the fix while
+// leaving unvalidated the thing a rebuild would target is a mechanism asserted, not implemented.
+test('the source descriptor is consensus, not a label', () => {
+  const bad = (source, re) => assert.throws(() => gap.canonicalInputs(inputs(baseline(), terms(), source)), re);
+  // omitted entirely — the default parameter must not paper over a missing descriptor
+  assert.throws(
+    () => gap.canonicalInputs({ terms: terms(), observed: { updates: baseline() } }),
+    /must be an object \{ kind, account, from_ts, to_ts \}/,
+  );
+  bad(null, /must be an object/);
+  bad('a price account somewhere', /must be an object/);
+  bad(src({ kind: 'TEST' }), /kind must be 'SOLANA_ACCOUNT_PRICE_UPDATES'/);
+  bad(src({ account: 'PriceAccountUnderTest' }), /account must be a base58 Solana address/);
+  bad(src({ account: 'not!base58' }), /account must be a base58 Solana address/);
+  bad(src({ from_ts: MON_BELL, to_ts: FRI_BELL }), /to_ts must be after/);
+  bad(src({ to_ts: unix(2027, 6, 1, 0) }), /outside calendar 202601/);
+
+  // and an update that could not have come from rebuilding that window is rejected outright
+  assert.throws(
+    () => gap.canonicalInputs(inputs(
+      [...baseline(), up(MON_BELL + 7200, 9000000000)],
+      terms(),
+      src({ from_ts: FRI_BELL - 3600, to_ts: MON_BELL + 3600 }),
+    )),
+    /lies outside the declared source window/,
+  );
+});
+
+test('a window that stops short of a bell cannot establish what the nearest print is', () => {
+  // reaches the prints, but not maxLagSecs past the bells: a "nearest" here is only nearest among
+  // what the window happened to include
+  const narrow = src({ from_ts: FRI_BELL - 20, to_ts: MON_BELL + 20 });
+  const r = run(baseline(), terms(), narrow);
+  assert.equal(r.computation.window_covers_closure, false);
+  assert.equal(r.verdict.flag, 'STALE');
+  assert.match(r.verdict.reason, /does not reach 300s either side of the closure/);
+
+  // widen it by exactly the declared lag and the same set settles
+  const exact = src({ from_ts: FRI_BELL - 1 - 300, to_ts: MON_BELL + 300 });
+  assert.equal(run(baseline(), terms(), exact).computation.window_covers_closure, true);
+  assert.equal(run(baseline(), terms(), exact).verdict.flag, 'RED');
 });

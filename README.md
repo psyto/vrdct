@@ -69,18 +69,20 @@ the last update at or before the closing bell, the first at or after the reopen,
 `(blockTime, slot, sig)`. `maxLagSecs` is a staleness guard, not a bound on a choice — there is no
 choice left to bound.
 
-That is what closes the residual, and it took two wrong answers to get there. This section used to
-promise that *"a challenger holding a nearer print disputes, and the nearer print wins"* — a mechanism
-this market does not have, since a challenge asserts a different flag over the *same* pinned inputs.
-It was then downgraded to calling the residual open, which was honest but not a fix. The fix is the
-one `closed-market-liquidation-soundness` already uses: a claim that omits the true nearest update has
-a different input set, which rebuilds to a different `inputs_hash`, which `vrdct check` reports
-**before anyone bonds**. Omission does not need adjudicating because it cannot survive inspection.
+The source descriptor is **consensus, not a label**: `canonicalInputs` requires a well-formed
+`{kind, account, from_ts, to_ts}`, rejects any pinned update outside that window, and re-execution
+refuses unless the window reaches `maxLagSecs` either side of the closure. So a claim names exactly
+which account and window a rebuild must target, and a set inconsistent with its own descriptor never
+re-executes.
 
-**And what is still not true in practice:** that rebuild has to decode *prices* from the account, not
-merely observe that it was written to — account-layout-specific in a way CMLS's timestamp-only
-rebuild is not, and no such adapter ships here yet. So this type is reconstructible **in principle
-and not yet in practice**. Saying otherwise would repeat the first mistake exactly.
+**The residual is still open, and this is the third answer to it.** The first promised that *"a
+challenger holding a nearer print disputes, and the nearer print wins"* — a mechanism this market does
+not have. The second called the residual open, which was honest but not a fix. This one does the half
+that can be done: selection removes the choice *within* a set, and the descriptor is now binding. What
+it does not do is close omission, because that needs anyone to be able to **rebuild** the set and see
+a mismatch before bonding — and rebuilding here has to decode *prices* from the account, not merely
+observe it was written to, which is account-layout-specific in a way CMLS's timestamp-only rebuild is
+not. No such adapter ships. Necessary condition, not sufficient one.
 
 ### Settling silence — and the boundary past which nobody can
 
@@ -390,18 +392,18 @@ Three residual assumptions, all named rather than hidden:
    (through its 13:00 ET close) as **open**; only updates outside those sessions count toward its
    closed-market liveness signal.
 
-   `monday-open-gap` pins two prints and cannot prove either is the *closest* one to its boundary —
-   the same omission problem, on two observations instead of thousands. It bounds the choice rather
-   than removing it: the terms declare `maxLagSecs`, re-execution derives the closure from the close
-   print's own session and admits a reopen print only from the session that ends that closure, and a
-   print outside the declared lag returns `STALE`. So a settled verdict always rests on prints inside
-   the right two sessions and near their bells.
+   `monday-open-gap` no longer pins two chosen prints: `terms.anchorTs` names the closure, the
+   calendar gives both bells, and re-execution **selects** the last update at or before the closing
+   bell and the first at or after the reopen from a pinned set. Its source descriptor is validated
+   consensus — account, window, and a refusal to re-execute a set that reaches outside it or a window
+   that stops short of the bells.
 
-   **Unlike the cases above, this one is unsourced and therefore genuinely open.** This type has no
-   source descriptor and no reconstruction rule, so a challenger holding a nearer print cannot make
-   this market pay on it: `inputs_hash` commits the two prints and a challenge only asserts a
-   different flag over them. A nearer print is a different market. Nobody should read a gap verdict
-   as a claim that no closer print existed, and nobody should expect the protocol to adjudicate one.
+   **It is still in the unsourced case, and the reason is worth being exact about.** Selection removes
+   the choice within a set; only a *rebuild* closes omission, and rebuilding here must decode prices
+   from the account rather than merely observe it was written to — account-layout-specific in a way
+   CMLS's timestamp-only rebuild is not. Until that adapter exists, a gap verdict says the selected
+   prints were the nearest **in the set the claim pinned**, and nobody should read it as a claim about
+   what the account actually printed.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
    A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain
