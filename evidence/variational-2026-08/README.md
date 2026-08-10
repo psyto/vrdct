@@ -95,6 +95,26 @@ And one anomaly that became task 012: **`AAPL` reported `funding_interval_s: 360
 equity reported `28800`** — the venue's own documented dividend-adjustment behaviour, visible in
 public data, on a specific named market, in a window that closes and does not return for a quarter.
 
+## The window closing, captured
+
+The sampler was started for that anomaly and caught its other edge. `AAPL`'s
+`funding_interval_s` returned from `3600` to `28800` at **2026-08-10T00:09:23Z**, at 60 s
+resolution, while every other equity market sampled reported `28800` throughout.
+
+`aapl-window-close.json` is the frozen slice — 107 samples across the transition, with the source,
+the observed boundary, and its own `sha256` over the body
+(`7fb7a6994339f790d16873520a8c4c2350a33fd366a30a59b01d7f5912206e3e`). It is committed because
+`samples.jsonl` is not: a growing stream is not evidence, a pinned slice is.
+
+Two honest notes on it. **The capture has a hole** — 2,481 s between `23:11:04Z` and `23:52:25Z`,
+almost certainly a machine suspend. It appears in the slice as a `capture_gaps` entry rather than as
+an absence the reader has to notice, which is the whole reason each record carries its own fetch
+time. And **the boundary is not yet reconciled with the issuer**: 00:09:23Z is 20:09 ET on the 9th,
+which is not obviously *"the morning of the ex-dividend date"* the venue documents. That may be a
+misreading of the documented window, a different window than assumed, or something else. It is not
+reported here as a discrepancy — it is the reason task 012's first step is retrieving the actual
+declaration rather than writing a module.
+
 ## What this establishes
 
 Among the addresses Variational publishes, **the on-chain record covers custody and money movement —

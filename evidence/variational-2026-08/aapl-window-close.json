@@ -1,0 +1,774 @@
+{
+ "subject": "Variational Omni AAPL perp, funding_interval_s",
+ "source": "GET https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/stats",
+ "what": "The venue documents that inside a dividend-adjustment window the funding interval shortens to one hour. This is the observed close of such a window, at 60s resolution.",
+ "transition": {
+  "at": "2026-08-10T00:09:23.272Z",
+  "from": 3600,
+  "to": 28800,
+  "resolution_s": 60
+ },
+ "control": "every other equity market sampled reported 28800 throughout",
+ "capture_gaps": [
+  {
+   "after": "2026-08-09T23:11:04.136603+00:00",
+   "before": "2026-08-09T23:52:25.635128+00:00",
+   "seconds": 2481
+  }
+ ],
+ "not_established": [
+  "whether this boundary matches the issuer-declared ex-date is unresolved; retrieving that declaration is step 1 of task 012",
+  "the endpoint is unsigned and addresses no block"
+ ],
+ "samples": [
+  {
+   "fetched_at": "2026-08-09T22:52:04.046131+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "-0.015954",
+   "mark_price": "312.645",
+   "quotes_updated_at": "2026-08-09T22:51:09.983875716Z"
+  },
+  {
+   "fetched_at": "2026-08-09T22:53:04.048739+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "-0.015954",
+   "mark_price": "312.645",
+   "quotes_updated_at": "2026-08-09T22:52:02.388909249Z"
+  },
+  {
+   "fetched_at": "2026-08-09T22:54:04.051576+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T22:52:43.188162805Z"
+  },
+  {
+   "fetched_at": "2026-08-09T22:55:04.056808+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T22:54:09.483421912Z"
+  },
+  {
+   "fetched_at": "2026-08-09T22:56:04.066357+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T22:54:40.024634825Z"
+  },
+  {
+   "fetched_at": "2026-08-09T22:57:04.067090+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T22:56:10.408774098Z"
+  },
+  {
+   "fetched_at": "2026-08-09T22:58:04.071745+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T22:56:52.718359472Z"
+  },
+  {
+   "fetched_at": "2026-08-09T22:59:04.076611+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T22:58:07.355077952Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:00:04.081839+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T22:59:05.711505613Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:01:04.084041+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T22:59:51.664593014Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:02:04.084866+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T23:00:51.601282571Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:03:04.088375+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.865",
+   "quotes_updated_at": "2026-08-09T23:02:01.313244525Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:04:04.088981+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.825",
+   "quotes_updated_at": "2026-08-09T23:03:19.645611216Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:05:04.094206+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.825",
+   "quotes_updated_at": "2026-08-09T23:04:18.134342473Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:06:04.099397+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.825",
+   "quotes_updated_at": "2026-08-09T23:05:20.282541528Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:07:04.102453+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.825",
+   "quotes_updated_at": "2026-08-09T23:06:23.400520700Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:08:04.110722+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.825",
+   "quotes_updated_at": "2026-08-09T23:07:03.716618593Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:09:04.118766+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "313.175",
+   "quotes_updated_at": "2026-08-09T23:07:44.604185744Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:10:04.126980+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "313.175",
+   "quotes_updated_at": "2026-08-09T23:09:13.739129190Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:11:04.136603+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "313.175",
+   "quotes_updated_at": "2026-08-09T23:09:29.476372050Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:52:25.635128+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.795",
+   "quotes_updated_at": "2026-08-09T23:51:31.576023075Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:53:25.640244+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.795",
+   "quotes_updated_at": "2026-08-09T23:52:26.215817897Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:54:25.645278+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.675",
+   "quotes_updated_at": "2026-08-09T23:53:19.131168700Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:55:25.649245+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.675",
+   "quotes_updated_at": "2026-08-09T23:54:11.743297722Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:56:25.650205+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.675",
+   "quotes_updated_at": "2026-08-09T23:55:09.116319234Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:57:25.654165+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.675",
+   "quotes_updated_at": "2026-08-09T23:56:13.210276114Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:58:25.656856+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.675",
+   "quotes_updated_at": "2026-08-09T23:57:17.836796283Z"
+  },
+  {
+   "fetched_at": "2026-08-09T23:59:25.658957+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.435",
+   "quotes_updated_at": "2026-08-09T23:58:10.354201374Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:00:25.663900+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.435",
+   "quotes_updated_at": "2026-08-09T23:59:07.713693872Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:01:25.668522+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.435",
+   "quotes_updated_at": "2026-08-09T23:59:50.212694837Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:02:25.669661+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.435",
+   "quotes_updated_at": "2026-08-10T00:01:23.834981017Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:03:25.673194+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "312.435",
+   "quotes_updated_at": "2026-08-10T00:02:27.496276003Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:04:25.677572+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "313.355",
+   "quotes_updated_at": "2026-08-10T00:03:10.990662224Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:05:25.677629+00:00",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "313.355",
+   "quotes_updated_at": "2026-08-10T00:04:08.031137265Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:06:23.267Z",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "313.355",
+   "quotes_updated_at": "2026-08-10T00:05:14.249996391Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:07:23.269Z",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "313.355",
+   "quotes_updated_at": "2026-08-10T00:05:54.097655058Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:08:23.270Z",
+   "funding_interval_s": 3600,
+   "funding_rate": "0",
+   "mark_price": "313.355",
+   "quotes_updated_at": "2026-08-10T00:07:28.728914570Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:09:23.272Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.985",
+   "quotes_updated_at": "2026-08-10T00:08:23.088716121Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:10:23.273Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.985",
+   "quotes_updated_at": "2026-08-10T00:09:05.702420766Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:11:23.272Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.985",
+   "quotes_updated_at": "2026-08-10T00:10:30.303769201Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:12:23.274Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.985",
+   "quotes_updated_at": "2026-08-10T00:10:50.905805855Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:13:23.274Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.985",
+   "quotes_updated_at": "2026-08-10T00:11:42.293950440Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:14:23.275Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.08",
+   "quotes_updated_at": "2026-08-10T00:13:05.559530692Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:15:23.276Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.08",
+   "quotes_updated_at": "2026-08-10T00:14:26.750037987Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:16:23.278Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.08",
+   "quotes_updated_at": "2026-08-10T00:15:26.390013373Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:17:23.280Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.08",
+   "quotes_updated_at": "2026-08-10T00:15:49.289449220Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:18:23.283Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.08",
+   "quotes_updated_at": "2026-08-10T00:17:31.211905384Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:19:23.283Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.105",
+   "quotes_updated_at": "2026-08-10T00:18:21.500725892Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:20:23.284Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.105",
+   "quotes_updated_at": "2026-08-10T00:19:24.430101584Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:21:23.285Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.105",
+   "quotes_updated_at": "2026-08-10T00:20:30.635383843Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:22:23.286Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.105",
+   "quotes_updated_at": "2026-08-10T00:21:32.111169567Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:23:23.287Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.105",
+   "quotes_updated_at": "2026-08-10T00:22:16.501635561Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:24:23.289Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.155",
+   "quotes_updated_at": "2026-08-10T00:23:34.727633059Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:25:23.289Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.155",
+   "quotes_updated_at": "2026-08-10T00:24:21.033773264Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:26:23.290Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.155",
+   "quotes_updated_at": "2026-08-10T00:25:35.755188059Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:27:23.291Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.155",
+   "quotes_updated_at": "2026-08-10T00:26:34.474996878Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:28:23.293Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.155",
+   "quotes_updated_at": "2026-08-10T00:27:36.484011826Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:29:23.294Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.935",
+   "quotes_updated_at": "2026-08-10T00:28:13.861291649Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:30:23.293Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.935",
+   "quotes_updated_at": "2026-08-10T00:28:55.252583107Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:31:23.294Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.935",
+   "quotes_updated_at": "2026-08-10T00:30:17.620239907Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:32:23.295Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.935",
+   "quotes_updated_at": "2026-08-10T00:30:51.120512541Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:33:23.295Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.935",
+   "quotes_updated_at": "2026-08-10T00:32:38.185570427Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:34:23.296Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.965",
+   "quotes_updated_at": "2026-08-10T00:33:22.593066177Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:35:23.297Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.965",
+   "quotes_updated_at": "2026-08-10T00:34:21.392949381Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:36:23.298Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.965",
+   "quotes_updated_at": "2026-08-10T00:35:09.572602165Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:37:23.299Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.965",
+   "quotes_updated_at": "2026-08-10T00:36:02.946383337Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:38:23.301Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.965",
+   "quotes_updated_at": "2026-08-10T00:37:11.939051105Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:39:23.302Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.99",
+   "quotes_updated_at": "2026-08-10T00:38:06.051988801Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:40:23.303Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.99",
+   "quotes_updated_at": "2026-08-10T00:39:35.179898102Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:41:23.304Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.99",
+   "quotes_updated_at": "2026-08-10T00:40:23.041812600Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:42:23.306Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.99",
+   "quotes_updated_at": "2026-08-10T00:41:12.847167596Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:43:23.307Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.99",
+   "quotes_updated_at": "2026-08-10T00:42:08.064918538Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:44:23.307Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.915",
+   "quotes_updated_at": "2026-08-10T00:43:36.669651663Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:45:23.308Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.915",
+   "quotes_updated_at": "2026-08-10T00:43:55.182706034Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:46:23.309Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.915",
+   "quotes_updated_at": "2026-08-10T00:44:55.374569993Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:47:23.310Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.915",
+   "quotes_updated_at": "2026-08-10T00:46:29.721694942Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:48:23.312Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.915",
+   "quotes_updated_at": "2026-08-10T00:47:25.953099789Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:49:23.313Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.905",
+   "quotes_updated_at": "2026-08-10T00:48:20.338952948Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:50:23.314Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.905",
+   "quotes_updated_at": "2026-08-10T00:49:39.605433029Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:51:23.315Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.905",
+   "quotes_updated_at": "2026-08-10T00:50:37.820555599Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:52:23.316Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.905",
+   "quotes_updated_at": "2026-08-10T00:50:56.989773404Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:53:23.318Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.905",
+   "quotes_updated_at": "2026-08-10T00:52:30.481190753Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:54:23.319Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.89",
+   "quotes_updated_at": "2026-08-10T00:53:14.297473602Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:55:23.320Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.89",
+   "quotes_updated_at": "2026-08-10T00:54:26.103771279Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:56:23.323Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.89",
+   "quotes_updated_at": "2026-08-10T00:55:16.577357821Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:57:23.312Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.89",
+   "quotes_updated_at": "2026-08-10T00:56:16.823215716Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:58:23.313Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.89",
+   "quotes_updated_at": "2026-08-10T00:57:26.488065002Z"
+  },
+  {
+   "fetched_at": "2026-08-10T00:59:23.314Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.775",
+   "quotes_updated_at": "2026-08-10T00:58:06.838792821Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:00:23.314Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.775",
+   "quotes_updated_at": "2026-08-10T00:59:41.967295538Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:01:23.315Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.775",
+   "quotes_updated_at": "2026-08-10T01:00:22.020119955Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:02:23.316Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.775",
+   "quotes_updated_at": "2026-08-10T01:00:51.648952155Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:02:39.282Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.775",
+   "quotes_updated_at": "2026-08-10T01:00:51.648952155Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:03:39.283Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.775",
+   "quotes_updated_at": "2026-08-10T01:02:39.977220664Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:04:39.285Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.925",
+   "quotes_updated_at": "2026-08-10T01:03:27.254490939Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:05:39.286Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.925",
+   "quotes_updated_at": "2026-08-10T01:04:11.913420763Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:06:39.287Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.925",
+   "quotes_updated_at": "2026-08-10T01:04:56.369025865Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:07:39.288Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.925",
+   "quotes_updated_at": "2026-08-10T01:05:55.174480188Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:08:39.289Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "312.925",
+   "quotes_updated_at": "2026-08-10T01:07:44.806213776Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:09:39.289Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.06",
+   "quotes_updated_at": "2026-08-10T01:08:23.253386647Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:10:39.290Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.06",
+   "quotes_updated_at": "2026-08-10T01:09:45.530995430Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:11:39.291Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.06",
+   "quotes_updated_at": "2026-08-10T01:10:41.002942302Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:12:39.292Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.06",
+   "quotes_updated_at": "2026-08-10T01:11:40.234344389Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:13:39.293Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.06",
+   "quotes_updated_at": "2026-08-10T01:12:26.992032436Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:14:39.295Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.1",
+   "quotes_updated_at": "2026-08-10T01:13:12.102832695Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:15:39.296Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.1",
+   "quotes_updated_at": "2026-08-10T01:14:09.867655803Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:16:39.296Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.1",
+   "quotes_updated_at": "2026-08-10T01:14:53.060471114Z"
+  },
+  {
+   "fetched_at": "2026-08-10T01:17:39.296Z",
+   "funding_interval_s": 28800,
+   "funding_rate": "0",
+   "mark_price": "313.1",
+   "quotes_updated_at": "2026-08-10T01:16:28.212886623Z"
+  }
+ ]
+}
