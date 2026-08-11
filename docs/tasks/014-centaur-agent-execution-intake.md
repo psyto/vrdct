@@ -88,24 +88,47 @@ async fn append_output_line(...) -> Result<Option<SessionEvent>, SessionRuntimeE
 `centaur-session-runtime/src/lib.rs:6389-6406`, with the redactors at `:6410-6510` stripping bearer
 tokens, sensitive env assignments, and prefixed tokens.
 
-**Redaction happens before persistence.** The database never holds the bytes that executed. The record
-is deliberately lossy, and the loss is the security property — a faithful record would leak precisely
-the secrets the egress proxy exists to isolate.
+**RETRACTED — and this retraction is the substance of the test.** Two earlier versions of this section
+read the redaction as the end of the story: *"the database never holds the bytes that executed"*, and
+then *"the record covers which credential was reached for, not what the world answered."* Both are
+false, and the code cited to support them is what refutes them (Codex, reviews/014 F1).
+
+The span is a projection. **The output pump is not.** `run_stdout_pump` framed a sandbox's stdout into
+lines (`centaur-session-runtime/src/lib.rs:4250-4412`) and hands each one to `append_output_line` at
+`:4333`, which persists **the whole line**:
+
+```rust
+let safe_line = redact_sensitive_text(line);
+...append_event_if_stdout_owner(..., SESSION_OUTPUT_LINE_EVENT, Value::String(safe_line))
+```
+
+`Value::String(safe_line)` is the line, not a set of labels. And the redactor is a token-pattern
+substitution, not a projection — its own test keeps the surrounding structure and replaces only the
+credential-shaped substrings:
+
+```rust
+let line = r#"{"type":"item.completed","item":{"aggregatedOutput":"Authorization: Bearer sbx1...\n..."}}"#;
+assert!(redacted.contains("Authorization: Bearer [REDACTED_TOKEN]"));
+```
+`:7454-7464`. The harness protocol carries `tool_result` objects with a `content` field
+(`:7590-7640`). Such a line is exactly what the pump persists. **A response emitted by a harness tool
+can therefore be retained, in `session_events.payload`, minus its credentials.**
+
+What the source does *not* establish is different, and narrower:
+
+- that every iron-proxy response reaches the sandbox's stdout at all;
+- that a retained line identifies **which request it answers**;
+- that a line surviving token redaction is sufficient to **replay** the call.
 
 `centaur-iron-proxy` in this repo is configuration only — fragments, secret placeholders, transforms
-(`src/lib.rs`, `src/source.rs`, `src/model/transform.rs`). It specifies how secrets are injected into a
-sandbox. It does not specify a response log.
+(`src/lib.rs`, `src/source.rs`, `src/model/transform.rs`) — and the vendor's documented proxy log
+(`docs/pages/security.mdx:123-131`) is request-side by its own description: which secret was
+substituted, which transforms ran. Neither settles the three points above, in either direction.
 
-**The vendor documents a proxy log, and it has to be answered rather than skipped.**
-`docs/pages/security.mdx:123-131` states that *"iron-proxy emits structured logs for every outbound
-request, including which secret was substituted and which transforms ran."* That is a real capability
-and this test does not dispute it. It is also, precisely as described, a **request-side** record:
-which secret, which transforms. It does not claim response bodies, and a re-execution needs what came
-BACK — the external answer the run was a function of. The document's first version omitted this
-sentence entirely, which made a FAIL rest on silence where a published counter-claim existed.
-
-**Result: FAIL, by design and not by omission** — the record covers which credential was reached for,
-not what the world answered.
+**Result: NOT ESTABLISHED.** There is no demonstrated complete, request/response-bound, replayable
+capture — and equally no demonstration that one is absent. Closing this would take an actual
+instrumented run, which has not been done. **This test does not count toward the refusal.** It was
+twice written as a FAIL, and both times the reason was an absence the cited path contradicts.
 
 ## Test 3 — tamper-evidence: is the record immune to after-the-fact editing?
 
@@ -146,8 +169,10 @@ narrower and survives intact: *there is no tamper-evidence over that trail*. Per
 after it was written"**, which is the only question a resolver needs, because the party a verifier
 must be independent of is the operator who holds the database.
 
-Nor do the digests. There are **seven** `Sha256` sites in non-test Rust — the document previously said
-four — and not one commits to an execution record:
+Nor do the digests. There are **eight** `Sha256` sites in non-test Rust — this document has now said
+four and then seven, and the seven was the same mistake it was correcting: the "exhaustive" command
+searched `services/api-rs` and the tree has another crate (Codex, reviews/014 F2). Not one of the
+eight commits to an execution record:
 
 | site | commits to |
 | --- | --- |
@@ -158,10 +183,18 @@ four — and not one commits to an execution record:
 | `centaur-api-server/src/routes.rs:2675` | an inbound webhook body, after auth |
 | `centaur-api-server/src/tool_discovery.rs:507` | a persona's `PROMPT.md` (see Test 1) |
 | `centaur-api-server/src/mcp.rs:584` | a bearer token |
+| `crates/harness-server/src/otel.rs:746` | thread-parent bucketing, in a crate outside `services/api-rs` |
 
 (`centaur-workflows/src/lib.rs:1247` is an algorithm-name check on the inbound webhook HMAC, not a
-digest site.) Counting correctly made the finding stronger, not weaker: the enumeration is now
-exhaustive over the tree, and the absence it demonstrates is the same one.
+digest site.)
+
+**And a list of one spelling of SHA-256 is not evidence about other commitment mechanisms**, which is
+the second half of F2 and the more useful half. Searched tree-wide for `blake3`, `Hmac`, `ed25519`,
+`secp256`, `merkle` and `signature::`: there is no blake3, no ed25519, no secp256k1 and no merkle
+structure anywhere. Every HMAC is `Hmac<Sha256>` and every one of them **authenticates an inbound
+request** — JWT signing at `centaur-api-server/src/mcp.rs:536`, webhook signature verification at
+`routes.rs:3559-3610`. Inbound authentication is the opposite direction from a commitment over an
+execution record: it proves who sent something to Centaur, never what Centaur did afterwards.
 
 Protection is row-level security (migrations `0019`–`0023`, `0042`). RLS answers *who may read this
 row*. It never answers *was this row changed after it was written* — and the operator, who is the party
@@ -172,44 +205,78 @@ existence of an audit trail, which Centaur has.
 
 ## Verdict — 不受理 / does not open a market
 
-Three of three fail. Under the rule 012 established — identifiers that cannot be mapped to pinned
-inputs mean canonical inputs do not exist, so the market is not opened rather than resolved `UNKNOWN` —
-this input source is **not admitted**.
+**Two of three fail; the third is not established.** Test 1 (determinism) and Test 3 (tamper-evidence)
+both fail on the record as published. Test 2 is withdrawn to NOT ESTABLISHED, because the response
+absence it asserted is contradicted by the persistence path it cited.
+
+The refusal does not weaken, and it is worth being exact about why rather than counting failures.
+Either failure is independently disqualifying. If the inputs that produced a run are not recorded,
+re-execution has nothing to run; if the record carries no tamper-evidence, a resolver would be
+trusting the operator it must be independent of. A third failure would have added no admissibility
+that the first two do not already decide — which is exactly why it was worth retracting rather than
+keeping for the count.
+
+Under the rule 012 established — identifiers that cannot be mapped to pinned inputs mean canonical
+inputs do not exist, so the market is not opened rather than resolved `UNKNOWN` — this input source is
+**not admitted**.
 
 ## The part that is new, and general
 
 012 failed because the claim referenced an external fact that pinning could not make re-executable. This
 fails for a different and stronger reason, and the reason is not specific to Centaur:
 
-> **A rail that isolates secrets by construction cannot emit a record that reproduces the runs which
-> used them.** Redaction and re-execution are in direct tension. The better a rail is at the first, the
-> less its record is worth for the second.
+> **A rail that isolates secrets tends to publish a record that does not reproduce the runs which used
+> them.** Redaction and re-execution pull against each other, and a rail optimising the first has no
+> product reason to pay for the second.
 
-Centaur's own audit design is the cleanest demonstration of it. Its proxy log records **which secret
-was substituted** — the identity of the credential, never its value — because recording the value
-would defeat the isolation the proxy exists to provide. That is the tension made concrete by a team
-that resolved it correctly, in the direction their product requires and the opposite of the one a
-re-executing resolver would need.
+Centaur's own audit design is the cleanest instance. Its proxy log records **which secret was
+substituted** — the identity of the credential, never its value — because recording the value would
+defeat the isolation the proxy exists to provide. A team that resolved the tension correctly, in the
+direction their product requires and the opposite of the one a re-executing resolver would need.
 
-This is a property of the category. Cloudflare's guardrails (08-04) and Centaur's egress proxy land in
-the same place from opposite directions: both make the *pre-execution* surface stronger, and both leave
-the post-execution surface empty for a reason they cannot engineer away. The blank is not waiting to be
-filled by a better version of the same product.
+**This was written as an impossibility, and it is not one.** The earlier wording said such a rail
+*cannot* emit a reproducing record. That is a claim about every possible construction, drawn from one
+vendor read at one commit, and it is refuted by constructions nobody has had to build yet (Codex,
+reviews/014 F3): an encrypted transcript and response blob whose key is released on dispute or by a
+threshold; a verifier executed inside an equivalently secret-isolated environment; commitments or
+attestations that answer one outcome-specific question without revealing the bytes. Whether any of
+those clears Vrdct's independence and reproducibility bar is a genuinely hard design question — which
+is the point. A hard open question is not an impossibility, and the difference matters because the
+impossibility version quietly forecloses the work.
 
-## Corollary — `agent-escrow` should not take a dependency on any rail
+What the evidence does support: **the blank is not an oversight, and it will not be filled by a better
+version of the same product.** Cloudflare's guardrails (08-04) and Centaur's egress proxy land in the
+same place from opposite directions — both strengthen the *pre-execution* surface, and neither has a
+commercial reason to produce the post-execution one. Filling it takes a party who is paid for
+verifiability, which is a different product rather than a later release of this one.
 
-The tempting design is: read the rail's execution log, judge whether the agent behaved as declared. Every
-version of that design inherits the three failures above, from every vendor, permanently.
+## Corollary — an outcome-only `agent-escrow` avoids this dependency, for the promises it can express
 
-The design that survives is the one the engine already implements. An agent-escrow claim settles on an
-**independently observable outcome** — the public state the agent was paid to bring about — recomputed
-from pinned inputs, exactly as `reserve-solvency` and `restaking-robustness` do. The agent's process is
-not evidence and is not needed; the world it left behind is both.
+The tempting design is: read the rail's execution log, judge whether the agent behaved as declared.
+Against Centaur's current public record that design does not work, for the reasons above.
 
-That collapses the integration surface to zero. `agent-escrow` needs no rail adapter, no vendor
-agreement, and no cooperation from the party being judged — which is the only configuration in which
-the resolver is neutral. It also means the correct posture toward Centaur and its successors is to use
-them, not to build against them.
+The design that avoids the question entirely is the one the engine already implements. An agent-escrow
+claim settling on an **independently observable outcome** — the public state the agent was paid to
+bring about — recomputed from pinned inputs, exactly as `reserve-solvency` and `restaking-robustness`
+do. The agent's process is then not evidence and not needed; the world it left behind is both. For
+that subtype the integration surface is zero: no rail adapter, no vendor agreement, and no cooperation
+from the party being judged, which is the only configuration in which the resolver is neutral.
+
+**Two limits, because the earlier version of this section stated it as a universal and it is not**
+(Codex, reviews/014 F3):
+
+1. **It covers outcome promises, not process promises.** "Bring the pool back above its floor" is an
+   outcome. "Use this rail", "do not take the privileged action", "keep this confidential", "have a
+   human review it" are obligations about *conduct*, and the world left behind is not equivalent
+   evidence for any of them. An outcome-only escrow does not express those, and nothing here shows
+   they are unenforceable — only that this construction does not reach them.
+2. **"Integration surface zero" is conditional, not established.** It holds if and when an
+   `agent-escrow` surface is defined solely by an outcome that is independently observable and
+   canonically pinnable. No such claim-type has been written. Until one is, this is a design
+   preference with an argument behind it, not a result — and the honest order is to specify one
+   obligation and demonstrate its outcome can be pinned, before generalising.
+
+The posture toward Centaur and its successors is unchanged by any of this: use them.
 
 ## Residuals — stated by us, not discovered by a reviewer
 
@@ -219,27 +286,40 @@ them, not to build against them.
    behaviour is not unknown, though — the vendor documents it (`docs/pages/security.mdx:123-131`):
    structured logs for every outbound request, naming the substituted secret and the transforms.
    Unverified is whether the implementation matches that description, and whether anything beyond the
-   request side is recorded. Test 2's finding rests on the documented shape being request-side, and on
-   what Centaur itself persists being post-redaction.
+   request side is recorded. **This residual is now the whole of Test 2**, which is why that test is
+   NOT ESTABLISHED rather than failed: settling it needs an instrumented run of a real proxy and
+   harness, not another read of this tree. Nobody has done that here.
 3. **Absurd upstream was read only as vendored SQL** (`0007_absurd_workflows.sql`, a copy of
    `earendil-works/absurd`). The upstream project may offer stronger guarantees behind APIs Centaur
    does not use.
 4. **"No hash chain" is a negative claim over one tree.** It is supported by the enumeration in Test 3
-   — seven `Sha256` sites, each named and each committing to something other than an execution — and
+   — eight `Sha256` sites tree-wide, each named and each committing to something other than an
+   execution, plus a search for `blake3`, `ed25519`, `secp256`, `merkle` and `Hmac` that finds no
+   other commitment mechanism and only inbound authentication — and
    by the greps in *Reproducing this* below, not by a proof. The first version of this residual said
    the claim rested on an "exhaustive grep", while the grep it described in the body returned a
    different number in a scope it did not state. An exhaustive search whose command is not written
    down is an assertion about the searcher.
 5. **The corollary is an argument, not a result.** That outcome-based agent-escrow is admissible has
    not been tested by writing one. It inherits the engine's shape, which is evidence, not a guarantee.
+   It also expresses only outcome promises; process obligations are outside it, and this document does
+   not show they are unenforceable — only that this construction does not reach them.
+6. **The general finding is a tendency, not a theorem.** It was published once as an impossibility.
+   Three counter-constructions are named in that section and none of them has been evaluated against
+   Vrdct's bar. Anyone who wants the strong version has to bring a threat model.
 
 ## Reproducing this
 
-The first version of this document was written from a read, and its three *exhaustive* claims — the
-audit grep, the `sha256` enumeration, and "no audit infrastructure" — were the ones that did not hold
-when the tree was fetched and the commands were actually run. The citations did hold. That asymmetry
-is the reason this section exists: a negative claim is only worth what its command is worth, and a
-command that is not written down cannot be checked by a reviewer or by the author a week later.
+Every `file:line` citation in this document has held at every round. Every claim that quantified an
+**absence** has failed at least once — including the round that was correcting the previous round's
+absences, which published "seven, exhaustive over the tree" from a command that searched one crate of
+several. Three passes, three different wrong numbers for the same question, each written with more
+confidence than the last.
+
+That is the reason this section exists, and the reason it prints commands rather than conclusions.
+A negative claim is worth exactly what its command is worth; a command that is not written down
+cannot be checked by a reviewer, by the author a week later, or by the author ten minutes later while
+he is correcting someone else's version of the same mistake.
 
 ```bash
 git clone https://github.com/paradigmxyz/centaur.git && cd centaur
@@ -257,4 +337,8 @@ git checkout 74979c19bf0b37cfc2c4b1f5510713841af03df1   # 2026-08-10 22:17:16 +0
 | **audit** | `git grep -in audit \| wc -l` | **34**, not four |
 | | `git grep -in audit -- '*.rs' '*.sql' \| wc -l` | **0** |
 | | `sed -n 123,131p docs/pages/security.mdx` | a section titled **Audit trail** |
-| **digest sites** | `grep -rn 'Sha256::new()\|Sha256::digest\|sha256(' services/api-rs --include='*.rs' \| grep -v /tests/` | **seven**, not four |
+| **digest sites** | `git grep -n 'Sha256::new()\|Sha256::digest\|Sha256::default()' -- '*.rs' \| grep -v '/tests/\|_test\.rs'` | **eight**, tree-wide |
+| no other commitment primitive | `git grep -ni 'blake3\|ed25519\|secp256\|merkle' -- '*.rs'` | nothing |
+| every HMAC authenticates inbound | `git grep -n 'Hmac' -- '*.rs' \| grep -v '/tests/'` | 51 lines, all `Hmac<Sha256>`, all reachable from JWT signing (`mcp.rs:536`) or webhook verification (`routes.rs:3559-3610`) |
+| responses can be persisted | `sed -n '4333p;6389,6406p' services/api-rs/crates/centaur-session-runtime/src/lib.rs` | the pump hands each stdout line to `append_output_line`, which stores `Value::String(safe_line)` |
+| redaction is substitution, not projection | `sed -n 7454,7464p services/api-rs/crates/centaur-session-runtime/src/lib.rs` | `aggregatedOutput` survives; only tokens become `[REDACTED_TOKEN]` |
