@@ -75,7 +75,7 @@ Guidance, not a hard boundary. The quality control is the cross-review.
   nothing went wrong; from 008 onward reviews ran in the shared directory, and that is exactly where
   the three misplaced commits are. See `HANDOFF.md` for what it cost.
 - **A grep is candidate discovery, never proof of a capability or its absence.** Adopted after task
-  014, where every `file:line` citation held across five rounds and *every* claim that quantified an
+  014, where every `file:line` citation held across ten findings and *every* claim that quantified an
   absence failed at least once: four digest sites became seven became eight; "every HMAC
   authenticates inbound" met an outbound request-signer; "every artifact is a mutable Postgres row"
   met three integrations that post transcripts elsewhere. A line count had stood in for a capability
