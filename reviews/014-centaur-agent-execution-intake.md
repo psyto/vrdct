@@ -450,3 +450,79 @@ The additional Test 1 token search named in the table was
 - Re-ran the eight-site SHA command and a broader Rust/SQL commitment search, recording scopes, exit
   statuses, and every candidate class above.
 - `git diff --check main...552762e`: clean.
+
+---
+
+# Re-review — Task 014, Centaur agent-execution intake (`35dd4e8`)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/centaur-intake`
+
+## Verdict
+
+**CHANGES.** F8 and F9 are fixed. Test 1 now traces the real `/execute` request through the runtime
+and SQL insert, and describes the missing property as harness-derived, execution-bound provenance.
+Test 3 now states the evidence-supported behavioural result—no demonstrated generated-and-verifiable
+integrity binding—rather than treating flexible JSON columns as proof that a string can never be
+stored there. Those two admission tests still fail their gates: the record offered has no defined,
+trusted mapping from a turn to its reproducibility inputs, and no independent integrity binding over
+the audited rows.
+
+The new AGENTS.md criterion is a criterion, not an aspiration: the review record now lets a reader
+check actor, ref, original and broader commands, scopes, exit statuses, and candidate dispositions in
+one pass. But it makes one remaining scope mismatch blocking: the task still claims four commitment
+terms occur nowhere in the tree while both its reproduce row and the reviewer record search narrower
+file classes.
+
+## Finding
+
+### F10 (P1) — "none anywhere in the tree" again exceeds the recorded search scope
+
+`docs/tasks/014-centaur-agent-execution-intake.md:271-273, 402-405, 494` says `blake3`, `ed25519`,
+`secp256`, and `merkle` do not exist anywhere in the tree. Its published command searches `*.rs` only;
+the independent review record broadens that to `*.rs` and `*.sql`. Neither is a whole-tree search.
+
+At the pinned ref, the actual whole-tree command
+
+```bash
+git grep -niE 'blake3|ed25519|secp256|merkle'
+```
+
+exits **0** with five hits: `contrib/scripts/bootstrap-k8s-secrets.sh` and
+`services/discordbot/README.md` describe an Ed25519 Discord public key, while
+`docs/package-lock.json` contains the transitive `blake3-wasm` package entries. They are not an
+execution-record commitment mechanism, so this does not repair the offered Postgres trail or alter
+the refusal. It does falsify the stated universal and repeats the exact scope error the new rule is
+designed to prevent.
+
+**Fix:** either limit the claim to the actually reviewed Rust/SQL implementation scope and name these
+five non-candidates, or add the whole-tree command and their dispositions to the independent record.
+Do not use "anywhere in the tree" until its scope is actually the tree. Until then, the new
+negative-claim compliance condition is not met for this document.
+
+## Method note
+
+Do not prohibit every negative sentence in an intake body. That would turn useful bounded statements
+into unreviewable implication and move the reasoning out of sight. Instead, require a stable evidence
+identifier beside every *admission-deciding* negative and a matching reviewer-owned matrix row with
+command, scope, exit status, and candidate dispositions. A template can require those fields, but it
+cannot replace the behavioural trace: the F8 route and F9 JSON mistakes both had syntactically valid
+citations.
+
+The expanded migration search for `temperature`, `top_p`, `top_k`, `seed`, `max_tokens`,
+`max_output_tokens`, `sampling`, `token_limit`, and `output_tokens` over the actual session migration
+directory returned no matches with exit **1**. This supports the bounded migration observation but is
+not itself an admission basis after Test 1's provenance restatement. Residuals 7 and 8 remain clearly
+labelled non-decisive unknowns.
+
+## Checks performed
+
+- Re-ran all four new reproduction rows at Centaur
+  `74979c19bf0b37cfc2c4b1f5510713841af03df1`; each exited **0** and produced the stated execution,
+  SQL-payload, or activity-summary trace.
+- Traced `input_lines` through validation and `write_input_lines`: Centaur sends them to the sandbox
+  and records counts/related events, not an automatically verified model or assembled-prompt
+  provenance record. This supports the bounded Test 1 failure, not a claim that JSON storage is
+  impossible.
+- Ran the full tracked-tree commitment search above (exit **0**, five hits) and the expanded migration
+  sampling search (exit **1**, zero hits).
+- `git diff --check main...35dd4e8`: clean.
