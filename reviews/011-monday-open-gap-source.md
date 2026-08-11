@@ -62,3 +62,78 @@ otherwise now consistent: this type is unsourced until the account-specific reco
   a future full rebuild to establish a non-STALE nearest selection.
 - Anchor/calendar construction, deterministic `(blockTime, slot, sig)` selection, exact integer
   arithmetic, and the explicit residual downgrade remain intact.
+
+---
+
+# Re-review — Task 011, F5/F6 follow-up (26275c7)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/monday-open-gap-source`
+
+## Verdict
+
+**CHANGES.** F5's actual cross-chain exploit is closed: `source.chain` is a required canonical
+descriptor field fixed to `solana-mainnet`; `checks()` compares it with `subject.chain`; and
+`build()` refuses the accidental mismatch. The regression is properly at the verifier boundary: it
+hand-authors, reseals, and rejects both the changed subject chain and a changed descriptor chain.
+F6 is also fixed: the residual heading now says it is open.
+
+The proposed removal of unchecked metadata, however, only removes it from the builder's preferred
+output. `canonicalInputs()` remains an allow-by-use parser, so a hand-authored claim can put those
+same fields back — or invent a descriptor field with stronger-sounding source identity — reseal its
+hash, and still verify. That is exactly the verifier-boundary condition F5 asked the test to cover.
+
+I reran `npm run test:canonical`: 76 JS tests, 162 committed parity vectors, 2 definition vectors,
+and 20 Rust tests pass.
+
+## Findings
+
+### F7 (P1) — removed metadata can be hand-authored back into a verifying claim
+
+`build()` no longer emits `inputs.trusted.chain` or `inputs.observed.count`, but
+`canonicalInputs()` at `claimtypes/monday-open-gap.mjs:152` does not reject unrecognised keys. The
+same applies to unparsed descriptor keys in `sourceDescriptor()` at line 114 and to the emitted but
+otherwise unread `inputs.oracle_inputs` at line 386.
+
+Starting with a valid claim, I independently added each of the following, recomputed `claim_id`,
+and received `verify(...).ok === true` for all three:
+
+```js
+claim.inputs.trusted.chain = 'ethereum-mainnet';
+claim.inputs.observed.count = 999;
+claim.inputs.observed.source.genesis_hash = 'not-mainnet';
+```
+
+Thus the assertions at `tests/monday-open-gap.test.mjs:307` establish only that *the builder* omits
+the fields, not that a claim cannot carry them. A consumer can still be shown a wrong chain, count,
+or purported genesis identity in a body that this verifier certifies. The content hash is consistent
+with the lie, just as it was in F5.
+
+**Fix:** make this type's raw input schema closed at every semantic object, or explicitly reject the
+known metadata fields and every other unexpected key. Decide whether `oracle_inputs` is part of this
+type's input domain: reject it entirely if it is not, or require exactly the one supported canonical
+form (currently an empty array). Add verifier-boundary regressions that reseal the three examples
+above and assert rejection. Do the same for unknown root, `trusted`, `terms`, observation, price,
+and source keys so the next copied display field cannot recreate the bug.
+
+### F8 (P2) — current reader-facing descriptor shapes omit the new chain binding
+
+After F5, the source's canonical shape includes `chain`; the module's explanation at
+`claimtypes/monday-open-gap.mjs:50` and the README at lines 72–75 still publish
+`{kind, account, from_ts, to_ts}` and say the claim names only an account and window. The task brief
+has the same stale shape in its initial contract and acceptance text.
+
+Update the current description to include `chain: 'solana-mainnet'` and say that the source names a
+cluster, account, and window. This is not a claim that the account data is now reconstructible — the
+existing residual caveat correctly says it is not — but omitting the field which closes the
+cross-cluster ambiguity leaves users with the old, weaker contract.
+
+## Design answer — `solana-mainnet` versus genesis hash
+
+For this still-unsourced type, the closed literal is enough to bind the *claim's semantic cluster*
+and to prevent the F5 subject/descriptor mismatch. A second literal genesis hash in a parser that
+does no network I/O would not make the pinned updates sourced; it would be another checked label.
+When a real rebuilder is introduced, it must map this chain identifier to the expected mainnet
+genesis hash and reject RPC endpoints whose `getGenesisHash` disagrees. A genesis hash alone also
+does not authenticate historical account data or distinguish every fork sharing that genesis, so it
+does not replace the absent historical reconstruction path. It may be useful as an explicit
+descriptor field then, but it is not the fix for F7 or for the open residual today.
