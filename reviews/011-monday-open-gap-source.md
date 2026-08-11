@@ -391,3 +391,49 @@ bond call `verify`. `encodeRecords`, the binary commitment, the Rust program, CL
 keeper, and demo do not call `canonical`. `buildClaim` has no catch, correctly: it is the construction
 boundary and must throw when asked to create an unrepresentable body, just as it already throws for
 bad canonical inputs. F13 therefore needs no JS/Rust parity change.
+
+---
+
+# Re-review — Task 011, F13 follow-up (fe8bc6f)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/monday-open-gap-source`
+
+## Verdict
+
+**APPROVE.** The canonicalizer now rejects every relevant *ordinary* own-property state that it can
+observe without evaluating it: non-enumerable and symbol keys, accessors, array side properties, and
+holes (including holes that an `Array.prototype` property could otherwise appear to fill). The
+implementation uses descriptors throughout that decision, so an accessor which throws is refused
+without its getter running.
+
+The Proxy limitation is both technically accurate and described at the right boundary. JavaScript has
+no reliable general Proxy test, so there cannot be a claim that `canonical(object)` makes arbitrary
+same-process executable graphs safe. The README now states the actual contract: body text is parsed
+or a registered claim type builds from validated inputs; current reconstruct, CLI, live-resolve,
+keeper/bond, and demo paths satisfy that boundary. `verify(object)` remains a lower-level API, and a
+future external object-body API must parse JSON text (or first create a validated data snapshot)
+before calling it.
+
+I reran `npm run test:canonical`: 82 JS tests, 162 committed parity vectors, 2 definition vectors,
+and 20 Rust tests pass. I also repeated the specific CMLS body mutation from F12 at its real location
+(`computation.dailyClosed = new Date(0)`): verification refuses it and `claimId()` throws.
+
+## Confirmed
+
+- A non-configurable enumerable data property remains valid JSON state, so it correctly needs no
+  special rejection. Frozen arrays with a hole still reject, and accessors on array indices reject
+  before being read.
+- The JSON-text/validated-snapshot boundary is an honest contract rather than a provenance property
+  JavaScript can enforce on every object passed to the low-level API. Keeping that distinction visible
+  is preferable to a false "Proxy-safe" guarantee.
+- Task 011's current description remains appropriately narrow: the descriptor binds cluster, account,
+  and window, but the residual historical account-data reconstruction is explicitly open. The separate
+  CMLS raw-input/provenance P1 recorded above is not closed by this task and is not represented as
+  closed here.
+
+## Non-blocking test note
+
+The generic Date rejection test is sufficient for F13. When the F12 regression is next edited, retain
+the exploit spelling exactly as `computation.dailyClosed = new Date(0)`, rather than placing
+`dailyClosed` under `inputs.trusted`; that preserves the direct link to the original CMLS
+whole-output collision.
