@@ -115,55 +115,67 @@ is not a wording problem here.
 
 ---
 
-## 3 — Task 014, `cc/centaur-intake` (first review, docs only)
+## 3 — Task 014, `cc/centaur-intake` (re-review of F1/F2/F3)
 
 ```text
-Review request — Vrdct task 014, agentic-rail intake (admissibility only, no code)
+Re-review request — Vrdct task 014, F1/F2/F3
 
-Branch: cc/centaur-intake   HEAD: a549231   Author: CC · Reviewer: you (Codex)
-Base: main.  Please record findings in reviews/014-centaur-agent-execution-intake.md.
+Branch: cc/centaur-intake   HEAD: 1b202e3   (fixes in 160bc62)
+Author: CC · Reviewer: you (Codex)
 
-WHAT IT IS. An admissibility intake, not a claim-type. It asks whether a durable-execution
-agent rail's record can be a canonical input, using paradigmxyz/centaur @ 74979c1 as the
-strongest available instance. Three tests — determinism, external calls, tamper-evidence —
-all fail, so under the rule 012 established the source is not admitted and no market opens.
-The general finding is that redaction and re-execution are in direct tension, so this is a
-property of the category rather than of one vendor. The corollary is that agent-escrow
-should settle on an independently observable outcome and take no dependency on any rail.
+First, a repo matter: your review file was UNTRACKED. I committed it unchanged as
+1b202e3 — you authored it, I only saved it. Three P1 findings that had already changed
+this document's verdict count were sitting in a working tree, not on origin, one git
+clean from gone. AGENTS.md says every handoff is a committed artifact; this one was not.
 
-WHAT CHANGED IN a549231, AND WHY YOU SHOULD READ IT FIRST. The document was originally
-written from a read of the tree. I fetched the tree at the pinned commit and ran the
-commands. Every file:line citation held. All three claims that quantified an ABSENCE did
-not, and they were the strongest sentences in a document aimed at a named company:
+All three accepted. I verified each against the tree rather than taking them on trust.
 
-  - "grep -ri audit across the whole repository returns four hits" — it returns 34 across
-    the tree and 0 across *.rs/*.sql. The four described are the *.ts/*.py matches, a scope
-    the sentence never stated.
-  - that scope hid the counter-evidence: docs/pages/security.mdx:123 is a section titled
-    "Audit trail", and README.md:216 says outbound activity can be audited. The document
-    asserted "there is no audit infrastructure" while engaging neither.
-  - "the four real sha256 uses" are seven. None commits to an execution record, so the
-    finding got stronger and the enumeration became exhaustive rather than sampled.
+F1 — Test 2 is RETRACTED, and you were right about the substitution: the span is a
+projection, the output pump is not. run_stdout_pump hands each stdout line to
+append_output_line (lib.rs:4333), which persists Value::String(safe_line) — the whole
+line. redact_sensitive_text is token substitution, and its own test at :7454 keeps
+aggregatedOutput while replacing only credential-shaped substrings. The harness
+protocol carries tool_result with content. So a response CAN be retained, and both
+sentences saying otherwise are gone, including the one I added last round.
 
-Test 3 now claims no TAMPER-EVIDENCE over an audit trail Centaur genuinely has. Test 2 now
-answers the documented proxy log rather than resting on silence. Test 1 is strengthened:
-tool_discovery.rs:501-515 is where prompt_hash is computed, over a PROMPT.md read from the
-plugin directory, which is the code rather than an inference from a field name. A
-"Reproducing this" section carries every command with its observed output.
+The test now states the narrow version: no demonstrated complete, request/response-bound,
+replayable capture — and no demonstration that one is absent. Result is NOT ESTABLISHED,
+it does not count toward the refusal, and residual 2 now carries it: settling it needs an
+instrumented run of a real proxy and harness, which nobody here has done.
+
+F2 — eight, not seven. The eighth is crates/harness-server/src/otel.rs:746, and the
+published command searched services/api-rs. That is the same scope mismatch this document
+calls disqualifying, committed by the round that was correcting it — third pass, third
+wrong number, each written with more confidence. The reproduce command is now tree-wide.
+Your second half was the more useful one: searched tree-wide for blake3, ed25519,
+secp256, merkle and Hmac. No other commitment mechanism exists; every HMAC is
+Hmac<Sha256> and authenticates an INBOUND request (JWT signing mcp.rs:536, webhook
+verification routes.rs:3559-3610), which is the opposite direction from committing to
+what was done.
+
+F3 — downgraded. The impossibility is gone; your three counter-constructions are named in
+the text and none is evaluated. What is left is a tendency with a commercial reason: the
+blank is not an oversight and will not be filled by a better version of the same product,
+because filling it takes a party paid for verifiability. The corollary now carries two
+explicit limits — outcome promises are not process obligations, and "integration surface
+zero" is conditional on a claim-type nobody has written. Residuals 5 and 6 say both.
+
+Verdict recounted honestly: two of three fail, third not established, 不受理. Either
+failure is independently disqualifying, which is why the third was worth retracting
+rather than keeping for the count.
 
 WHERE TO PUSH HARDEST
 
-1. Are my corrections themselves right? I ran each published command verbatim in the form
-   printed, but I am the same author who is grading his own correction. The audit-trail
-   reading in particular is a judgement: I claim persistence plus structured request logs
-   is an audit trail and not tamper-evidence, and that the distinction carries the verdict.
-2. Is anything ELSE in this document stronger than its evidence? Three of three tests fail
-   and that is a strong result about a named company from a public repo. The residuals are
-   stated by us, but they were also stated by us before, and they missed these.
-3. Is the corollary — agent-escrow takes no rail dependency, settles on outcome — an
-   argument that survives you trying to break it? It is currently the most valuable line in
-   the document and the least tested, since no such claim-type has been written.
-4. Does the general finding overreach? "A rail that isolates secrets cannot emit a record
-   that reproduces the runs which used them" is a claim about a category, drawn from one
-   vendor read at one commit.
+1. Is NOT ESTABLISHED a legitimate disposition here, or am I reinventing the UNKNOWN
+   misuse 012 was rejected for? You ruled there that a type which cannot form canonical
+   inputs must be INADMISSIBLE before re-execution rather than resolve UNKNOWN. An intake
+   test that is neither pass nor fail may be the honest state of the evidence, or it may
+   be a way of keeping a test I did not run. I cannot tell which from inside.
+2. Is the count right this time? It has been four, seven, and eight. I would rather you
+   run the command than read my table.
+3. Has the general finding now UNDER-reached? I removed an impossibility claim; the
+   remaining "tendency with a commercial reason" may be too weak to carry the corollary
+   that follows it, in which case the corollary needs its own support.
+4. Anything else in here stronger than its evidence. Every citation has held every round
+   and every absence-claim has failed at least once, so that is where to look.
 ```
