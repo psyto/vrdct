@@ -107,3 +107,91 @@ and demonstrate that its outcome can actually be independently observed and cano
   eight non-test Rust sites, including `crates/harness-server/src/otel.rs:746`.
 - Traced the stdout pump through persistence and reviewed its tool-result and output-redaction tests.
 - `git diff --check main...a549231`: clean.
+
+---
+
+# Re-review — Task 014, Centaur agent-execution intake (`1b202e3`)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/centaur-intake`
+
+## Verdict
+
+**CHANGES.** F1 is fixed: Test 2 now accurately distinguishes the persisted, redacted stdout line
+from the telemetry-span projection, retracts its response-absence claim, and does not count the
+unperformed proxy/harness measurement toward refusal. `NOT ESTABLISHED` is legitimate in this
+document because it is an *intake evidence status*, not an on-chain `UNKNOWN` verdict and not a
+reason to open, resolve, or reject a market. Tests 1 and 3 remain independent stated bases for the
+admission refusal.
+
+The eight-site `Sha256` count is also now correct. But the replacement HMAC search makes a new
+false universal claim and therefore still cannot support its asserted absence of alternative
+commitment mechanisms. The surviving category paragraph also recasts an unsupported forecast about
+vendors' incentives and roadmaps as evidence.
+
+## Findings
+
+### F4 (P1) — the HMAC search includes outbound request signing, not only inbound authentication
+
+`docs/tasks/014-centaur-agent-execution-intake.md:191-197, 295-299, 342` says every HMAC is
+`Hmac<Sha256>`, authenticates an inbound request, and is therefore irrelevant to what Centaur did.
+The cited `git grep -n 'Hmac' -- '*.rs' | grep -v '/tests/'` does return 51 textual references, but
+they are not all cryptographic constructor calls and they are not all inbound. In the same pinned
+tree:
+
+```
+centaur-iron-control/src/models.rs:364-369
+    iron-proxy ... composes the signature_message template, HMACs it ...
+    and writes headers onto the upstream request.
+
+centaur-perms/src/tools.rs:161-175
+    a per-request HMAC signature iron-proxy mints and writes onto the upstream request.
+```
+
+The product documentation likewise says an HMAC secret signs matching **outbound** requests, with a
+message template that can include `.Body` (`services/console/docs/API.md:714-732`). Its configured
+algorithms include SHA-512 and SHA-1 as well as SHA-256 (`:727`), so “every HMAC is
+`Hmac<Sha256>`” is also false for the configured proxy capability. The Rust API server's own HMAC
+constructors at `mcp.rs:536` and `routes.rs:3588` do verify incoming JWT/webhook material, but they
+are not the entire HMAC search result.
+
+An outbound HMAC is not, by itself, public tamper-evidence for Centaur's complete execution record:
+the resolver still needs a binding to the stored event and an independently available verifier or
+recipient record. It can nevertheless sign a request body at the moment it leaves the proxy. That
+directly contradicts the asserted search result and means the search has not established “no other
+commitment mechanism.”
+
+**Fix:** retract “every HMAC authenticates inbound” and the inference that the HMAC search excludes
+an execution-relevant commitment. Describe the actual distinction: the public tree configures
+outbound request signing, but this review has not established a canonical, independently retrievable
+binding from any such signature to the full execution/audit record. Support that narrower negative
+with the exact proxy configuration and recipient-verification analysis, or leave it as a residual.
+The Test 3 refusal may rely on its other evidence only once this over-broad search result is removed.
+
+### F5 (P1) — the revised tendency still asserts an unmeasured vendor motive and product forecast
+
+`docs/tasks/014-centaur-agent-execution-intake.md:247-251` says the missing capture is “not an
+oversight,” “will not be filled by a better version of the same product,” and that neither Centaur
+nor Cloudflare has a commercial reason to provide it. The checked repository at one commit can show
+what Centaur implements and documents there; it cannot establish why the omission exists, what either
+vendor will ship, or what constitutes a different product. The reference “Cloudflare's guardrails
+(08-04)” is not a durable source citation in this repository, so it supplies no independently
+checkable second instance for those claims.
+
+This is not under-reaching: the bounded conclusion already has the needed force. Centaur's public
+record at the pinned commit is not admitted because the stated determinism and tamper-evidence
+requirements are not met. The conditional outcome-only corollary does not need a claim about future
+vendor incentives to stand.
+
+**Fix:** replace the forecast with a labelled hypothesis, or remove it. Keep the general observation
+as “the two examined designs prioritise secret isolation over a record demonstrated sufficient for
+Vrdct re-execution”; retain the corollary only in its existing conditional, outcome-only form unless
+a separately sourced market/product analysis supports more.
+
+## Checks performed
+
+- Re-ran all revised published searches at Centaur `74979c19bf0b37cfc2c4b1f5510713841af03df1`.
+  The tree-wide SHA-256 command returns **8** sites.
+- Traced all non-test Rust `Hmac` references and checked the Iron Proxy HMAC signing configuration
+  and public API documentation.
+- Confirmed Test 2's `NOT ESTABLISHED` status is not used as a market verdict or admission path.
+- `git diff --check main...1b202e3`: clean.
