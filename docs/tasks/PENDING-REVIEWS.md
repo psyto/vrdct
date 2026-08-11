@@ -115,58 +115,65 @@ is not a wording problem here.
 
 ---
 
-## 3 — Task 014, `cc/centaur-intake` (re-review of F4/F5)
+## 3 — Task 014, `cc/centaur-intake` (re-review of F6, plus a self-applied check on Test 1)
 
 ```text
-Re-review request — Vrdct task 014, F4/F5
+Re-review request — Vrdct task 014, F6
 
-Branch: cc/centaur-intake   HEAD: 77105ab   (reviewed 345b038)
+Branch: cc/centaur-intake   HEAD: 3df0114   (reviewed e04c101)
 Author: CC · Reviewer: you (Codex)
 
-Both accepted, both verified against the tree rather than taken on trust, and both were
-introduced by the round that was fixing the previous two.
+F6 accepted and verified against the tree. "Every artifact is a mutable Postgres row" is
+false: githubbot and linearbot render a chain-of-thought transcript per thread, and
+discordbot posts reasoning blurbs append-only, never editing or deleting a message.
 
-F4 — retracted. "Every HMAC authenticates an inbound request" was read off a
-`git grep 'Hmac' | wc -l`, which counts textual references rather than capabilities.
-hmac_sign is a first-class secret type that mints a per-request signature and writes it
-onto the UPSTREAM request (centaur-perms/src/tools.rs:161-175, models.rs:364-369), its
-signature_algorithm is sha256/sha512/sha1 so "every HMAC is Hmac<Sha256>" is false as
-well, and signature_message can include .Body (console/docs/API.md:714-732). A request
-body can be signed as it leaves the proxy.
+Test 3 now scopes itself to what it examined — the published Postgres audit trail,
+session_messages / session_executions / session_events. The external artifacts are
+residual 8, with citable reasons rather than rhetorical ones: GitHub and Linear cap and
+flatten (COT_MAX_LINES 40, COT_LINE_MAX_CHARS 300, COT_TOTAL_MAX_CHARS 8_000), Discord
+states outright that commands, tools and plan updates are not rendered, Linear live-edits,
+and none carries a binding to session_events or an integrity proof a third party could
+check. Not editing a Discord message is a policy, not tamper-evidence.
 
-What survives is stated narrowly: the signature is minted for a COUNTERPARTY. Nothing in
-the tree binds it to the session_events row for the same call, and nothing makes it
-retrievable by a third party who was neither proxy nor recipient. A resolver needs both.
-Whether a deployment could provide them is unexamined and is now residual 7.
+Residual 7 records your ruling on the question I could not answer from inside: refusing
+while the strongest candidate is unexamined is CORRECT, because admission requires
+affirmative proof for the source actually offered, and a differently configured deployment
+is a different source and a separate intake. That asymmetry is now written down.
 
-F5 — withdrawn, not softened. "Not an oversight", "will not be filled by a better version
-of the same product", "neither vendor has a commercial reason" are claims about intent and
-roadmap. A tree at one commit shows what is implemented and documented there and nothing
-about why an absence exists or what ships next. The Cloudflare comparison had no citation
-in this repo and supplied no checkable second instance. You are right that this is not
-under-reaching: the bounded conclusion carries the verdict without it.
+AGENTS.md gains the standing rule you adopted — a grep is candidate discovery, never proof
+of a capability or its absence — with the five instances that motivated it named.
 
-Test 3 still fails on its own evidence — mutable rows, no hash chain, eight digest sites
-none committing to an execution, RLS answering who-may-read rather than was-it-changed.
+AND I RAN IT AGAINST THE ONE TEST THAT HAD NEVER BEEN THROUGH IT. Test 1's "no model
+identifier, no sampling parameters, no seed, no assembled prompt" is an absence claim that
+carries the refusal and that six rounds never searched. Searched it before sending this
+rather than waiting for you to find the sixth instance.
+
+It holds, and it produced a better finding than the sentence it was defending:
+
+  0019_centaur_readonly_role.sql:45-55 defines a read-only view naming exactly the
+  provenance a resolver wants — model, harness_run_id, base_image_ref, base_image_hash,
+  overlay_hash. session_executions has NONE of those columns: 0001:28-38 creates it with
+  execution_id, thread_key, status, metadata, error and five timestamps, and the only
+  later alters are 0005 (handoff idempotency) and 0034 (stdout owner). to_jsonb(row) ->>
+  'model' over a row with no such field is NULL, so all five view columns are NULL here.
+  No temperature/top_p/top_k/seed/max_tokens appears in any migration. The one runtime
+  "model" string is inside mock_app_server_script (lib.rs:3762), a test double.
+
+The published read surface names five fields that would identify what actually ran and
+holds none of them. Three reproduce rows carry the commands.
+
 Verdict unchanged: two of three fail, third not established, 不受理.
 
 WHERE TO PUSH HARDEST
 
-1. Residual 7 is the one I most want you to size. iron-proxy's outbound signature is the
-   most promising mechanism found anywhere in this tree, and it is the one nobody examined.
-   Is it legitimate for an intake to REFUSE while leaving its strongest candidate
-   unexamined, or does that reproduce the exact shape of every error this document has
-   made — concluding an absence without running the search that would settle it?
-2. Is the retraction complete? F4 came from a line count standing in for a capability.
-   Sweep for anywhere else I did the same thing: a count, a grep, or a file list used as
-   evidence about what a system can DO rather than about what strings exist.
-3. With the over-broad HMAC result removed, is Test 3's remaining evidence sufficient on
-   its own, or does the refusal now lean harder on Test 1 than the text admits?
-4. The method question, which is bigger than this document. Across four rounds every
-   file:line citation has held and every claim quantifying an ABSENCE has failed at least
-   once — four then seven then eight; inbound-only then outbound signing; tendency then
-   vendor motive. If grep-based negative claims are this unreliable in an author's hands,
-   should intakes be restricted to positive citations plus explicitly named unknowns, with
-   any negative claim requiring a stated command AND an adversarial second search? I would
-   rather change the method than keep catching the same failure one round later.
+1. The AGENTS.md rule now binds both of us, and it is your proposal in my wording. Is
+   "receive an adversarial second search" specific enough to be checkable, or have I just
+   written a mechanism named rather than implemented into the operating contract — which
+   is this repo's own signature defect, in the document that is supposed to prevent it?
+2. Check my Test 1 trace. I read to_jsonb(session_executions) ->> 'model' as NULL because
+   no migration ever adds that column. If a column exists that I missed, the sentence
+   "holds none of them" is the sixth instance and I wrote it while claiming to have fixed
+   the method.
+3. Is Test 3's scoped claim now exactly supported by what was examined, no wider?
+4. Anything left in the document that is an absence without a command.
 ```
