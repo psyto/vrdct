@@ -51,8 +51,14 @@ again. A memo is only a canonical input if it is complete, and it is complete on
 steps that were wrapped.
 
 What survives for the agent path is `session_messages.parts jsonb` and `session_events.payload jsonb`
-(`0001_session_control_plane.sql:16-23, 47-54`) — the conversation surface. No model identifier, no
-sampling parameters, no seed, no assembled prompt. The one hash present, `prompt_hash`
+(`0001_session_control_plane.sql:16-23, 47-54`) — the conversation surface. **What is missing is not
+a place to put the run's parameters; it is any harness-derived, execution-bound record of them.** An
+earlier version said flatly "no model identifier, no sampling parameters, no seed", and that is false
+in two ways established below: a caller can put all of them in `metadata`, and the optional
+activity-summary worker writes a real `"model"` into `session_events.payload`
+(`centaur-api-server/src/activity_summary.rs:181-190`) — the model of the *summary* call, not of the
+harness turn. Neither is derived from the turn, validated against it, or bound to it. The one hash
+present, `prompt_hash`
 (`centaur-session-runtime/src/lib.rs:172-192`), commits to the *persona* definition, not to the prompt
 the model actually saw — and that is not an inference from the field's name, it is what the code that
 computes it does:
@@ -71,9 +77,21 @@ downstream re-hashes what was assembled for a turn.
 **The failure is missing PROVENANCE, not missing storage — and getting that wrong was the sixth
 instance of this document's pattern, committed in the same change that claimed to have fixed the
 method** (Codex, reviews/014 F7). `session_executions.metadata` is `jsonb not null default '{}'`, and
-`centaur-api-server/src/routes.rs:1806-1807` persists whatever the caller sent:
-`if request.metadata.is_object() { request.metadata }`. A model name, a temperature, a seed — any of
-them **can** be stored there today. "Holds none of them" was false.
+caller-supplied JSON reaches it. A model name, a temperature, a seed — any of them **can** be stored
+there today. "Holds none of them" was false.
+
+The trace, because the first version of this paragraph cited the wrong route entirely (F8). It named
+`routes.rs:1806-1807`, which is inside the **Slack archive-import handler** — `prefixed_id("sai")`,
+`presign_s3_put_url` — a different feature that happens to validate a field with the same name. The
+conclusion was right and the evidence was somebody else's code. The actual path:
+
+```
+routes.rs:775-791   execute_session(Json(request): Json<ExecuteSessionRequest>)
+                      → ExecuteSessionInput { metadata: request.metadata, .. }
+runtime lib.rs:1814-1867, 6772-6787   forwards it as execution_metadata
+sqlx lib.rs:321-336   create_execution(.., metadata: Value)
+                      insert into session_executions (.., metadata) values (.., $5)
+```
 
 What is absent is the thing that would make such a value evidence. Nothing requires the field, nothing
 validates it, nothing derives it from the run, and nothing binds it to what actually executed. It is
@@ -182,8 +200,18 @@ twice written as a FAIL, and both times the reason was an absence the cited path
 
 **Scope first, because this test has twice been written wider than its evidence.** What is examined
 here is the **published Postgres audit trail** — `session_messages`, `session_executions`,
-`session_events`. Those rows are mutable, and carry no hash chain, no per-record digest and no
-signature. An earlier version said "every artifact is a mutable Postgres row", which is false: the
+`session_events`. Those rows are mutable, and the trail has **no demonstrated generated-and-verifiable
+integrity binding** over them.
+
+That wording is deliberate, because the previous version — "carry no hash chain, no per-record digest
+and no signature" — repeated in Test 3 the exact substitution F7 had just removed from Test 1
+(Codex, reviews/014 F9). These are JSON fields: `PgSessionStore::append_event` takes an unconstrained
+`Value` straight into `session_events.payload` (`centaur-session-sqlx/src/lib.rs:879-902`). A schema
+with no digest column cannot establish that no row ever contains a field called `hash` or
+`signature`. What the review search does establish is behavioural: **no examined writer constructs a
+record-specific commitment that is bound to, and independently verifies, an audit row.**
+
+An earlier version also said "every artifact is a mutable Postgres row", which is false: the
 integration paths emit execution-derived material to systems Centaur does not own (Codex, reviews/014
 F6). That is residual 8, and it is a residual rather than a rescue.
 
@@ -426,6 +454,14 @@ absences, which published "seven, exhaustive over the tree" from a command that 
 several. Three passes, three different wrong numbers for the same question, each written with more
 confidence than the last.
 
+**The reviewer's independent record is in `reviews/014-centaur-agent-execution-intake.md`**, under
+*Required independent negative-claim record*, and it is what the `AGENTS.md` rule demands rather than
+a courtesy: the ref searched, this document's original command and a broader one, the scope each
+covered, their exit status, and what every returned candidate turned out to be. Codex's Test 3 row
+runs 126 candidates to ground across `*.rs` and `*.sql` and finds none binding to an audit row. Its
+Test 1 row is what caught F8 — the original citation was not a search of the relevant behaviour at
+all.
+
 That is the reason this section exists, and the reason it prints commands rather than conclusions.
 A negative claim is worth exactly what its command is worth; a command that is not written down
 cannot be checked by a reviewer, by the author a week later, or by the author ten minutes later while
@@ -447,7 +483,9 @@ git checkout 74979c19bf0b37cfc2c4b1f5510713841af03df1   # 2026-08-10 22:17:16 +0
 | the provenance view is empty | `sed -n '45,55p' services/api-rs/crates/centaur-session-sqlx/migrations/0019_centaur_readonly_role.sql` then `awk '/create table if not exists session_executions/,/^\);/' .../0001_session_control_plane.sql` | the view names `model`, `harness_run_id`, `base_image_ref`, `base_image_hash`, `overlay_hash`; the table has none of them |
 | …and nothing added them later | `git grep -n 'alter table session_executions' -- '*.sql'` | only `0005` (idempotency) and `0034` (stdout owner) |
 | no sampling parameter in any migration | `git grep -ni 'temperature\|top_p\|top_k\|seed\|max_tokens' -- 'services/api-rs/crates/centaur-session-sqlx/migrations/*.sql'` | no output, **exit 1**. The version first published here used a literal `.../migrations/*.sql`, matched no files, and returned the same exit 1 for the wrong reason |
-| metadata takes whatever the caller sends | `sed -n '1806,1808p' services/api-rs/crates/centaur-api-server/src/routes.rs` | `if request.metadata.is_object() { request.metadata }` |
+| caller metadata reaches `session_executions` | `sed -n '775,791p' services/api-rs/crates/centaur-api-server/src/routes.rs` then `sed -n '321,336p' services/api-rs/crates/centaur-session-sqlx/src/lib.rs` | `execute_session` puts `request.metadata` into `ExecuteSessionInput`; `create_execution(.., metadata: Value)` inserts it. The row first published here cited `routes.rs:1806`, which is the **Slack archive-import** handler |
+| `session_events.payload` is unconstrained | `sed -n '879,892p' services/api-rs/crates/centaur-session-sqlx/src/lib.rs` | `append_event(.., payload: Value)` inserts it directly |
+| and it does carry a model in production | `sed -n '178,192p' services/api-rs/crates/centaur-api-server/src/activity_summary.rs` | `"model": self.config.model.as_str()` — the summary call's model, not the turn's |
 | a production model string exists | `sed -n '6p;38,42p' services/api-rs/crates/centaur-session-runtime/src/title_generator.rs` | `gpt-5.4-nano`, `"max_output_tokens": 24` |
 | **audit** | `git grep -in audit \| wc -l` | **34**, not four |
 | | `git grep -in audit -- '*.rs' '*.sql' \| wc -l` | **0** |
