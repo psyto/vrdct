@@ -271,3 +271,62 @@ should use a small shared `assertClosedObject(name, value, allowedKeys)` helper 
 mechanical helper; each claim-type must still declare its own schema. A global allowlist would merely
 move the stale list to a less visible place, while a single generic output comparison was correct
 because all registered types share that exact output contract.
+
+---
+
+# Re-review — Task 011, F11 follow-up (b35b1ac)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/monday-open-gap-source`
+
+## Verdict
+
+**CHANGES.** F11 correctly rejects `NaN`, `Infinity`, `-Infinity`, bigint, functions, and symbols;
+the direct `null → NaN` regression reaches `verify()` and `claimId()` as required. Finite numbers,
+including the chosen canonical forms of `-0` and `1e21`, remain accepted. `canonical` has no Rust
+twin: the program consumes the binary record encoding, not claim JSON. I reran
+`npm run test:canonical`: 79 JS tests, 162 committed parity vectors, 2 definition vectors, and 20
+Rust tests pass.
+
+The rejection set is nevertheless incomplete. `undefined` is not merely an invalid-but-unique
+object-property spelling: arrays and non-plain JS objects make `canonical()` collide again, including
+on an existing CMLS whole-output field.
+
+## Finding
+
+### F12 (P1) — values outside the JSON tree still bypass the whole-output binding
+
+`canonical([undefined])`, `canonical(new Array(1))`, and `canonical([])` are all `[]`, because
+`Array#map` skips holes and `Array#join` renders an `undefined` element empty. `undefined` therefore
+cannot remain accepted. I registered a minimal claim type whose re-execution returns
+`computation: { rows: [] }`; changing the stored body to `{ rows: [undefined] }` left both
+`claim_id` and `verify(...).ok` unchanged.
+
+The object branch has the same defect. `canonical(new Date(0))`, `canonical(new Map([['x', 1]]))`,
+`canonical(new Set([1]))`, `canonical(/x/)`, and `canonical({})` all produce `{}`. This is reachable
+in a shipped surface: a CMLS claim with only open-session observations has
+`computation.dailyClosed === {}`; replacing it with `new Date(0)`, without resealing, leaves its
+claim id unchanged and `verify(...).ok === true`.
+
+The present solvency builder is also evidence that accepting `undefined` is not harmless:
+`solvency.build({ subject: {}, ... })` emits `inputs.trusted.chain: undefined`. The current
+canonicalizer hashes an invalid pseudo-JSON fragment (`"chain":undefined`). That must be fixed at
+the producer; preserving an invalid body is not compatibility.
+
+**Fix:** make `canonical` accept only a JSON value tree: `null`, booleans, strings, finite numbers,
+arrays with every index present and a recursively valid value, and ordinary data objects with only
+enumerable string keys and recursively valid values. Reject `undefined`, holes, symbols/non-enumerable
+or accessor properties, non-plain objects (Date/Map/Set/RegExp/typed arrays), and cyclic graphs with
+a normal error rather than recursion overflow. Keep `-0` as the intentional canonical numeric form
+`0`. Change the solvency builder to omit `trusted.chain` when there is no chain (or otherwise make
+that field a real, valid input); its current body cannot be published as JSON. Add direct-object
+regressions for `[undefined]`, a hole, CMLS `dailyClosed: new Date(0)`, and a cyclic object.
+
+## Caller audit
+
+`canonical()` is reached only through `claimId()`/`buildClaim()` and the generic checks in
+`verify()`. `verify` catches canonicalization errors and returns its malformed-claim result.
+`buildClaim` is intentionally not a recovery boundary: it already throws for malformed canonical
+inputs, and should likewise throw when a caller asks it to build an unrepresentable claim. The binary
+encoder, on-chain program, CLI source rebuild, keeper, and published corpus do not call this function
+with non-JSON claim values. Fixing F12 therefore does not require JS/Rust parity work, but it must
+run the full suite because callers that currently build the invalid solvency body must be made valid.
