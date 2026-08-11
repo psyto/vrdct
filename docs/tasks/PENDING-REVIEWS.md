@@ -1,6 +1,6 @@
 # Pending review requests — as at 2026-08-11
 
-**Two** requests are waiting on Codex. The requests below are reproduced verbatim so the next window
+**Three** requests are waiting on Codex. The requests below are reproduced verbatim so the next window
 can relay them by copy-paste without reconstructing anything. Delete each once it has been sent and
 answered.
 
@@ -8,7 +8,7 @@ answered.
 there were three: task 012's re-review was already written, in that task's own Handoff section on a
 branch checked out in a different worktree, and so was invisible from the window that wrote the list.
 Task 011's request has since been sent and answered — seven rounds, `APPROVE`, merged — so it is
-deleted here and two remain.)*
+deleted here; task 014's intake was written in another window and is added, so three remain.)*
 
 ---
 
@@ -111,4 +111,59 @@ Please cover, in order:
 
 The record names a live venue from a public repo. A sentence stronger than its evidence
 is not a wording problem here.
+```
+
+---
+
+## 3 — Task 014, `cc/centaur-intake` (first review, docs only)
+
+```text
+Review request — Vrdct task 014, agentic-rail intake (admissibility only, no code)
+
+Branch: cc/centaur-intake   HEAD: a549231   Author: CC · Reviewer: you (Codex)
+Base: main.  Please record findings in reviews/014-centaur-agent-execution-intake.md.
+
+WHAT IT IS. An admissibility intake, not a claim-type. It asks whether a durable-execution
+agent rail's record can be a canonical input, using paradigmxyz/centaur @ 74979c1 as the
+strongest available instance. Three tests — determinism, external calls, tamper-evidence —
+all fail, so under the rule 012 established the source is not admitted and no market opens.
+The general finding is that redaction and re-execution are in direct tension, so this is a
+property of the category rather than of one vendor. The corollary is that agent-escrow
+should settle on an independently observable outcome and take no dependency on any rail.
+
+WHAT CHANGED IN a549231, AND WHY YOU SHOULD READ IT FIRST. The document was originally
+written from a read of the tree. I fetched the tree at the pinned commit and ran the
+commands. Every file:line citation held. All three claims that quantified an ABSENCE did
+not, and they were the strongest sentences in a document aimed at a named company:
+
+  - "grep -ri audit across the whole repository returns four hits" — it returns 34 across
+    the tree and 0 across *.rs/*.sql. The four described are the *.ts/*.py matches, a scope
+    the sentence never stated.
+  - that scope hid the counter-evidence: docs/pages/security.mdx:123 is a section titled
+    "Audit trail", and README.md:216 says outbound activity can be audited. The document
+    asserted "there is no audit infrastructure" while engaging neither.
+  - "the four real sha256 uses" are seven. None commits to an execution record, so the
+    finding got stronger and the enumeration became exhaustive rather than sampled.
+
+Test 3 now claims no TAMPER-EVIDENCE over an audit trail Centaur genuinely has. Test 2 now
+answers the documented proxy log rather than resting on silence. Test 1 is strengthened:
+tool_discovery.rs:501-515 is where prompt_hash is computed, over a PROMPT.md read from the
+plugin directory, which is the code rather than an inference from a field name. A
+"Reproducing this" section carries every command with its observed output.
+
+WHERE TO PUSH HARDEST
+
+1. Are my corrections themselves right? I ran each published command verbatim in the form
+   printed, but I am the same author who is grading his own correction. The audit-trail
+   reading in particular is a judgement: I claim persistence plus structured request logs
+   is an audit trail and not tamper-evidence, and that the distinction carries the verdict.
+2. Is anything ELSE in this document stronger than its evidence? Three of three tests fail
+   and that is a strong result about a named company from a public repo. The residuals are
+   stated by us, but they were also stated by us before, and they missed these.
+3. Is the corollary — agent-escrow takes no rail dependency, settles on outcome — an
+   argument that survives you trying to break it? It is currently the most valuable line in
+   the document and the least tested, since no such claim-type has been written.
+4. Does the general finding overreach? "A rail that isolates secrets cannot emit a record
+   that reproduces the runs which used them" is a claim about a category, drawn from one
+   vendor read at one commit.
 ```
