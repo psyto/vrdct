@@ -132,8 +132,12 @@ twice written as a FAIL, and both times the reason was an absence the cited path
 
 ## Test 3 — tamper-evidence: is the record immune to after-the-fact editing?
 
-Every artifact is a mutable Postgres row. There is no hash chain, no per-record digest, and no
-signature over any execution record.
+**Scope first, because this test has twice been written wider than its evidence.** What is examined
+here is the **published Postgres audit trail** — `session_messages`, `session_executions`,
+`session_events`. Those rows are mutable, and carry no hash chain, no per-record digest and no
+signature. An earlier version said "every artifact is a mutable Postgres row", which is false: the
+integration paths emit execution-derived material to systems Centaur does not own (Codex, reviews/014
+F6). That is residual 8, and it is a residual rather than a rescue.
 
 **This section previously said "there is no audit infrastructure", and cited a grep that does not
 reproduce.** Both are corrected here rather than quietly, because the claim was the strongest sentence
@@ -344,6 +348,28 @@ The posture toward Centaur and its successors is unchanged by any of this: use t
    independent evidence — was not examined. It is the most promising thing found in this tree and it
    is unexamined.
 
+   **And leaving it unexamined is correct, which was not obvious.** The question asked of review was
+   whether refusing while the strongest candidate is unexamined repeats this document's own recurring
+   error. Codex's ruling (reviews/014): it does not, because **admission requires affirmative proof
+   for the source actually offered.** The offered source is Centaur's published record at `74979c1`.
+   A deployment configured to bind outbound signatures to session rows and expose them to a third
+   party is a *different source*, and belongs in its own intake. The asymmetry is the point — an
+   absence claim needs a search, but a refusal to admit needs only the absence of a proof that was
+   never supplied.
+
+8. **Execution-derived material leaves Centaur, and it was not examined until a reviewer found it.**
+   The integrations render a chain-of-thought transcript — reasoning plus tool actions — into systems
+   Centaur does not own: `services/githubbot/src/comment-bot.ts` and
+   `services/linearbot/src/comment-bot.ts:46-50` build one per thread, and
+   `services/discordbot/src/discord-narrator.ts:41-46` posts reasoning blurbs **append-only**, with no
+   bot message ever edited or deleted. None of this is a rescue for admission, and the reasons are
+   citable rather than rhetorical: GitHub and Linear cap and flatten the transcript
+   (`COT_MAX_LINES = 40`, `COT_LINE_MAX_CHARS = 300`, `COT_TOTAL_MAX_CHARS = 8_000`), Discord's
+   narrator states outright that *"commands, tools, and plan updates are not rendered"*, Linear
+   live-edits its comment, and none of the three carries a canonical binding to `session_events`, a
+   request/response record, or an integrity proof a third party could check. An application choosing
+   not to edit a Discord message is a policy, not tamper-evidence. But the artifacts exist, they were
+   not looked at, and Test 3's original wording erased them by generalisation.
 ## Reproducing this
 
 Every `file:line` citation in this document has held at every round. Every claim that quantified an
