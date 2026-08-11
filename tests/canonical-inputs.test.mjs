@@ -100,6 +100,48 @@ test('canonical accepts a JSON value tree and refuses every value that would col
   assert.equal(canonical(Object.create(null)), '{}');
 });
 
+// Codex, reviews/011 F13. A JS object graph carries state JSON does not, and two graphs differing
+// only in that state used to serialize to the same bytes. Everything below can be SEEN, so it is
+// refused. The last case cannot be seen, and is recorded rather than claimed.
+test('canonical refuses object state JSON cannot carry, and records the one it cannot detect', () => {
+  const hidden = { a: 1 };
+  Object.defineProperty(hidden, 'b', { value: 2, enumerable: false });
+  assert.throws(() => canonical(hidden), /non-enumerable/);
+
+  const symboled = { a: 1, [Symbol('s')]: 2 };
+  assert.throws(() => canonical(symboled), /symbol-keyed/);
+
+  let asked = 0;
+  const accessor = { get a() { return asked++; } };
+  assert.throws(() => canonical(accessor), /accessor/);
+  assert.equal(asked, 0, 'the getter must not be invoked while deciding to refuse it');
+
+  const labelled = [1, 2];
+  labelled.note = 'for the reader';
+  assert.throws(() => canonical(labelled), /an array owns 'note'/);
+
+  // the prototype must not be able to fill a hole: `i in v` and `v[i]` both consult it, so the walk
+  // reads descriptors instead. Without this, Array.prototype[0] = 'x' rewrites the bytes of a value
+  // nobody touched.
+  const holed = [, 1];
+  assert.throws(() => canonical(holed), /hole/);
+  try {
+    Array.prototype[0] = 'filled-from-the-prototype';
+    assert.equal(holed[0], 'filled-from-the-prototype', 'the fixture must actually reach the prototype');
+    assert.throws(() => canonical(holed), /hole/, 'a prototype filled a hole');
+  } finally {
+    delete Array.prototype[0];
+  }
+
+  // AND THE LIMIT, stated because it is the reason the trust boundary is JSON.parse output rather
+  // than this function. A Proxy is not reliably detectable in standard JS: an inert one passes, and
+  // a hostile one can answer differently each time it is asked, so canonical() is not stable over it.
+  assert.equal(canonical(new Proxy({ a: 1 }, {})), '{"a":1}');
+  let n = 0;
+  const shifty = new Proxy({ a: 1 }, { getOwnPropertyDescriptor: () => ({ value: n++, enumerable: true, configurable: true }) });
+  assert.notEqual(canonical(shifty), canonical(shifty), 'if this ever becomes equal, the limit has changed and the comment above is stale');
+});
+
 // Codex, reviews/011 F12, demonstrated on a real claim: a body that is not a JSON value tree was
 // being content-addressed anyway, so two different bodies shared a claim_id and a verdict.
 test('a non-JSON body cannot be content-addressed, and the builders no longer produce one', () => {

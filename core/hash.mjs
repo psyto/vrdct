@@ -36,15 +36,48 @@ function plainObject(v) {
   const proto = Object.getPrototypeOf(v);
   return proto === Object.prototype || proto === null;
 }
+
+// WHERE THE ADVERSARIAL BOUNDARY ACTUALLY IS — Codex, reviews/011 F13, and it is a limit rather than
+// a bug to fix. A JS object graph has state that JSON does not: properties that are non-enumerable,
+// symbol-keyed, or accessors; own keys on an array beside its indices; a prototype that can make a
+// hole read as filled; and Proxies, which standard JS cannot reliably detect at all. Two graphs
+// differing only in such state serialized to the same bytes.
+//
+// Every one of those that can be SEEN is refused below: own keys are read with `Reflect.ownKeys` so
+// non-enumerables and symbols are found rather than skipped, values are taken from property
+// DESCRIPTORS so no getter is invoked and no prototype can fill a hole, and an array may own nothing
+// but its indices and `length`.
+//
+// What cannot be seen is a Proxy. So this function is NOT an adversarial parser for an arbitrary
+// in-memory graph, and the repo does not claim it is. **The trust boundary is `JSON.parse` output or
+// a validated snapshot** — a body that arrived as text, or one a registered claim-type built from
+// inputs its own `canonicalInputs` accepted. Hardening here narrows the accident; it does not make a
+// hostile object graph safe, and saying otherwise would be a mechanism named rather than implemented.
+function ownDataValue(v, key) {
+  const d = Object.getOwnPropertyDescriptor(v, key);
+  if (d === undefined) throw new Error(`canonical: '${String(key)}' is not an own property, and JSON has no prototype chain to inherit it from`);
+  if (!d.enumerable) throw new Error(`canonical: '${String(key)}' is non-enumerable, so it is invisible to JSON while still being part of the value`);
+  if (!('value' in d)) throw new Error(`canonical: '${String(key)}' is an accessor, and an accessor can answer differently each time it is asked`);
+  return d.value;
+}
 function serialize(v, ancestors) {
   if (Array.isArray(v)) {
     if (Object.getPrototypeOf(v) !== Array.prototype) throw new Error('canonical: an Array subclass is not a JSON array');
     if (ancestors.has(v)) throw new Error('canonical: the value is cyclic, so it has no canonical form');
+    for (const k of Reflect.ownKeys(v)) {
+      if (k === 'length') continue;
+      if (typeof k === 'symbol') throw new Error('canonical: a symbol-keyed property is invisible to JSON, so it cannot be part of an agreed body');
+      if (!/^(0|[1-9][0-9]*)$/.test(k) || Number(k) >= v.length) throw new Error(`canonical: an array owns '${k}', which JSON cannot represent`);
+    }
     ancestors.add(v);
     const parts = [];
+    // by descriptor, never `v[i]` or `i in v`: both consult the prototype, so Array.prototype[0] = 'x'
+    // could fill a hole and change the bytes of a value nobody edited
     for (let i = 0; i < v.length; i++) {
-      if (!(i in v)) throw new Error(`canonical: index ${i} is a hole, which JSON cannot represent`);
-      parts.push(serialize(v[i], ancestors));
+      if (Object.getOwnPropertyDescriptor(v, String(i)) === undefined) {
+        throw new Error(`canonical: index ${i} is a hole, which JSON cannot represent`);
+      }
+      parts.push(serialize(ownDataValue(v, String(i)), ancestors));
     }
     ancestors.delete(v);
     return '[' + parts.join(',') + ']';
@@ -52,8 +85,12 @@ function serialize(v, ancestors) {
   if (v !== null && typeof v === 'object') {
     if (!plainObject(v)) throw new Error(`canonical: ${v.constructor?.name ?? 'a non-plain object'} is not a JSON object`);
     if (ancestors.has(v)) throw new Error('canonical: the value is cyclic, so it has no canonical form');
+    const keys = Reflect.ownKeys(v);
+    for (const k of keys) {
+      if (typeof k === 'symbol') throw new Error('canonical: a symbol-keyed property is invisible to JSON, so it cannot be part of an agreed body');
+    }
     ancestors.add(v);
-    const body = '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + serialize(v[k], ancestors)).join(',') + '}';
+    const body = '{' + keys.sort().map((k) => JSON.stringify(k) + ':' + serialize(ownDataValue(v, k), ancestors)).join(',') + '}';
     ancestors.delete(v);
     return body;
   }

@@ -46,6 +46,19 @@ tell them apart. Three families did exactly that — `NaN` and both infinities b
 Cycles are refused too, having no canonical form. A body that is not a JSON value tree now cannot be
 content-addressed at all, which is the honest answer: it was never a claim.
 
+**And the boundary that is trusted, stated rather than implied.** A JavaScript object graph carries
+state JSON does not — non-enumerable and symbol-keyed properties, accessors, own keys on an array
+beside its indices, a prototype that can make a hole read as filled. Every one of those is refused,
+by reading own keys with `Reflect.ownKeys` and values from property descriptors rather than by
+indexing. One is not detectable in standard JavaScript: a **Proxy**, which can answer differently
+each time it is asked. So `canonical` is not an adversarial parser for an arbitrary in-memory graph
+and is not offered as one. **The trust boundary is `JSON.parse` output or a validated snapshot** — a
+body that arrived as text, or one a registered claim-type built from inputs its own `canonicalInputs`
+accepted. Every entry point in this repo is on that side of the line, checked rather than assumed:
+`reconstruct` reads a claim as text through `JSON.parse`; `cli/vrdct.mjs` builds one from account
+data it decoded itself; `resolve-live` and `demo` call a claim-type's `build`. None of them accepts a
+caller-supplied object graph.
+
 ## Claim-types (`claimtypes/`)
 
 Each surface is a pluggable module —
