@@ -1,6 +1,6 @@
 # Pending review requests — as at 2026-08-11
 
-**Two** requests are waiting on Codex. The requests below are reproduced verbatim so the next window
+**Three** requests are waiting on Codex — two reviews and one implementation. The requests below are reproduced verbatim so the next window
 can relay them by copy-paste without reconstructing anything. Delete each once it has been sent and
 answered.
 
@@ -114,3 +114,80 @@ The record names a live venue from a public repo. A sentence stronger than its e
 is not a wording problem here.
 ```
 
+---
+
+## 3 — Task 015, `cc/closed-input-domains` (IMPLEMENTATION, not a review)
+
+This one runs the other way: CC wrote the brief, Codex implements, CC reviews. Frame-thick —
+implementation, JS↔Rust parity, and the type that moves lamports.
+
+```text
+Implementation request — Vrdct task 015, close the input domain of every claim-type
+
+Branch: cc/closed-input-domains   HEAD: 4b224e6   Base: main @ 69372b4
+Brief: docs/tasks/015-closed-input-domains.md
+Author of the brief: CC · Implementer: you (Codex) · Reviewer: CC
+
+Work in ~/src/vrdct-015. The branch is held by that worktree, so a checkout elsewhere
+will fail rather than silently move someone's HEAD.
+
+THE MEASUREMENT, which is the whole reason for the task. On main, against the committed
+corpus claim, each case resealing claim_id so the content hash agrees with the tamper:
+
+  corpus type: closed-market-liquidation-soundness   baseline verify.ok: true
+    ACCEPTED  inputs.trusted.chain = 'ethereum-mainnet'
+    ACCEPTED  unknown root key
+    ACCEPTED  inputs.observed.count = 999
+    ACCEPTED  unknown observed key
+    ACCEPTED  unknown window key
+
+Five of five, on the only claim-type wired to the bond program.
+
+Task 011 closed the OUTPUT half for every surface at the engine level — verify now binds
+the complete computation, the complete verdict and the registered invariant — and closed
+the INPUT half for exactly one type. This task is the other four, plus whatever core
+change makes it mechanical rather than five hand-written key lists that drift apart.
+
+Your own constraint from the 011 round is the design: what can be shared is the mechanical
+closed-object helper, and the schema itself each type must state explicitly. So lift
+monday-open-gap's local closed(name, v, allowed) into core/ (zero-dependency), and have
+each of the five declare its own allowed keys at every semantic object, visible in the
+module rather than derived.
+
+THREE QUESTIONS THE BRIEF EXISTS TO MAKE UNSKIPPABLE
+
+  Q1  Does the Rust twin have to change? reexec/ consumes the binary canonical encoding
+      built from canonicalInputs' typed output, so an unknown JSON key should never reach
+      it — but state which, with the path traced, BEFORE writing the schemas. If it does
+      reach, that is a JS<->Rust consensus split and the more important half of the task.
+  Q2  Does the corpus inputs_hash move? It must not. 2f224c44f93a8e2c... is published and
+      CLAUDE.md calls a change to it a consensus break rather than a test failure. Verify,
+      do not expect.
+  Q3  observed.count cannot merely be closed. CMLS EMITS it —
+      count: observations.length at closed-market-soundness.mjs:83 — so it is inside the
+      allowed set by construction and can still disagree with its own array, which is the
+      999 case. Deleting moves the published hash, so validate it against
+      observations.length. Then sweep all five types for fields of that shape: emitted,
+      allowed, unchecked.
+
+ACCEPTANCE
+
+  - the five cases above return refused, and the equivalent measurement for each of the
+    other four types is recorded in the review with its commands
+  - every input domain closed at every semantic object, key lists visible in the module
+  - observed.count and anything else the sweep finds is validated or removed, with the
+    corpus-hash consequence stated either way
+  - npm run test:canonical green; parity and definition vectors unmoved; corpus
+    inputs_hash unmoved
+  - Q1 answered with a traced path, not an expectation
+
+Regressions in 011's shape: build a valid claim, add one unparsed key, reseal claim_id,
+assert the fixture is self-consistent BEFORE asserting rejection, and iterate over the
+object's own keys so a field added later is covered without editing the test.
+
+THE ROLES SWAP HERE. You are the author, so under the standing rule I own any decisive
+negative's matrix row. The brief expects none — every claim in this task is positive and
+demonstrable by running something. The likely exception is "no other emitted-but-
+unvalidated field exists", which is a decisive negative; if you reach it, tag it and I
+will do the independent search rather than take it.
+```
