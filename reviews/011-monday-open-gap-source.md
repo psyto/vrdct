@@ -137,3 +137,83 @@ genesis hash and reject RPC endpoints whose `getGenesisHash` disagrees. A genesi
 does not authenticate historical account data or distinguish every fork sharing that genesis, so it
 does not replace the absent historical reconstruction path. It may be useful as an explicit
 descriptor field then, but it is not the fix for F7 or for the open residual today.
+
+---
+
+# Re-review — Task 011, F7/F8 follow-up (4abf6cc)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/monday-open-gap-source`
+
+## Verdict
+
+**CHANGES.** F7 is correctly fixed *at the input boundary*. `closed()` is reached for every JSON
+object in this type's inputs — root, trusted, terms, observed, source, observation, and price — and
+the `oracle_inputs` rule is the right compatibility boundary: absent or exactly `[]`, never a
+meaning-bearing unparsed value. The regressions reseal before checking rejection, so they test the
+verifier rather than the builder. F8's principal copies are also corrected.
+
+This closes the raw input domain, but not the full claim body that `verify()` certifies and a reader
+can see. Re-execution output fields carrying exactly the source context F5 protects remain mutable.
+
+I reran `npm run test:canonical`: 77 JS tests, 162 committed parity vectors, 2 definition vectors,
+and 20 Rust tests pass.
+
+## Findings
+
+### F9 (P1) — source context in `computation` remains forgeable after re-execution
+
+`checks()` verifies only selected computation fields at
+`claimtypes/monday-open-gap.mjs:407–416`. It never compares the recomputed
+`source_chain`, `source_account`, `source_window`, `updates_pinned`, `calendar_version`,
+`threshold_bps`, `direction`, `signed_bps`, or `closure_secs` with the claim body. Nor does generic
+`verify()` compare `verdict.reason`; it checks only the flag.
+
+Starting from a valid claim, I changed each of `computation.source_chain` to `ethereum-mainnet`,
+`computation.source_account` to `11111111111111111111111111111111`,
+`computation.calendar_version` to `202501`, and `computation.updates_pinned` to `999`; after
+recomputing `claim_id`, `verify(...).ok` was `true` in all four cases. Thus F7 rejects a fake
+`inputs.observed.source.genesis_hash`, but a reader can still be shown a fake *reported*
+`computation.source_chain` or calendar under a verifier-approved claim.
+
+**Fix:** bind the complete deterministic output, not only the fields needed to decide the flag.
+The durable engine-level form is an exact canonical comparison of `r.computation` with
+`claim.computation` and `r.verdict` with `claim.verdict`; claim-types then retain extra checks only
+for cross-body bindings such as subject↔source. Add a resealed mutation regression for every
+previously unchecked Monday output and `verdict.reason`. To make the type's *whole reader-facing
+body* closed, also decide and enforce its exact `subject` shape in `checks()` and have the generic
+engine reject an `invariant` different from the registered claim-type invariant. Otherwise an extra
+subject label or changed invariant statement is still a verified body field which re-execution never
+reads.
+
+### F10 (P2) — two remaining current statements omit the cluster binding
+
+F8 updated the main descriptor paragraph, but the task brief at
+`docs/tasks/011-monday-open-gap-source.md:147` still says only which **account and window** a
+rebuild targets, and README's later honest-scope summary at lines 403–407 still calls the gap
+descriptor consensus as **account, window**. Both are current descriptions of this mechanism. They
+need “cluster, account, and window” (or the full descriptor shape), consistently with F5.
+
+## Cross-task audit — CMLS needs its own P1 task, not a Rust parity hotfix
+
+The same accept-by-use parser exists in `closed-market-soundness.mjs`. On the committed corpus I
+hand-authored and resealed `trusted.chain`, an unknown root key, and `observed.count = 999`, as
+reported; I also changed the live provenance fields `observed.account` and `window.from_ts`. All five
+still returned `verify(...).ok === true`. For every variant, `encodeRecords()` produced identical
+bytes and `inputsCommitment()` the identical hash.
+
+This is **P1**, not P0: raw claim JSON is not an input to the on-chain `feed` instruction, and these
+keys therefore do not produce a JS↔Rust verdict split or directly alter a lamport payout. The Rust
+program settles only the committed typed timestamp bytes. But it is a provenance failure in the
+claim surface advertised as sourced: `account` and `window` can be shown as the origin of a pinned
+set which they did not produce. `onchain/client/bond-live.mjs::sourceForClaim()` even reads those
+unvalidated fields when it constructs a Market source descriptor. A correctly used `vrdct check`
+will detect the mismatch and decline to bond; it does not make the claim's own `verify()` truthful.
+
+Handle CMLS in a dedicated task spanning its parser, its corpus regression, the client/keeper source
+construction path, and the sourced-language documentation. Rejecting unrecognised raw claim keys
+and validating the existing full descriptor does **not** change the corpus bytes, its
+`inputs_hash`, or Rust record parsing, so it should not itself create a parity split. Preserve a
+test that the published corpus still verifies and keeps
+`2f224c44f93a8e2c2840c75c2a86872ce3b73336ffcec047654d8d0e2deffccd`; add the resealed CMLS
+provenance mutations. If the task changes the on-chain `Source` model (for example to add an explicit
+cluster), then and only then it needs coordinated JS/Rust definition-hash work.
