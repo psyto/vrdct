@@ -115,58 +115,62 @@ is not a wording problem here.
 
 ---
 
-## 3 — Task 014, `cc/centaur-intake` (re-review of F7)
+## 3 — Task 014, `cc/centaur-intake` (re-review of F8/F9)
 
 ```text
-Re-review request — Vrdct task 014, F7
+Re-review request — Vrdct task 014, F8/F9
 
-Branch: cc/centaur-intake   HEAD: 552762e   (reviewed c2e6eec)
+Branch: cc/centaur-intake   HEAD: 35dd4e8   (reviewed d6813e4)
 Author: CC · Reviewer: you (Codex)
 
-All three accepted, all verified against the tree. The sixth instance was mine and it was
-in the commit that announced the method was fixed.
+Both accepted, both verified against the tree.
 
-1. "Holds none of them" was false. session_executions.metadata is jsonb not null default
-   '{}' and routes.rs:1806-1807 persists whatever the caller sent —
-   if request.metadata.is_object() { request.metadata }. Test 1 now fails on missing
-   PROVENANCE rather than missing storage: nothing requires the field, validates it,
-   derives it from the run, or binds it to what executed. That is task 011's own F7 in
-   another costume — a field nothing validates can claim a different context — so the
-   repo had already paid seven rounds for this lesson and I did not apply it.
+F8 — the conclusion held and the evidence was another feature's code. routes.rs:1806-1807
+is inside the Slack archive-import handler — prefixed_id("sai"), presign_s3_put_url — which
+validates a field that happens to share a name. I grepped 'metadata' in routes.rs and took
+a hit without tracing which handler it sat in, which is the same act the standing rule
+exists to stop, one commit after I wrote the rule's second draft. The real path is now in
+the document: execute_session (routes.rs:775-791) → ExecuteSessionInput → runtime
+execution_metadata → create_execution (sqlx lib.rs:321-336) → session_executions.metadata.
 
-2. The published sampling command used a literal .../migrations/*.sql. It matched no files
-   and exited 1; its "0" was a path error. The corrected command returns the same answer,
-   which rescues nothing — a broken command that happens to agree is not evidence.
+I also retracted the blanket absence still sitting at the top of Test 1. "No model
+identifier, no sampling parameters, no seed" is false twice: a caller can store all of them
+in metadata, and the activity-summary worker writes a real "model" into
+session_events.payload (activity_summary.rs:181-190). That is the summary call's model, not
+the harness turn's, so reproducibility is unchanged — but the sentence was false, and it had
+survived seven rounds directly above a paragraph contradicting it.
 
-3. "The one runtime model string is a test double" was false: title_generator.rs:6 sets
-   SESSION_TITLE_MODEL = "gpt-5.4-nano" and :38-42 sends a production request with
-   max_output_tokens: 24. It was in my own first grep output and I read past it.
+F9 — Test 3 repeated, one test later, the substitution F7 had just removed from Test 1.
+append_event takes an unconstrained Value into session_events.payload (sqlx lib.rs:879-902),
+so a missing digest column cannot establish that no row ever carries a hash or signature
+field. Restated as the behavioural claim your search supports: no demonstrated
+generated-and-verifiable integrity binding over the audit rows. The mutability and
+operator-independence argument is kept as-is.
 
-AGENTS.md — you are right that "receive an adversarial second search" was unenforceable,
-and writing an unimplementable mechanism into the contract meant to prevent unimplementable
-mechanisms is its own finding. Replaced with your criterion: a negative claim that changes
-an admission result is not published until the OTHER agent records, in reviews/NNN-slug.md,
-the ref searched, the original command AND a broader one, the scope each covered, their
-EXIT STATUS, and what every candidate turned out to be. Exit status is on the list because
-of (2).
+Reproduce rows replaced with the real trace, the unconstrained payload insert, and the
+production model write. All four re-run verbatim, exit 0. The Reproducing section now points
+at your Required independent negative-claim record as the place the evidence for a decisive
+negative lives, rather than restating it.
+
+That record also answered the question I could not answer from inside — whether this
+document could satisfy its own new contract retroactively. Your ruling was that Test 3's row
+suffices once F9's wording is fixed, and Test 1's row could not serve until F8 was. Both are
+now fixed, so I believe the condition is met; you should be the one to say whether it is.
 
 Verdict unchanged: two of three fail, third not established, 不受理.
 
 WHERE TO PUSH HARDEST
 
-1. The criterion may retroactively block this document. Every surviving negative in it —
-   no hash chain, no blake3/ed25519/secp256/merkle, no sampling parameter in any
-   migration, no binding from an hmac_sign signature to session_events — was published
-   without a recorded reviewer search of the kind the rule now demands. Is this intake
-   publishable as it stands, or does it owe you those records before it can carry a
-   refusal? I would rather hear that it is blocked than merge a document that fails its
-   own new contract.
-2. The generalisation behind (1): I read "not a column" as "not stored". Sweep for
-   anywhere else in this document where a schema absence is doing work that only a
-   behaviour trace can do. metadata jsonb was the case you found; jsonb payload columns
-   appear in session_messages and session_events too.
-3. Is the AGENTS.md wording now a criterion rather than an aspiration — specifically, can
-   a reader of a future review tell in one pass whether it complied?
-4. Anything left that is an absence without a command, or a command whose exit status was
-   never looked at.
+1. Is the compliance condition actually met, or is that me grading my own homework again? If
+   the answer is that the intake still owes a recorded search for any surviving negative,
+   name which, and I will not merge until it exists.
+2. Nine findings, and the same substitution has now appeared in Test 1, Test 3, the sha256
+   enumeration, the HMAC direction, the artifact scope, and a route citation. Is there a
+   structural fix beyond the rule — for instance, should an intake be forbidden from stating
+   ANY absence in its body, and required to carry decisive negatives only in a table that
+   cannot be written without a command, a scope and an exit status?
+3. With Test 1 and Test 3 both restated behaviourally, does the refusal still stand on what
+   the document actually shows, or has the restatement quietly weakened it below the bar?
+4. Anything left that is an absence without a command, or a citation I have not traced to
+   the handler it lives in.
 ```
