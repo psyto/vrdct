@@ -195,3 +195,74 @@ a separately sourced market/product analysis supports more.
   and public API documentation.
 - Confirmed Test 2's `NOT ESTABLISHED` status is not used as a market verdict or admission path.
 - `git diff --check main...1b202e3`: clean.
+
+---
+
+# Re-review — Task 014, Centaur agent-execution intake (`77105ab`)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/centaur-intake`
+
+## Verdict
+
+**CHANGES.** F4 and F5 are addressed. The HMAC text now correctly distinguishes a configured
+outbound request signature from public tamper-evidence over the execution record, and residual 7
+properly names the unexamined deployment question. That uncertainty does not require admission: the
+source offered here is Centaur's *published audit trail* at one commit, and admission requires
+affirmative evidence that its record is complete, bound, and independently verifiable. A possible
+different deployment is a new source/configuration that must supply that evidence; it cannot repair
+the offered one by speculation. `NOT ESTABLISHED` remains confined to Test 2 and does not infect the
+admission decision.
+
+Test 3 still overstates the searched surface, however. The codebase has integration-produced,
+external transcript artifacts, so “every artifact is a mutable Postgres row” is false. They are
+insufficient for canonical re-execution on the evidence available, but they must be scoped in rather
+than silently excluded.
+
+## Finding
+
+### F6 (P1) — Test 3 again treats the Postgres audit trail as every execution artifact
+
+`docs/tasks/014-centaur-agent-execution-intake.md:133-136` says every artifact is a mutable Postgres
+row. The pinned tree contains integration paths which write execution-derived material to external
+systems:
+
+- `services/githubbot/src/comment-bot.ts:1-47` constructs a GitHub comment from the answer plus a
+  collapsed chain-of-thought transcript containing reasoning and tool actions; `githubbot/src/index.ts:240`
+  says the write-capable sandbox posts its transcript back.
+- `services/discordbot/src/discord-narrator.ts:41-46` declares its reasoning blurbs to be fully
+  append-only Discord messages, with no bot message edited or deleted.
+- `services/linearbot/src/comment-bot.ts:46-50` similarly builds a comment-thread transcript from
+  reasoning and tool actions (although that integration live-edits its comment).
+
+These are not a rescue for admission. The GitHub and Linear collectors cap/flatten their transcript,
+the Discord narrator expressly omits commands, tools, and plan updates, and none of the examined
+paths supplies a canonical binding to `session_events`, a full request/response record, or an
+independently retrievable integrity proof. Nor does an application choosing not to edit a Discord
+message make the message cryptographically tamper-evident. But the presence of external artifacts
+directly defeats the universal Postgres assertion and means the existing search has not established
+that all execution-record surfaces share the same mutation property.
+
+**Fix:** scope the failure to the documented Postgres audit trail: its `session_messages`,
+`session_executions`, and `session_events` rows have no demonstrated tamper-evident commitment. Add
+the integration transcripts as an explicit residual: they are externally emitted but have not been
+shown complete, canonically bound, or independently integrity-verifiable. The source can remain
+refused on that narrow record, while a deployment offering a complete external transcript becomes a
+separate intake candidate rather than counter-evidence erased by wording.
+
+## Method note
+
+Adopt the proposed rule for future intakes: a grep is candidate discovery, never proof of a system
+capability or its absence. A negative admission claim should name its exact scope and command, trace
+every candidate it returns to behaviour, and receive an adversarial second search before it changes
+an admission result. “No demonstrated mechanism in the examined source/configuration” is a valid
+bounded disposition; “no mechanism exists” needs a much stronger, threat-modelled argument.
+
+## Checks performed
+
+- Re-ran the revised `HmacSignSecret` and HMAC-secret documentation commands at Centaur
+  `74979c19bf0b37cfc2c4b1f5510713841af03df1`; their stated outbound-signing results reproduce.
+- Traced the GitHub, Discord, and Linear transcript renderers and their documented completeness
+  limits.
+- Confirmed the HMAC candidate is not automatically bound to `session_events`, while noting that the
+  record's offered scope—not an unexamined deployment—is the basis for refusal.
+- `git diff --check main...77105ab`: clean.
