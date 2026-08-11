@@ -88,6 +88,16 @@ Guidance, not a hard boundary. The quality control is the cross-review.
   a command that matched no files and returned 1; its zero was a path error, and it agreed with the
   truth by accident. *"No demonstrated mechanism in the examined source"* is a valid bounded
   disposition; *"no mechanism exists"* needs a threat-modelled argument.
+- **Decisive negatives carry an evidence ID, and the row behind it belongs to the reviewer.** The
+  alternative considered was banning negative prose outright; it was rejected, because prose is where
+  an intake explains itself and no failure was ever caused by writing a negative — each was caused by
+  a sentence whose scope had drifted from the command underneath it. So the author tags every
+  admission-deciding negative `N1`, `N2`, … where it is claimed, and the reviewer owns a row with that
+  ID in the `reviews/NNN-slug.md` matrix. **An author may not write the row and a reviewer may not
+  write the sentence.** A decisive negative with no matching row is not evidence yet. Everything else
+  in the body is either a positive citation or an explicitly non-decisive residual, and says which.
+  Task 014 ended with ten findings and exactly two decisive negatives; that ratio is the argument for
+  separating them.
 - **Task numbers are a shared resource too.** Two windows numbered a task 012 on the same day. Read
   `docs/tasks/` before claiming a number.
 - **Stage by path, never `git add -A`.** In a shared tree it will pick up another window's untracked

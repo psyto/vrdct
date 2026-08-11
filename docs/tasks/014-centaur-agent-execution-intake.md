@@ -132,7 +132,7 @@ production request carrying `"model"` and `"max_output_tokens": 24`. It generate
 rather than running the agent turn, so it does not make a turn reproducible; but the sentence was a
 universal about the runtime and it was wrong.
 
-**Result: FAIL** — on execution-bound provenance. A turn's model, sampling parameters, seed and
+**Result: FAIL — decisive negative `N1`**, on execution-bound provenance. A turn's model, sampling parameters, seed and
 assembled prompt are not recorded as anything derived from or bound to the run. They may be *stored*,
 by a caller, in an unvalidated jsonb field the schema neither requires nor checks.
 
@@ -269,8 +269,16 @@ eight commits to an execution record:
 digest site.)
 
 **And a list of one spelling of SHA-256 is not evidence about other commitment mechanisms**, which is
-the second half of F2 and the more useful half. Searched tree-wide for `blake3`, `ed25519`, `secp256`
-and `merkle`: none of them exists anywhere in the tree.
+the second half of F2 and the more useful half. Searched **across `*.rs`** for `blake3`, `ed25519`,
+`secp256` and `merkle`: no hit, exit 1.
+
+The first version of that sentence said "none of them exists anywhere in the tree" while its command
+was scoped to `*.rs` — the eighth appearance of the same scope mismatch (Codex, reviews/014 F10). The
+full tree has five, and all five are named here rather than summarised: `DISCORD_PUBLIC_KEY` described
+as an Ed25519 public key in `contrib/scripts/bootstrap-k8s-secrets.sh:61` and
+`services/discordbot/README.md:40`, and three `blake3-wasm` entries in `docs/package-lock.json`, a
+transitive dependency of the documentation site. None is a commitment over an audit row, so the
+conclusion does not move; the sentence was still false.
 
 **HMAC is a different story, and the previous version of this paragraph got it wrong** (Codex,
 reviews/014 F4). It said every HMAC authenticates an inbound request and was therefore irrelevant to
@@ -300,7 +308,7 @@ Protection is row-level security (migrations `0019`–`0023`, `0042`). RLS answe
 row*. It never answers *was this row changed after it was written* — and the operator, who is the party
 a verifier would need to be independent of, is on the permitted side of every policy.
 
-**Result: FAIL** — on tamper-evidence, which is the property this test is about, and not on the
+**Result: FAIL — decisive negative `N2`**, on tamper-evidence, which is the property this test is about, and not on the
 existence of an audit trail, which Centaur has.
 
 ## Verdict — 不受理 / does not open a market
@@ -454,6 +462,13 @@ absences, which published "seven, exhaustive over the tree" from a command that 
 several. Three passes, three different wrong numbers for the same question, each written with more
 confidence than the last.
 
+**Exactly two negatives in this document decide the admission: `N1` (Test 1, execution-bound
+provenance) and `N2` (Test 3, an integrity binding over the audit rows).** Each is tagged where it is
+claimed and each has a row owned by the reviewer, per the rule in `AGENTS.md` — the author does not
+write the row and the reviewer does not write the sentence. Every other absence in this document is
+supporting or an explicitly non-decisive residual, and says which. Ten findings produced two decisive
+negatives, which is why they are now separated from the prose that surrounds them.
+
 **The reviewer's independent record is in `reviews/014-centaur-agent-execution-intake.md`**, under
 *Required independent negative-claim record*, and it is what the `AGENTS.md` rule demands rather than
 a courtesy: the ref searched, this document's original command and a broader one, the scope each
@@ -491,7 +506,8 @@ git checkout 74979c19bf0b37cfc2c4b1f5510713841af03df1   # 2026-08-10 22:17:16 +0
 | | `git grep -in audit -- '*.rs' '*.sql' \| wc -l` | **0** |
 | | `sed -n 123,131p docs/pages/security.mdx` | a section titled **Audit trail** |
 | **digest sites** | `git grep -n 'Sha256::new()\|Sha256::digest\|Sha256::default()' -- '*.rs' \| grep -v '/tests/\|_test\.rs'` | **eight**, tree-wide |
-| no `blake3` / `ed25519` / `secp256` / `merkle` | `git grep -ni 'blake3\|ed25519\|secp256\|merkle' -- '*.rs'` | nothing (this row says nothing about HMAC — see the two below) |
+| no `blake3` / `ed25519` / `secp256` / `merkle` **in Rust** | `git grep -ni 'blake3\|ed25519\|secp256\|merkle' -- '*.rs'` | no output, **exit 1** (this row says nothing about HMAC — see the two below) |
+| …and the five outside Rust, named | `git grep -ni 'blake3\|ed25519\|secp256\|merkle'` | **exit 0, 5 hits**: `DISCORD_PUBLIC_KEY` as an Ed25519 key in `contrib/scripts/bootstrap-k8s-secrets.sh:61` and `services/discordbot/README.md:40`; three transitive `blake3-wasm` entries in `docs/package-lock.json` |
 | HMAC also signs **outbound** | `git grep -n 'HmacSignSecret' -- '*.rs'` | 6 lines; `centaur-perms/src/tools.rs:168` — *"a per-request HMAC signature iron-proxy mints and writes onto the upstream request"* |
 | …with a configurable algorithm over the body | `sed -n '714,732p' services/console/docs/API.md` | signs matching **outbound** requests; `signature_algorithm` one of `sha256`/`sha512`/`sha1`; `signature_message` has access to `.Body` |
 | responses can be persisted | `sed -n '4333p;6389,6406p' services/api-rs/crates/centaur-session-runtime/src/lib.rs` | the pump hands each stdout line to `append_output_line`, which stores `Value::String(safe_line)` |
