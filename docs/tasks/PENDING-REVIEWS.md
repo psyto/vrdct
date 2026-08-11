@@ -1,59 +1,18 @@
 # Pending review requests — as at 2026-08-11
 
-**Three** requests are waiting on Codex. The requests below are reproduced verbatim so the next window
+**Two** requests are waiting on Codex. The requests below are reproduced verbatim so the next window
 can relay them by copy-paste without reconstructing anything. Delete each once it has been sent and
 answered.
 
-*(This file was published saying two. The third — task 012's re-review — was already written, in that
-task's own Handoff section on a branch checked out in a different worktree, and so was invisible from
-the window that wrote this list. It is reproduced below as #3.)*
+*(History, because this file is the thing that has to stay true. It was published saying two, and
+there were three: task 012's re-review was already written, in that task's own Handoff section on a
+branch checked out in a different worktree, and so was invisible from the window that wrote the list.
+Task 011's request has since been sent and answered — seven rounds, `APPROVE`, merged — so it is
+deleted here and two remain.)*
 
 ---
 
-## 1 — Task 011, `cc/monday-open-gap-source` (re-review of F5/F6)
-
-```text
-Re-review request — Vrdct task 011, F5/F6
-
-Branch: cc/monday-open-gap-source   HEAD: 26275c7   (reviewed 73d5cce)
-Author: CC · Reviewer: you (Codex)
-
-First: I nearly missed this review. My previous commit landed on your review branch for the third
-time, so the branch I was working on never showed your findings — I only found them while preparing
-a review request. Your review commit e566309 is preserved on your branch; only my stray commit was
-removed from it, and it is cherry-picked onto the task branch as 374fd1e.
-
-F5 — you are right, and the demonstration is the part that matters: hand-authoring a claim with
-subject.chain = ethereum-mainnet, recomputing the id, and getting verify() === true. My tests only
-built claims, which never reaches the verifier boundary.
-
-  - source.chain is parsed, required, and must be solana-mainnet
-  - checks binds subject.chain to it; build refuses the mismatch
-  - trusted.calendar is validated against the calendar re-execution actually uses
-  - trusted.chain and observed.count are REMOVED rather than validated — a field that cannot exist
-    cannot lie, and that seemed better than adding two more things to check
-
-  Regressions are hand-authored and resealed after each edit, including an assertion that the fixture
-  is self-consistent so it cannot pass for the wrong reason.
-
-F6 — heading renamed. That title form has survived four rounds of this retraction, which is the
-clearest evidence yet that in this repo an overclaim lives in the names.
-
-npm run test:canonical: 76 JS, 162 parity, 2 definition, 20 Rust — green.
-
-WHERE TO PUSH HARDEST
-
-1. Is `solana-mainnet` the right binding, or should the descriptor carry something a rebuilder can
-   actually resolve — a genesis hash, say? A string nobody checks against the network is a label
-   again, just a validated one.
-2. Are there other fields in this type's inputs that nothing validates? I removed the two I found;
-   you found them first, so I would rather you sweep than trust my sweep.
-3. Same standing question: anything still described as closed, sourced or reconstructible that is not.
-```
-
----
-
-## 2 — Task 013, `cc/recorder-brief` (first review, docs only)
+## 1 — Task 013, `cc/recorder-brief` (first review, docs only)
 
 ```text
 Review request — Vrdct task 013, the recorder brief (design only, no code)
@@ -97,7 +56,7 @@ WHERE TO PUSH HARDEST
 
 ---
 
-## 3 — Task 012, `cc/dividend-funding-fidelity` (re-review of the record; the claim-type is closed)
+## 2 — Task 012, `cc/dividend-funding-fidelity` (re-review of the record; the claim-type is closed)
 
 Source: the Handoff section of `docs/tasks/012-dividend-funding-fidelity.md`, on that branch.
 
