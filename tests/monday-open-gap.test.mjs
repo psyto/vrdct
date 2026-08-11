@@ -4,6 +4,7 @@ import * as gap from '../claimtypes/monday-open-gap.mjs';
 import { verify } from '../core/verify.mjs';
 import { resolve } from '../core/resolution.mjs';
 import { claimId } from '../core/claim.mjs';
+import { canonical } from '../core/hash.mjs';
 import { marketStatus, STATUS } from '../core/campana.mjs';
 
 const unix = (y, m, d, hour, minute = 0, second = 0) => Math.floor(Date.UTC(y, m - 1, d, hour, minute, second) / 1000);
@@ -397,4 +398,33 @@ test('the whole re-executed output is bound: no computation field, reason, invar
   // and the subject, which re-execution never reads at all
   assert.equal(verify(forge((c) => { c.subject.label = 'SPYx on Jupiter'; })).ok, false, 'an extra subject key survived');
   assert.equal(verify(forge((c) => { delete c.subject.chain; })).ok, false, 'a subject missing its chain survived');
+});
+
+// Codex, reviews/011 F11. One layer below F9: the whole-output binding compares canonical strings, so
+// it is only as strong as the canonicalizer. `JSON.stringify` renders NaN and both Infinities as
+// `null`, so a null field could be replaced by NaN and serialize to identical bytes — the content
+// hash did not move, no reseal was needed, and the comparison agreed about a body that did not.
+test('a non-finite number cannot impersonate null: the canonicalizer refuses what JSON would coerce', () => {
+  const subject = { chain: 'solana-mainnet', priceAccount: ACCOUNT };
+  // an anchor inside Friday's session — no closure, so the lag fields are null, and they are among
+  // the fields checks() never compared
+  const noClosure = gap.build({ subject, terms: terms({ anchorTs: unix(2026, 8, 7, 18) }), updates: baseline(), source: src() });
+  assert.equal(noClosure.verdict.flag, 'STALE');
+  assert.equal(noClosure.computation.close_lag_secs, null);
+  assert.equal(verify(noClosure).ok, true);
+
+  const forged = JSON.parse(JSON.stringify(noClosure));
+  forged.computation.close_lag_secs = Number.NaN;
+  assert.equal(verify(forged).ok, false, 'NaN impersonated null');
+  // and such a body can no longer be content-addressed at all, which is the point: it was never a
+  // representable claim, and the old canonicalizer gave it a hash anyway
+  assert.throws(() => claimId(forged), /not representable/);
+
+  for (const bad of [Number.NaN, Infinity, -Infinity]) {
+    assert.throws(() => canonical({ x: bad }), /not representable/);
+    assert.throws(() => canonical([bad]), /not representable/);
+  }
+  // and a finite number is untouched, so this rejects only what JSON would have coerced
+  assert.equal(canonical({ x: -0 }), '{"x":0}');
+  assert.equal(canonical({ x: 1e21 }), '{"x":1e+21}');
 });

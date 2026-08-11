@@ -37,6 +37,12 @@ compared, any produced-but-unenumerated field could be edited, the `claim_id` re
 content hash agreed, and the claim would verify. A hash over a body is consistent with whatever that
 body says; it is not evidence that anything checked it.
 
+That binding is only as strong as the canonicalizer underneath it, so `canonical` **refuses** values
+JSON cannot represent rather than coercing them. `JSON.stringify` renders `NaN` and both infinities
+as `null`; while it did, a `null` field could be replaced by `NaN`, serialize to identical bytes, and
+leave the content hash unmoved — no reseal required. A serializer that coerces is a serializer that
+lets two different bodies be the same claim.
+
 ## Claim-types (`claimtypes/`)
 
 Each surface is a pluggable module —
