@@ -217,3 +217,57 @@ test that the published corpus still verifies and keeps
 `2f224c44f93a8e2c2840c75c2a86872ce3b73336ffcec047654d8d0e2deffccd`; add the resealed CMLS
 provenance mutations. If the task changes the on-chain `Source` model (for example to add an explicit
 cluster), then and only then it needs coordinated JS/Rust definition-hash work.
+
+---
+
+# Re-review — Task 011, F9/F10 follow-up (dece0b6)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/monday-open-gap-source`
+
+## Verdict
+
+**CHANGES.** F9 is correctly moved to the engine. The contract of `buildClaim()` is already to save
+the exact `{ computation, verdict }` returned by `reexec()`, so canonical whole-output equality is
+claim-type-agnostic: it uniformly strengthens the registered-module contract rather than teaching
+the engine a surface-specific rule. `checks()` remains the correct place for subject↔source and
+other cross-body relations. F10's remaining cluster/account/window statements are corrected.
+
+The normal JSON compatibility story is sound: object key order is deliberately canonicalized; JSON
+number spelling has already become a JS number before comparison; and none of the five types
+post-processes `reexec()` output in `build`. A future type with display-only or emitted information
+must put it outside the semantic claim body, or have `reexec()` derive it. It must not rely on an
+unchecked stored computation field.
+
+I reran `npm run test:canonical`: 78 JS tests, 162 committed parity vectors, 2 definition vectors,
+and 20 Rust tests pass. The corpus claim verifies with its published commitment unchanged.
+
+## Finding
+
+### F11 (P2) — `canonical()` aliases non-JSON numbers to `null`, bypassing whole-output equality
+
+`core/hash.mjs` delegates primitive serialization to `JSON.stringify`. In JavaScript,
+`JSON.stringify(NaN)` and `JSON.stringify(Infinity)` both produce `"null"`. Consequently, on a
+valid Monday claim whose open-market anchor makes `close_lag_secs`, `open_lag_secs`, and
+`closure_secs` legitimately `null`, I changed each field independently to `NaN`, recomputed
+`claim_id`, and got `verify(...).ok === true`; the mutated claim id was identical to the original.
+Those fields are not separately enumerated by `checks()`, which is the point of replacing the list.
+
+This is outside a parsed JSON file — JSON text cannot express `NaN` or `Infinity` — so it is not a
+Rust or lamport-payout split. It still violates the engine API's exact-body guarantee for a
+programmatically supplied claim and makes the claimed canonical encoding non-injective.
+
+**Fix:** make `canonical()` reject values outside the JSON domain before it serializes them, at a
+minimum non-finite numbers, `undefined`, functions, symbols, and bigint values. `verify()` should
+then return its normal malformed-claim result. Add a direct-object regression (not a
+`JSON.parse(JSON.stringify(...))` clone) that reseals a `null → NaN` and `null → Infinity` output
+mutation and expects rejection.
+
+## CMLS scope answer
+
+CMLS remains a dedicated **P1 input/provenance** task. F9 now protects its computation, verdict, and
+invariant output everywhere, but it does not make `canonicalInputs()` read `trusted.chain`, unknown
+root keys, `observed.count`, or the account/window provenance its raw claim displays. The CMLS task
+should use a small shared `assertClosedObject(name, value, allowedKeys)` helper only if it stays a
+mechanical helper; each claim-type must still declare its own schema. A global allowlist would merely
+move the stale list to a less visible place, while a single generic output comparison was correct
+because all registered types share that exact output contract.
