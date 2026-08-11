@@ -74,6 +74,30 @@ Guidance, not a hard boundary. The quality control is the cross-review.
   the collision becomes an error instead of a silence. Task 007's review ran in its own worktree and
   nothing went wrong; from 008 onward reviews ran in the shared directory, and that is exactly where
   the three misplaced commits are. See `HANDOFF.md` for what it cost.
+- **A grep is candidate discovery, never proof of a capability or its absence.** Adopted after task
+  014, where every `file:line` citation held across five rounds and *every* claim that quantified an
+  absence failed at least once: four digest sites became seven became eight; "every HMAC
+  authenticates inbound" met an outbound request-signer; "every artifact is a mutable Postgres row"
+  met three integrations that post transcripts elsewhere. A line count had stood in for a capability
+  each time. And the first version of this rule said such a claim must "receive an adversarial second
+  search", which is a mechanism named rather than implemented — nothing could check whether one
+  happened. The criterion is therefore: **a negative claim that changes an admission result is not
+  published until the OTHER agent records, in `reviews/NNN-slug.md`, the ref it searched, the original
+  command and a broader one, the scope each covered, their exit status, and what every candidate they
+  returned turned out to be.** Exit status is in the list because a claim in task 014 was supported by
+  a command that matched no files and returned 1; its zero was a path error, and it agreed with the
+  truth by accident. *"No demonstrated mechanism in the examined source"* is a valid bounded
+  disposition; *"no mechanism exists"* needs a threat-modelled argument.
+- **Decisive negatives carry an evidence ID, and the row behind it belongs to the reviewer.** The
+  alternative considered was banning negative prose outright; it was rejected, because prose is where
+  an intake explains itself and no failure was ever caused by writing a negative — each was caused by
+  a sentence whose scope had drifted from the command underneath it. So the author tags every
+  admission-deciding negative `N1`, `N2`, … where it is claimed, and the reviewer owns a row with that
+  ID in the `reviews/NNN-slug.md` matrix. **An author may not write the row and a reviewer may not
+  write the sentence.** A decisive negative with no matching row is not evidence yet. Everything else
+  in the body is either a positive citation or an explicitly non-decisive residual, and says which.
+  Task 014 ended with ten findings and exactly two decisive negatives; that ratio is the argument for
+  separating them.
 - **Task numbers are a shared resource too.** Two windows numbered a task 012 on the same day. Read
   `docs/tasks/` before claiming a number.
 - **Stage by path, never `git add -A`.** In a shared tree it will pick up another window's untracked
