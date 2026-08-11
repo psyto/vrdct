@@ -144,8 +144,8 @@ would *close* the residual. It does not. Selection removes the choice within a s
 closes omission, and rebuilding here needs to decode *prices* from the account rather than merely
 observe it was written to — account-layout-specific in a way CMLS's timestamp-only rebuild is not, and
 no such adapter ships. What this task delivers is a **necessary condition**: a claim now names exactly
-which account and window a rebuild must target, and a set inconsistent with its own descriptor never
-re-executes. Calling that "closed" would be the third mechanism this type has published without
+which cluster, account and window a rebuild must target, and a set inconsistent with its own
+descriptor never re-executes. Calling that "closed" would be the third mechanism this type has published without
 having.
 
 **F2 — the README still carried task 009's two-print design** in the numbered honest-scope list, the

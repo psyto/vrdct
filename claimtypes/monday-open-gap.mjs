@@ -404,7 +404,15 @@ export function checks(claim, r) {
   const sourceAccount = claim?.inputs?.observed?.source?.account;
   const subjectChain = claim?.subject?.chain;
   const sourceChain = claim?.inputs?.observed?.source?.chain;
+  // The subject is reader-facing body that re-execution never reads, so the engine's whole-output
+  // binding cannot reach it. Left open, an extra subject key is a label a verifier certified without
+  // looking at (Codex, reviews/011 F9). This type's subject is exactly two fields.
+  const SUBJECT_KEYS = ['chain', 'priceAccount'];
+  const subjectClosed = isObject(claim?.subject)
+    && SUBJECT_KEYS.every((k) => k in claim.subject)
+    && Object.keys(claim.subject).every((k) => SUBJECT_KEYS.includes(k));
   return [
+    ['the subject is exactly { chain, priceAccount }', subjectClosed, Object.keys(claim?.subject ?? {}).join(', ') || 'missing'],
     ['subject names the account the inputs came from', typeof subjectAccount === 'string' && subjectAccount === sourceAccount, `${subjectAccount ?? 'missing'} vs ${sourceAccount ?? 'missing'}`],
     ['subject names the chain the inputs came from', typeof subjectChain === 'string' && subjectChain === sourceChain, `${subjectChain ?? 'missing'} vs ${sourceChain ?? 'missing'}`],
     ['closure straddle reproduces', r.computation.straddles_closure === claim.computation.straddles_closure, `${r.computation.straddles_closure}`],

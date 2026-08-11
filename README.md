@@ -29,6 +29,14 @@ byte-for-byte with the on-chain program). Zero dependencies.
 The engine is **claim-type-agnostic** — new surfaces are added by registering a module, never by
 editing the engine. This is `1 engine × N surfaces`.
 
+`verify` binds the **whole** re-executed output: the complete `computation`, the complete `verdict`
+(not only its flag), and the registered `invariant`, each compared canonically against the claim
+body. A claim-type's own checks explain *which* part disagreed; they are not the binding. That
+division exists because the alternative had failed — while each type enumerated the fields it
+compared, any produced-but-unenumerated field could be edited, the `claim_id` recomputed so the
+content hash agreed, and the claim would verify. A hash over a body is consistent with whatever that
+body says; it is not evidence that anything checked it.
+
 ## Claim-types (`claimtypes/`)
 
 Each surface is a pluggable module —
@@ -403,8 +411,8 @@ Three residual assumptions, all named rather than hidden:
    `monday-open-gap` no longer pins two chosen prints: `terms.anchorTs` names the closure, the
    calendar gives both bells, and re-execution **selects** the last update at or before the closing
    bell and the first at or after the reopen from a pinned set. Its source descriptor is validated
-   consensus — account, window, and a refusal to re-execute a set that reaches outside it or a window
-   that stops short of the bells.
+   consensus — cluster, account, window, and a refusal to re-execute a set that reaches outside it or
+   a window that stops short of the bells.
 
    **It is still in the unsourced case, and the reason is worth being exact about.** Selection removes
    the choice within a set; only a *rebuild* closes omission, and rebuilding here must decode prices

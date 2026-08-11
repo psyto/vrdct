@@ -357,3 +357,44 @@ test('the input domain is closed: an unrecognised key cannot be resealed into a 
   // and it is the input parser refusing, so re-execution and any future encoder refuse identically
   assert.throws(() => gap.canonicalInputs({ ...honest.inputs, note: 'x' }), /closed domain/);
 });
+
+// Codex, reviews/011 F9. Closing the INPUT domain left the other half open: fields re-execution
+// PRODUCES were compared only where `checks()` happened to enumerate them, so source_chain,
+// source_account, calendar_version and updates_pinned could each be rewritten, resealed and verified.
+// The sweep below is deliberately not a list of field names — a list is the thing that goes stale.
+test('the whole re-executed output is bound: no computation field, reason, invariant or subject survives a reseal', () => {
+  const subject = { chain: 'solana-mainnet', priceAccount: ACCOUNT };
+  const honest = gap.build({ subject, terms: terms(), updates: baseline(), source: src() });
+  assert.equal(verify(honest).ok, true);
+
+  const forge = (mutate) => {
+    const c = JSON.parse(JSON.stringify(honest));
+    mutate(c);
+    return { ...c, claim_id: claimId(c) };
+  };
+  const twist = (v) => (
+    typeof v === 'string' ? `${v}-tampered`
+      : typeof v === 'number' ? v + 1
+        : typeof v === 'boolean' ? !v
+          : v === null ? 0
+            : Array.isArray(v) ? [...v, 1] : { ...v, extra: 1 });
+
+  const fields = Object.keys(honest.computation);
+  assert.ok(fields.length >= 15, 'the sweep must actually cover this type\'s output');
+  for (const k of fields) {
+    const forged = forge((c) => { c.computation[k] = twist(c.computation[k]); });
+    assert.notDeepEqual(forged.computation[k], honest.computation[k], `${k}: the mutation changed nothing, so the case proves nothing`);
+    assert.equal(claimId(forged), forged.claim_id, `${k}: the fixture must be self-consistent`);
+    assert.equal(verify(forged).ok, false, `computation.${k} survived the verifier`);
+  }
+
+  // an ADDED output field is an output field too
+  assert.equal(verify(forge((c) => { c.computation.note = 'for the reader'; })).ok, false, 'an extra computation key survived');
+  // the half of the verdict a human actually reads, which only the flag was ever compared against
+  assert.equal(verify(forge((c) => { c.verdict.reason = 'because the issuer said so'; })).ok, false, 'verdict.reason survived');
+  // the sentence the claim says it settles, which nothing re-executes
+  assert.equal(verify(forge((c) => { c.invariant = { ...c.invariant, statement: 'something else entirely' }; })).ok, false, 'a rewritten invariant survived');
+  // and the subject, which re-execution never reads at all
+  assert.equal(verify(forge((c) => { c.subject.label = 'SPYx on Jupiter'; })).ok, false, 'an extra subject key survived');
+  assert.equal(verify(forge((c) => { delete c.subject.chain; })).ok, false, 'a subject missing its chain survived');
+});
