@@ -37,11 +37,14 @@ compared, any produced-but-unenumerated field could be edited, the `claim_id` re
 content hash agreed, and the claim would verify. A hash over a body is consistent with whatever that
 body says; it is not evidence that anything checked it.
 
-That binding is only as strong as the canonicalizer underneath it, so `canonical` **refuses** values
-JSON cannot represent rather than coercing them. `JSON.stringify` renders `NaN` and both infinities
-as `null`; while it did, a `null` field could be replaced by `NaN`, serialize to identical bytes, and
-leave the content hash unmoved — no reseal required. A serializer that coerces is a serializer that
-lets two different bodies be the same claim.
+That binding is only as strong as the canonicalizer underneath it, so `canonical` accepts a **JSON
+value tree** and refuses everything else. A serializer that maps one value onto another value's bytes
+lets two different bodies be the same claim: the content hash does not move, and nothing above can
+tell them apart. Three families did exactly that — `NaN` and both infinities became `null`;
+`undefined` and array holes vanished, so `[undefined]`, `[,]` and `[]` were one string; and `Date`,
+`Map`, `Set`, `RegExp` and class instances all have no own enumerable keys, so each of them was `{}`.
+Cycles are refused too, having no canonical form. A body that is not a JSON value tree now cannot be
+content-addressed at all, which is the honest answer: it was never a claim.
 
 ## Claim-types (`claimtypes/`)
 
