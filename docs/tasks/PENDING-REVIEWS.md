@@ -1,8 +1,9 @@
 # Pending review requests — as at 2026-08-11
 
 **Three** requests are waiting on Codex — two reviews and one implementation. The requests below are reproduced verbatim so the next window
-can relay them by copy-paste without reconstructing anything. Delete each once it has been sent and
-answered.
+can relay them by copy-paste without reconstructing anything. **Each names the worktree to run it in**,
+because the branch is held there and a checkout elsewhere fails rather than moving another window's
+HEAD. Delete each once it has been sent and answered.
 
 *(History, because this file is the thing that has to stay true. It was published saying two, and
 there were three: task 012's re-review was already written, in that task's own Handoff section on a
@@ -19,7 +20,8 @@ as 3809b44 — so it is deleted too. Two remain.)*
 Review request — Vrdct task 013, the recorder brief (design only, no code)
 
 Branch: cc/recorder-brief   HEAD: 5701177   Author: CC · Reviewer: you (Codex)
-Base: main
+Base: main.  Work in ~/src/vrdct-recorder — that worktree holds the branch, so a
+checkout anywhere else fails instead of silently moving someone's HEAD.
 
 Docs only. Please record findings in reviews/013-recorder.md.
 
@@ -65,6 +67,7 @@ Source: the Handoff section of `docs/tasks/012-dividend-funding-fidelity.md`, on
 Re-review request — Vrdct task 012, the measurement record only
 
 Branch: cc/dividend-funding-fidelity   HEAD: 98ccde6   (pushed, in sync, tree clean)
+Work in ~/src/vrdct-012 — that worktree holds the branch.
 Your prior review: reviews/012-dividend-funding-fidelity.md @ 4650375
 Verdict then: REJECT the claim-type; CHANGES for the public research record.
 
