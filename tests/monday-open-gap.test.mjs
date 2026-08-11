@@ -304,7 +304,9 @@ test('a claim cannot present a different chain, calendar or count and still veri
   const otherCal = reseal({ ...honest, inputs: { ...honest.inputs, trusted: { calendar: 202501 } } });
   assert.equal(verify(otherCal).ok, false);
 
-  // and the display count is simply gone, so it cannot disagree with the set
+  // The builder omits `observed.count` and `trusted.chain`. On its own that establishes something
+  // about the BUILDER and nothing about what a verifier will accept — which is exactly what Codex's
+  // F7 demonstrated by authoring them back. The rejection is the next test.
   assert.equal(honest.inputs.observed.count, undefined);
   assert.equal(honest.inputs.trusted.chain, undefined, 'chain belongs to the parsed descriptor, not to unvalidated metadata');
 
@@ -313,4 +315,45 @@ test('a claim cannot present a different chain, calendar or count and still veri
     () => gap.build({ subject: { chain: 'solana-devnet', priceAccount: ACCOUNT }, terms: terms(), updates: baseline(), source: src() }),
     /must be the chain the source descriptor reads/,
   );
+});
+
+// Codex, reviews/011 F7. Each case starts from a claim that verifies, adds ONE key nothing parses,
+// and reseals `claim_id` so the content hash agrees with the addition — the hash is consistent with
+// the lie, which is precisely why it is not the defence. Every case must be refused at the verifier
+// boundary, not merely absent from the builder's output.
+test('the input domain is closed: an unrecognised key cannot be resealed into a verifying claim', () => {
+  const subject = { chain: 'solana-mainnet', priceAccount: ACCOUNT };
+  const honest = gap.build({ subject, terms: terms(), updates: baseline(), source: src() });
+  assert.equal(verify(honest).ok, true);
+
+  const forge = (mutate) => {
+    const c = JSON.parse(JSON.stringify(honest));
+    mutate(c.inputs);
+    return { ...c, claim_id: claimId(c) };
+  };
+
+  const cases = [
+    // the three Codex authored back after 26275c7 "removed" them
+    ['trusted.chain', (i) => { i.trusted.chain = 'ethereum-mainnet'; }],
+    ['observed.count', (i) => { i.observed.count = 999; }],
+    ['source.genesis_hash', (i) => { i.observed.source.genesis_hash = 'not-mainnet'; }],
+    // and every other object in the domain, so the next copied display field cannot recreate it
+    ['an unknown root key', (i) => { i.note = 'for the reader'; }],
+    ['an unknown trusted key', (i) => { i.trusted.venue = 'somewhere'; }],
+    ['an unknown terms key', (i) => { i.terms.rounding = 'up'; }],
+    ['an unknown observed key', (i) => { i.observed.source_url = 'https://example.invalid'; }],
+    ['an unknown source key', (i) => { i.observed.source.program = 'jupiter-lend'; }],
+    ['an unknown observation key', (i) => { i.observed.updates[0].label = 'the close print'; }],
+    ['an unknown price key', (i) => { i.observed.updates[0].price.currency = 'USD'; }],
+    ['a non-empty oracle_inputs', (i) => { i.oracle_inputs = [{ feed: 'somewhere' }]; }],
+  ];
+
+  for (const [what, mutate] of cases) {
+    const forged = forge(mutate);
+    assert.equal(claimId(forged), forged.claim_id, `${what}: the fixture must be self-consistent, or it proves nothing`);
+    assert.equal(verify(forged).ok, false, `${what} survived the verifier`);
+  }
+
+  // and it is the input parser refusing, so re-execution and any future encoder refuse identically
+  assert.throws(() => gap.canonicalInputs({ ...honest.inputs, note: 'x' }), /closed domain/);
 });

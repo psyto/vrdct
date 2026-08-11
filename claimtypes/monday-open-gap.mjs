@@ -47,10 +47,14 @@
 // written to, which is account-layout-specific in a way CMLS's timestamp-only rebuild is not.
 //
 // What IS now true, and is the part worth having: the descriptor is consensus rather than a label.
-// `canonicalInputs` requires a well-formed `{kind, account, from_ts, to_ts}`, rejects any update
-// outside that window, and re-execution refuses unless the window reaches `maxLagSecs` either side of
-// the closure — so a claim names exactly which account and window a rebuild must target, and a set
-// inconsistent with its own descriptor never re-executes at all. That is a necessary condition for
+// `canonicalInputs` requires a well-formed `{kind, chain, account, from_ts, to_ts}` — a base58 pubkey
+// names unrelated accounts on devnet or a fork, so the CLUSTER is part of what a claim pins and is
+// bound to `subject.chain` — rejects any update outside that window, and re-execution refuses unless
+// the window reaches `maxLagSecs` either side of the closure. So a claim names exactly which cluster,
+// account and window a rebuild must target, and a set inconsistent with its own descriptor never
+// re-executes at all. Every object in that domain is CLOSED (see `closed` below): an unparsed key is
+// rejected, because a claim that can carry one can show a consumer a context this verifier certified
+// without ever reading. That is a necessary condition for
 // closing the residual, and not a sufficient one. The first version of this task left the descriptor
 // unparsed while calling the residual closed (Codex, reviews/011 F1); saying it is closed before a
 // rebuilder exists would be the third time this type has published a mechanism it does not have.
@@ -79,10 +83,31 @@ function u32(name, value) {
   return value;
 }
 
+/// Every semantic object in this type's inputs is CLOSED: a key nothing parses is REJECTED, not
+/// ignored.
+///
+/// This is Codex's F7 (reviews/011), and it is the same defect this type has now produced twice.
+/// `trusted.chain` and `observed.count` were removed from `build` in 26275c7 under a comment saying a
+/// field that cannot exist cannot lie. It could exist. **Removing a field from the BUILDER does not
+/// remove it from the INPUT DOMAIN** — Codex hand-authored `trusted.chain`, `observed.count` and a
+/// `source.genesis_hash` back into a valid claim, recomputed `claim_id`, and got `verify().ok === true`
+/// for each. The content hash is consistent with the lie, exactly as it was in F5. A test that asserts
+/// the builder omits a field proves something about the builder and nothing about the verifier.
+///
+/// So the fix is not to stop emitting. It is to start rejecting.
+function closed(name, v, allowed) {
+  for (const k of Object.keys(v)) {
+    if (!allowed.includes(k)) {
+      throw new Error(`${name} carries an unrecognised key '${k}': this type's inputs are a closed domain`);
+    }
+  }
+}
+
 // Prices are pinned as an exact integer plus an exponent — never a float. Two nodes that parse the
 // same claim must hold the same number, and `0.1 + 0.2` is why this is not negotiable.
 function price(name, value) {
   if (!isObject(value)) throw new Error(`${name} must be an object { value, exp }`);
+  closed(name, value, ['value', 'exp']);
   let v;
   if (typeof value.value === 'string') {
     if (!/^(0|[1-9][0-9]*)$/.test(value.value)) throw new Error(`${name}.value must be a canonical unsigned decimal string or safe integer number`);
@@ -113,6 +138,11 @@ export const MAX_UPDATES = 100_000;
 export const SOURCE_CHAIN = 'solana-mainnet';
 function sourceDescriptor(name, v) {
   if (!isObject(v)) throw new Error(`${name} must be an object { kind, chain, account, from_ts, to_ts }`);
+  // No `genesis_hash`, and that is a decision rather than an omission — see the design note under F8
+  // in reviews/011: a genesis literal checked by a parser that does no network I/O is another label,
+  // and the rebuilder that would resolve it does not exist yet. Closing the descriptor means a claim
+  // cannot carry one and imply it was checked.
+  closed(name, v, ['kind', 'chain', 'account', 'from_ts', 'to_ts']);
   if (v.kind !== 'SOLANA_ACCOUNT_PRICE_UPDATES') throw new Error(`${name}.kind must be 'SOLANA_ACCOUNT_PRICE_UPDATES'`);
   // A base58 pubkey is not globally unique to a cluster: the same 32 bytes name unrelated accounts on
   // devnet, on a fork, or on another chain entirely. Without this a claim can present an account as
@@ -133,6 +163,7 @@ function sourceDescriptor(name, v) {
 
 function observation(name, o) {
   if (!isObject(o)) throw new Error(`${name} must be an object`);
+  closed(name, o, ['price', 'blockTime', 'slot', 'sig']);
   const blockTime = u32(`${name}.blockTime`, o.blockTime);
   if (blockTime < CALENDAR_2026.validFrom || blockTime >= CALENDAR_2026.validUntil) {
     throw new Error(`${name}.blockTime is outside calendar ${CALENDAR_2026.version}'s validity range`);
@@ -153,10 +184,29 @@ export function canonicalInputs(inputs) {
   if (!isObject(inputs) || !isObject(inputs.observed) || !isObject(inputs.terms)) {
     throw new Error('inputs.observed and inputs.terms must be objects');
   }
+  closed('inputs', inputs, ['trusted', 'oracle_inputs', 'terms', 'observed']);
+  closed('inputs.observed', inputs.observed, ['source', 'updates']);
+  closed('inputs.terms', inputs.terms, ['anchorTs', 'thresholdBps', 'maxLagSecs', 'direction']);
+  // `oracle_inputs` is a claim-body convention every type in this repo emits and no type reads. It is
+  // CLOSED to its one canonical form rather than deleted: deleting it here alone would make this
+  // type's body shape differ from the other four for no safety this closing does not already give,
+  // and deleting it everywhere would move the published corpus `inputs_hash` — a consensus break, not
+  // a cleanup. Whether all five should drop it is a repo-wide question, and belongs to a task that
+  // can move all five at once.
+  //
+  // ABSENT is permitted and `[]` is permitted; anything else is refused. Requiring its PRESENCE was
+  // the first attempt and it was wrong — it would have made a body convention into an input this type
+  // needs, and every direct `canonicalInputs` caller that never had one would have started failing.
+  // A field with no input domain must not become mandatory on the way to being made unable to lie.
+  if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
+    throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
+  }
   const source = sourceDescriptor('observed.source', inputs.observed.source);
   // `trusted.calendar` decides which holiday table every boundary is derived from, so it is an input,
   // not a label. Unvalidated, a claim could name a calendar it was not re-executed under.
-  if (inputs.trusted?.calendar !== CALENDAR_2026.version) {
+  if (!isObject(inputs.trusted)) throw new Error('inputs.trusted must be an object { calendar }');
+  closed('inputs.trusted', inputs.trusted, ['calendar']);
+  if (inputs.trusted.calendar !== CALENDAR_2026.version) {
     throw new Error(`inputs.trusted.calendar must be ${CALENDAR_2026.version}, the calendar this re-execution uses`);
   }
   if (!Array.isArray(inputs.observed.updates)) throw new Error('observed.updates must be an array');
@@ -380,8 +430,12 @@ export function build({ subject, terms, updates, source }) {
     inputs: {
       // Only the calendar, and it is validated on the way back in. `chain` lived here too and was
       // copied from the subject unchecked; it now belongs to the descriptor, which is parsed. A
-      // display `count` lived in `observed` and could disagree with `updates.length`. Both are gone:
-      // a field nothing validates is a field that can claim a different source context.
+      // display `count` lived in `observed` and could disagree with `updates.length`.
+      //
+      // Both are gone FROM HERE, and that was never the fix — the builder is not the boundary. They
+      // could be hand-authored back and verified until `canonicalInputs` began rejecting unrecognised
+      // keys (Codex, reviews/011 F7). What makes them unable to lie is that they cannot be parsed,
+      // not that they are not emitted.
       trusted: { calendar: CALENDAR_2026.version },
       oracle_inputs: [],
       terms,

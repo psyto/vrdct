@@ -42,7 +42,7 @@ boundaries**, and re-execution will *select* the two prints from it. Selection r
 
 ```
 terms:    { anchorTs, thresholdBps, maxLagSecs, direction }
-observed: { source: {kind, account, from_ts, to_ts}, updates: [{ blockTime, price }, …] }
+observed: { source: {kind, chain, account, from_ts, to_ts}, updates: [{ price, blockTime, slot, sig }, …] }
 ```
 
 Re-execution, in order, with nothing supplied that can be derived:
@@ -62,7 +62,7 @@ Re-execution, in order, with nothing supplied that can be derived:
 ### Why this was expected to close the residual rather than restate it *(and why it does not)*
 
 The residual was *"a claim cannot prove its pinned print is the closest one"*. Under selection the
-question changes: a claim's inputs are a pure function of `(account, from_ts, to_ts)`, so a claim that
+question changes: a claim's inputs are a pure function of `(chain, account, from_ts, to_ts)`, so a claim that
 omits the true nearest print has a **different input set**, which rebuilds to a **different
 `inputs_hash`**, which `vrdct check` reports before anyone bonds. The omission does not have to be
 adjudicated because it cannot survive inspection.
@@ -128,7 +128,11 @@ implemented, and that is now the third task in a row where this repo did exactly
 
 Fixed as far as it can be without a rebuilder:
 
-- the descriptor is **consensus** — `{kind, account, from_ts, to_ts}`, validated by the only reader;
+- the descriptor is **consensus** — `{kind, chain, account, from_ts, to_ts}`, validated by the only
+  reader, with `chain` bound to `subject.chain` so a pubkey cannot be presented as belonging to a
+  cluster it does not (F5);
+- the input domain is **closed** — an unparsed key is rejected rather than ignored, because removing
+  a field from the builder leaves it authorable, resealable and verifiable (F7);
 - any pinned update outside the declared window is **rejected**, since it cannot have come from
   rebuilding it;
 - re-execution refuses unless the window reaches `maxLagSecs` **either side of the closure**, because

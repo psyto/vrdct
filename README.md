@@ -70,10 +70,18 @@ the last update at or before the closing bell, the first at or after the reopen,
 choice left to bound.
 
 The source descriptor is **consensus, not a label**: `canonicalInputs` requires a well-formed
-`{kind, account, from_ts, to_ts}`, rejects any pinned update outside that window, and re-execution
-refuses unless the window reaches `maxLagSecs` either side of the closure. So a claim names exactly
-which account and window a rebuild must target, and a set inconsistent with its own descriptor never
-re-executes.
+`{kind, chain, account, from_ts, to_ts}`, rejects any pinned update outside that window, and
+re-execution refuses unless the window reaches `maxLagSecs` either side of the closure. `chain` is
+part of it because a base58 pubkey is not unique to a cluster — the same 32 bytes name unrelated
+accounts on devnet or on a fork — and it is bound to `subject.chain`, so a claim cannot present an
+account as belonging somewhere it does not. A claim therefore names exactly which cluster, account
+and window a rebuild must target, and a set inconsistent with its own descriptor never re-executes.
+
+Every object in that input domain is **closed**: a key nothing parses is rejected, not ignored.
+Removing a field from the *builder* does not remove it from the domain — a verifier that ignores
+unknown keys will certify a body carrying whatever was put there, and the content hash agrees with
+it, so the hash is no defence. `trusted.chain`, `observed.count` and a purported
+`source.genesis_hash` were each hand-authored back into a claim that verified, before this closed.
 
 **The residual is still open, and this is the third answer to it.** The first promised that *"a
 challenger holding a nearer print disputes, and the nearer print wins"* — a mechanism this market does
