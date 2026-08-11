@@ -351,3 +351,102 @@ expanded again into a claim about every artifact or deployment.
 - Verified the additional production `model` / `max_output_tokens` use in the runtime title generator.
 - Reviewed the narrowed Postgres audit-trail wording and the three external transcript renderers.
 - `git diff --check main...3df0114`: clean.
+
+---
+
+# Re-review — Task 014, Centaur agent-execution intake (`552762e`)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/centaur-intake`
+
+## Verdict
+
+**CHANGES.** F7's intended conclusion is right: caller-supplied JSON storage is not
+execution-bound provenance, and the corrected sampling command honestly records its exit status.
+The AGENTS.md criterion is now specific enough to audit in one pass. It applies before this intake is
+treated as final: the document does not become invalid merely because it predates the rule, but a
+negative it republishes as a basis for refusal needs the other-agent record before merge.
+
+This review supplies that independent record below for the surviving Test 3 commitment claim. Test 1
+is not yet publishable, because its new metadata citation is to an unrelated Slack-archive endpoint,
+and its opening unqualified absence remains in the document. Test 3 also needs the same distinction
+F7 just made: JSON-capable rows are not automatically integrity-bound, but their schemas alone do
+not prove that they cannot contain a hash or signature.
+
+## Findings
+
+### F8 (P1) — the repaired Test 1 cites the wrong route and retains the retracted absence
+
+`docs/tasks/014-centaur-agent-execution-intake.md:73-80, 450` says
+`routes.rs:1806-1807` persists execution metadata from the caller. Those lines are in the Slack
+archive-import handler: they validate `request.metadata` for `slack_archive_imports`, not for
+`session_executions`. The actual execution path is `routes.rs:775-791`, which passes
+`ExecuteSessionRequest.metadata` into `ExecuteSessionInput`; the runtime then forwards it through
+`execution_metadata` to `create_execution` (`centaur-session-runtime/src/lib.rs:1814-1867,
+6772-6787`), and the store inserts it into `session_executions.metadata`
+(`centaur-session-sqlx/src/lib.rs:321-355`). The conclusion happens to be true, but the published
+evidence does not establish it.
+
+The earlier wording has also survived at `:53-55`: "No model identifier, no sampling parameters, no
+seed" is immediately contradicted by `:73-83`'s correct statement that a caller can store all of
+those values in `metadata`. It is additionally too broad for `session_events.payload`: when the
+optional activity-summary worker is enabled it writes its own configured `model` into a
+`session.activity_summary` event (`centaur-api-server/src/activity_summary.rs:181-190`). That model
+identifies the status-summary call, not the harness turn, so it does not rescue reproducibility; it
+does show why the document must say *no demonstrated harness-derived, execution-bound provenance*,
+not "no model identifier."
+
+**Fix:** replace the Slack-archive citation and reproduction row with the actual execute-route →
+runtime → SQL trace, and remove or qualify the earlier blanket absence. Preserve the result only as
+the supported claim: neither the generic caller metadata nor the optional activity-summary model is
+shown derived from, validated against, or bound to the model/harness inputs that executed the turn.
+
+### F9 (P1) — Test 3 again treats JSON-capable schema as proof that an integrity value is absent
+
+`docs/tasks/014-centaur-agent-execution-intake.md:183-186` says the three Postgres rows "carry no
+hash chain, no per-record digest and no signature." `session_executions.metadata`,
+`session_messages.parts`/`metadata`, and `session_events.payload` are JSON fields. In particular,
+`PgSessionStore::append_event` accepts an unconstrained `Value` and inserts it directly into
+`session_events.payload` (`centaur-session-sqlx/src/lib.rs:879-902`). A schema without a dedicated
+digest column cannot establish that a row never contains a field named `hash` or `signature`—the same
+not-a-column/not-stored substitution that F7 just removed from Test 1.
+
+The narrower, decisive claim survives the review search: no examined writer constructs a
+record-specific commitment that is bound to and independently verifies the audit row. The source's
+real signature candidates are activity-summary's plain text de-duplication value, method-signature
+strings, inbound JWT/webhook verification, and Iron Proxy's outbound HMAC. None is an immutable
+commitment over the `session_messages`/`session_executions`/`session_events` record. But that is a
+behavioral conclusion and must be stated as one; generic JSON storage is not its contrary.
+
+**Fix:** say that the examined Postgres trail has **no demonstrated generated-and-verifiable
+integrity binding** over its records, rather than that JSON rows categorically carry no signature or
+digest. Keep the direct mutability/operator-independence argument. This preserves the Test 3 failure
+without again converting an omitted column into an absence of capability.
+
+## Required independent negative-claim record
+
+This is the reviewer record required by the new AGENTS.md rule. All commands below ran at
+`74979c19bf0b37cfc2c4b1f5510713841af03df1`; exit status is stated explicitly.
+
+| decisive proposition | original command / scope / exit | broader reviewer command / scope / exit | candidate disposition |
+| --- | --- | --- | --- |
+| Test 1 lacks execution-bound provenance | `sed -n '1806,1808p' services/api-rs/crates/centaur-api-server/src/routes.rs`; the document's cited three-line route scope; **0** | `git grep -nE 'ExecuteSessionRequest\|ExecuteSessionInput\|execute_session\(\|execution_metadata\(\|create_execution\(' -- 'services/api-rs/crates/centaur-api-server/src/*.rs' 'services/api-rs/crates/centaur-session-runtime/src/*.rs' 'services/api-rs/crates/centaur-session-sqlx/src/*.rs'`; the full API → runtime → SQL execution path; **0**, 31 hits | The original candidate is a Slack archive import, not execution. The broader candidates divide into client/route/type plumbing; the production execution flow, which passes `metadata` through to SQL; and unit-test constructors. The production path derives only duration fields, not model/sampling/harness provenance. A separate broader provenance-token search over the same agent-session/API source scope returned **0**, 36 hits: activity-summary and title-generator model calls, persona `prompt_hash`, mock/test data, comments/error text. None is a record of the external harness model or a binding of caller metadata to it. |
+| Test 3 has no demonstrated integrity commitment over the published Postgres audit rows | `git grep -n 'Sha256::new()\|Sha256::digest\|Sha256::default()' -- '*.rs' \| grep -v '/tests/\|_test\.rs'`; all Rust paths, excluding the document's test patterns; **0**, 8 hits | `git grep -niE 'blake3\|ed25519\|secp256\|merkle\|hash.?chain\|previous_?hash\|prev_?hash\|record_?hash\|event_?hash\|signature' -- '*.rs' '*.sql'`; all Rust and SQL paths, including alternate commitment names; **0**, 126 hits | The eight SHA sites are the already enumerated sandbox-spec identity, two thread-parent bucketing values, ETL deduplication, inbound webhook-body hash, persona prompt file, bearer token, and harness-server bucketing—none commits to an audit row. The broader candidates are: activity-summary's plain concatenated de-duplication string (8); API/MCP method-signature text, JWT token signing, and webhook verification (74); Iron Proxy/perms/control outbound-HMAC configuration and templates (19); workflow inbound-webhook auth (10); tool discovery/signature-header descriptions (3); proxy/header/test fixtures (12). The one real outbound signer remains residual 7; the search found no writer binding it, or any candidate, to an audit-row commitment. |
+
+The Test 3 record is sufficient for the scoped, behavioral conclusion once F9's wording is corrected.
+The Test 1 row records that its former citation was not a search of the relevant behavior; F8 must be
+fixed before it can serve as the required evidence. Residuals 7 and 8 remain explicit non-decisive
+unknowns, so their unexamined bindings do not bear the admission refusal.
+
+The additional Test 1 token search named in the table was
+`git grep -niE 'model\|temperature\|top_p\|top_k\|seed\|max_tokens\|harness_run_id\|base_image_ref\|base_image_hash\|overlay_hash\|prompt_hash' -- 'services/api-rs/crates/centaur-session-core/src/*.rs' 'services/api-rs/crates/centaur-session-runtime/src/*.rs' 'services/api-rs/crates/centaur-session-sqlx/src/*.rs' 'services/api-rs/crates/centaur-api-server/src/*.rs'`; its same scope and exit status are **0**.
+
+## Checks performed
+
+- Checked out and searched Centaur `74979c19bf0b37cfc2c4b1f5510713841af03df1`.
+- Traced the actual execute request through `routes.rs:775-791`, runtime metadata construction, and
+  the SQL insert; confirmed `routes.rs:1806-1808` is unrelated Slack-import code.
+- Traced the optional activity-summary worker, which emits a configured summary-model value into an
+  event but does not identify the harness model.
+- Re-ran the eight-site SHA command and a broader Rust/SQL commitment search, recording scopes, exit
+  statuses, and every candidate class above.
+- `git diff --check main...552762e`: clean.
