@@ -189,12 +189,32 @@ eight commits to an execution record:
 digest site.)
 
 **And a list of one spelling of SHA-256 is not evidence about other commitment mechanisms**, which is
-the second half of F2 and the more useful half. Searched tree-wide for `blake3`, `Hmac`, `ed25519`,
-`secp256`, `merkle` and `signature::`: there is no blake3, no ed25519, no secp256k1 and no merkle
-structure anywhere. Every HMAC is `Hmac<Sha256>` and every one of them **authenticates an inbound
-request** — JWT signing at `centaur-api-server/src/mcp.rs:536`, webhook signature verification at
-`routes.rs:3559-3610`. Inbound authentication is the opposite direction from a commitment over an
-execution record: it proves who sent something to Centaur, never what Centaur did afterwards.
+the second half of F2 and the more useful half. Searched tree-wide for `blake3`, `ed25519`, `secp256`
+and `merkle`: none of them exists anywhere in the tree.
+
+**HMAC is a different story, and the previous version of this paragraph got it wrong** (Codex,
+reviews/014 F4). It said every HMAC authenticates an inbound request and was therefore irrelevant to
+what Centaur did. That was read off a `git grep 'Hmac'` line count, which counts textual references
+rather than capabilities. Two things are true at once:
+
+- The API server's own HMAC constructors do verify **inbound** material — JWT signing at
+  `centaur-api-server/src/mcp.rs:536`, webhook signature verification at `routes.rs:3559-3610`.
+- iron-proxy has a first-class **outbound** signing capability. `hmac_sign` is a secret type
+  (`centaur-perms/src/tools.rs:161-175`): *"a per-request HMAC signature iron-proxy mints and writes
+  onto the upstream request"*, with the control-plane shape at `centaur-iron-control/src/models.rs:364-369`.
+  Its `signature_algorithm` is one of `sha256`, `sha512`, `sha1`, and its `signature_message`
+  template has access to `.Body` (`services/console/docs/API.md:714-732`).
+
+So a request body **can** be signed at the instant it leaves the proxy, and "every HMAC is
+`Hmac<Sha256>`" is false for the configured capability as well. That is a real commitment, in the
+right direction, and it is retracted from the negative claim.
+
+What it is not — and this is the narrower statement that survives — is public tamper-evidence over
+Centaur's execution record. The signature is minted for a **counterparty**: it travels to the upstream
+service and is verified there, if at all. Nothing in this tree binds such a signature to the
+`session_events` row that records the same call, and nothing makes it independently retrievable by a
+third party who was neither the proxy nor the recipient. A resolver would need both. Whether a
+deployment could be configured to provide them is not settled here; see residual 7.
 
 Protection is row-level security (migrations `0019`–`0023`, `0042`). RLS answers *who may read this
 row*. It never answers *was this row changed after it was written* — and the operator, who is the party
@@ -244,11 +264,18 @@ those clears Vrdct's independence and reproducibility bar is a genuinely hard de
 is the point. A hard open question is not an impossibility, and the difference matters because the
 impossibility version quietly forecloses the work.
 
-What the evidence does support: **the blank is not an oversight, and it will not be filled by a better
-version of the same product.** Cloudflare's guardrails (08-04) and Centaur's egress proxy land in the
-same place from opposite directions — both strengthen the *pre-execution* surface, and neither has a
-commercial reason to produce the post-execution one. Filling it takes a party who is paid for
-verifiability, which is a different product rather than a later release of this one.
+**And the sentence that replaced it was also more than the evidence carries** (Codex, reviews/014 F5).
+It said the blank is "not an oversight", that it "will not be filled by a better version of the same
+product", and that neither vendor has a commercial reason to produce it. A repository read at one
+commit shows what a vendor *implements and documents there*. It cannot show why something is absent,
+what will ship next, or what counts as a different product — those are claims about intent and
+roadmap, and no amount of `git grep` reaches them. The "Cloudflare's guardrails (08-04)" comparison
+carried no citation in this repository either, so it supplied no checkable second instance.
+
+What the evidence supports is what the tests measured, and it is enough: **Centaur's public record at
+`74979c1` is not admitted, because the determinism and tamper-evidence requirements are not met.**
+Nothing about anyone's future is needed to say that, and the conditional corollary below does not rest
+on it.
 
 ## Corollary — an outcome-only `agent-escrow` avoids this dependency, for the promises it can express
 
@@ -294,8 +321,7 @@ The posture toward Centaur and its successors is unchanged by any of this: use t
    does not use.
 4. **"No hash chain" is a negative claim over one tree.** It is supported by the enumeration in Test 3
    — eight `Sha256` sites tree-wide, each named and each committing to something other than an
-   execution, plus a search for `blake3`, `ed25519`, `secp256`, `merkle` and `Hmac` that finds no
-   other commitment mechanism and only inbound authentication — and
+   execution, plus a search finding no `blake3`, `ed25519`, `secp256` or `merkle` anywhere — and
    by the greps in *Reproducing this* below, not by a proof. The first version of this residual said
    the claim rested on an "exhaustive grep", while the grep it described in the body returned a
    different number in a scope it did not state. An exhaustive search whose command is not written
@@ -306,7 +332,17 @@ The posture toward Centaur and its successors is unchanged by any of this: use t
    not show they are unenforceable — only that this construction does not reach them.
 6. **The general finding is a tendency, not a theorem.** It was published once as an impossibility.
    Three counter-constructions are named in that section and none of them has been evaluated against
-   Vrdct's bar. Anyone who wants the strong version has to bring a threat model.
+   Vrdct's bar. Anyone who wants the strong version has to bring a threat model. It has also now been
+   published once as a claim about vendor motive and roadmap, which a repository at one commit cannot
+   support at all; that is withdrawn rather than softened.
+7. **The outbound signature is an open question, not a closed one.** iron-proxy's `hmac_sign` mints a
+   per-request signature over a templated message that can include `.Body`, and writes it onto the
+   upstream request. This document establishes only that nothing in the public tree BINDS such a
+   signature to the `session_events` row for the same call, and nothing makes it retrievable by a
+   third party who was neither the proxy nor the recipient. Whether a deployment could be configured
+   so that both hold — and whether a counterparty's retained signed request could serve as
+   independent evidence — was not examined. It is the most promising thing found in this tree and it
+   is unexamined.
 
 ## Reproducing this
 
@@ -338,7 +374,8 @@ git checkout 74979c19bf0b37cfc2c4b1f5510713841af03df1   # 2026-08-10 22:17:16 +0
 | | `git grep -in audit -- '*.rs' '*.sql' \| wc -l` | **0** |
 | | `sed -n 123,131p docs/pages/security.mdx` | a section titled **Audit trail** |
 | **digest sites** | `git grep -n 'Sha256::new()\|Sha256::digest\|Sha256::default()' -- '*.rs' \| grep -v '/tests/\|_test\.rs'` | **eight**, tree-wide |
-| no other commitment primitive | `git grep -ni 'blake3\|ed25519\|secp256\|merkle' -- '*.rs'` | nothing |
-| every HMAC authenticates inbound | `git grep -n 'Hmac' -- '*.rs' \| grep -v '/tests/'` | 51 lines, all `Hmac<Sha256>`, all reachable from JWT signing (`mcp.rs:536`) or webhook verification (`routes.rs:3559-3610`) |
+| no `blake3` / `ed25519` / `secp256` / `merkle` | `git grep -ni 'blake3\|ed25519\|secp256\|merkle' -- '*.rs'` | nothing (this row says nothing about HMAC — see the two below) |
+| HMAC also signs **outbound** | `git grep -n 'HmacSignSecret' -- '*.rs'` | 6 lines; `centaur-perms/src/tools.rs:168` — *"a per-request HMAC signature iron-proxy mints and writes onto the upstream request"* |
+| …with a configurable algorithm over the body | `sed -n '714,732p' services/console/docs/API.md` | signs matching **outbound** requests; `signature_algorithm` one of `sha256`/`sha512`/`sha1`; `signature_message` has access to `.Body` |
 | responses can be persisted | `sed -n '4333p;6389,6406p' services/api-rs/crates/centaur-session-runtime/src/lib.rs` | the pump hands each stdout line to `append_output_line`, which stores `Value::String(safe_line)` |
 | redaction is substitution, not projection | `sed -n 7454,7464p services/api-rs/crates/centaur-session-runtime/src/lib.rs` | `aggregatedOutput` survives; only tokens become `[REDACTED_TOKEN]` |
