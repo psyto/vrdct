@@ -6,6 +6,7 @@
 // once by `canonicalInputs`, then both this re-executor and `core/encode.mjs` consume those exact
 // typed values. Malformed JSON is rejected rather than acquiring a different on-chain meaning.
 import { registerClaimType, buildClaim } from '../core/claim.mjs';
+import { closed } from '../core/closed.mjs';
 
 export const type = 'reserve-solvency';
 export const invariant = {
@@ -36,7 +37,15 @@ export function canonicalInputs(inputs) {
   if (!isObject(inputs) || !isObject(inputs.observed) || !isObject(inputs.observed.quantities)) {
     throw new Error('inputs.observed.quantities must be an object');
   }
+  closed('inputs', inputs, ['trusted', 'oracle_inputs', 'window', 'observed']);
+  if ('trusted' in inputs) closed('inputs.trusted', inputs.trusted, ['chain']);
+  if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
+    throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
+  }
+  if ('window' in inputs) closed('inputs.window', inputs.window, []);
+  closed('inputs.observed', inputs.observed, ['source', 'quantities']);
   const q = inputs.observed.quantities;
+  closed('inputs.observed.quantities', q, ['virtualValue', 'liability', 'inv2b_ok', 'staleRecords']);
   const staleRecords = q.staleRecords;
   if (typeof staleRecords !== 'number' || !Number.isSafeInteger(staleRecords) || staleRecords < 0 || staleRecords > 0xffffffff) {
     throw new Error('quantities.staleRecords must be a safe u32 integer');

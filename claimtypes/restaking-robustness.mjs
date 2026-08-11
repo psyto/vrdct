@@ -61,6 +61,7 @@
 // and is NOT yet wired to either.
 
 import { registerClaimType, buildClaim } from '../core/claim.mjs';
+import { closed } from '../core/closed.mjs';
 
 export const type = 'restaking-robustness';
 export const invariant = {
@@ -133,6 +134,7 @@ function u32(name, value) {
 /// A rational pinned as two integers. Floats cannot represent 1/3, and α_s = 1/3 is the common case.
 function ratio(name, value, { maxNum = 0xffffffff } = {}) {
   if (!isObject(value)) throw new Error(`${name} must be an object { num, den }`);
+  closed(name, value, ['num', 'den']);
   const num = u32(`${name}.num`, value.num);
   const den = u32(`${name}.den`, value.den);
   if (num === 0) throw new Error(`${name}.num must be non-zero`);
@@ -153,13 +155,20 @@ export function canonicalInputs(inputs) {
   if (!isObject(inputs) || !isObject(inputs.terms) || !isObject(inputs.observed)) {
     throw new Error('inputs.terms and inputs.observed must be objects');
   }
+  closed('inputs', inputs, ['trusted', 'oracle_inputs', 'terms', 'observed']);
+  if ('trusted' in inputs) closed('inputs.trusted', inputs.trusted, ['network', 'profit_estimates']);
+  if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
+    throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
+  }
   const { terms, observed } = inputs;
 
+  closed('inputs.terms', terms, ['gamma', 'shockPsiBps']);
   // γ > 0 is required by Theorem 1: at γ = 0 there is no bound to state (Theorem 2).
   const gamma = ratio('terms.gamma', terms.gamma);
   const shockPsiBps = u32('terms.shockPsiBps', terms.shockPsiBps);
   if (shockPsiBps === 0 || shockPsiBps > 10_000) throw new Error('terms.shockPsiBps must be within (0, 10000]');
 
+  closed('inputs.observed', observed, ['source', 'services', 'validators']);
   if (!Array.isArray(observed.services) || observed.services.length === 0) throw new Error('observed.services must be a non-empty array');
   if (!Array.isArray(observed.validators) || observed.validators.length === 0) throw new Error('observed.validators must be a non-empty array');
   if (observed.services.length > MAX_SERVICES) throw new Error(`observed.services must hold at most ${MAX_SERVICES} entries`);
@@ -168,6 +177,7 @@ export function canonicalInputs(inputs) {
   const services = new Map();
   observed.services.forEach((s, i) => {
     if (!isObject(s)) throw new Error(`observed.services[${i}] must be an object`);
+    closed(`inputs.observed.services[${i}]`, s, ['id', 'profit', 'alpha']);
     const id = identifier(`observed.services[${i}].id`, s.id);
     if (services.has(id)) throw new Error(`observed.services[${i}].id is a duplicate: ${id}`);
     // α_s is the fraction of stake needed to corrupt s, so it lives in (0, 1].
@@ -181,6 +191,7 @@ export function canonicalInputs(inputs) {
   let edges = 0;
   observed.validators.forEach((v, i) => {
     if (!isObject(v)) throw new Error(`observed.validators[${i}] must be an object`);
+    closed(`inputs.observed.validators[${i}]`, v, ['id', 'stake', 'services']);
     const id = identifier(`observed.validators[${i}].id`, v.id);
     if (seen.has(id)) throw new Error(`observed.validators[${i}].id is a duplicate: ${id}`);
     seen.add(id);

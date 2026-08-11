@@ -8,6 +8,7 @@
 // observations cannot be accepted offline but mean something else on-chain.
 import { registerClaimType, buildClaim } from '../core/claim.mjs';
 import { marketStatus, STATUS, CALENDAR_2026 } from '../core/campana.mjs';
+import { closed } from '../core/closed.mjs';
 
 export const type = 'closed-market-liquidation-soundness';
 export const invariant = {
@@ -23,10 +24,29 @@ export function canonicalInputs(inputs) {
   if (!isObject(inputs) || !isObject(inputs.observed) || !Array.isArray(inputs.observed.observations)) {
     throw new Error('inputs.observed.observations must be an array');
   }
+  // `canonicalInputs` is the sole raw-JSON reader. `core/encode.mjs` consumes only the returned
+  // blockTimes, then Rust receives only those u32 records, so no unrecognised JSON key can reach
+  // the re-execution twin.
+  closed('inputs', inputs, ['trusted', 'oracle_inputs', 'window', 'observed']);
+  if ('trusted' in inputs) closed('inputs.trusted', inputs.trusted, ['market_id']);
+  if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
+    throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
+  }
+  if ('window' in inputs) closed('inputs.window', inputs.window, ['from_ts', 'to_ts', 'from_iso', 'to_iso']);
+  closed('inputs.observed', inputs.observed, ['source', 'account', 'count', 'observations']);
   const observations = inputs.observed.observations;
   if (observations.length === 0) throw new Error('inputs.observed.observations must be non-empty');
+  if ('count' in inputs.observed) {
+    if (!Number.isSafeInteger(inputs.observed.count) || inputs.observed.count < 0 || inputs.observed.count !== observations.length) {
+      throw new Error('inputs.observed.count must equal inputs.observed.observations.length');
+    }
+  }
   const blockTimes = observations.map((observation, i) => {
-    if (!isObject(observation) || typeof observation.blockTime !== 'number' || !Number.isSafeInteger(observation.blockTime) || observation.blockTime < 0 || observation.blockTime > 0xffffffff) {
+    if (!isObject(observation)) {
+      throw new Error(`observations[${i}] must be an object`);
+    }
+    closed(`inputs.observed.observations[${i}]`, observation, ['sig', 'slot', 'blockTime']);
+    if (typeof observation.blockTime !== 'number' || !Number.isSafeInteger(observation.blockTime) || observation.blockTime < 0 || observation.blockTime > 0xffffffff) {
       throw new Error(`observations[${i}].blockTime must be a safe u32 integer`);
     }
     if (observation.blockTime < CALENDAR_2026.validFrom || observation.blockTime >= CALENDAR_2026.validUntil) {

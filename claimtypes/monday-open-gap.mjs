@@ -65,6 +65,7 @@
 
 import { registerClaimType, buildClaim } from '../core/claim.mjs';
 import { marketStatus, STATUS, CALENDAR_2026 } from '../core/campana.mjs';
+import { closed } from '../core/closed.mjs';
 
 export const type = 'monday-open-gap';
 export const invariant = {
@@ -95,14 +96,6 @@ function u32(name, value) {
 /// the builder omits a field proves something about the builder and nothing about the verifier.
 ///
 /// So the fix is not to stop emitting. It is to start rejecting.
-function closed(name, v, allowed) {
-  for (const k of Object.keys(v)) {
-    if (!allowed.includes(k)) {
-      throw new Error(`${name} carries an unrecognised key '${k}': this type's inputs are a closed domain`);
-    }
-  }
-}
-
 // Prices are pinned as an exact integer plus an exponent — never a float. Two nodes that parse the
 // same claim must hold the same number, and `0.1 + 0.2` is why this is not negotiable.
 function price(name, value) {

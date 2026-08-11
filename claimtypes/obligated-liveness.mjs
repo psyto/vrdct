@@ -63,6 +63,7 @@
 
 import { registerClaimType, buildClaim } from '../core/claim.mjs';
 import { marketStatus, STATUS, CALENDAR_2026 } from '../core/campana.mjs';
+import { closed } from '../core/closed.mjs';
 
 export const type = 'obligated-liveness';
 export const invariant = {
@@ -114,9 +115,16 @@ export function canonicalInputs(inputs) {
   if (!isObject(inputs) || !isObject(inputs.terms) || !isObject(inputs.observed)) {
     throw new Error('inputs.terms and inputs.observed must be objects');
   }
+  closed('inputs', inputs, ['trusted', 'oracle_inputs', 'terms', 'observed']);
+  if ('trusted' in inputs) closed('inputs.trusted', inputs.trusted, ['obligor', 'calendar']);
+  if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
+    throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
+  }
   const { terms, observed } = inputs;
 
+  closed('inputs.terms', terms, ['schedule', 'graceSecs', 'asyncPpm', 'quorum']);
   if (!isObject(terms.schedule)) throw new Error('terms.schedule must be an object');
+  closed('inputs.terms.schedule', terms.schedule, ['kind', 'fromTs', 'toTs', 'periodSecs']);
   if (terms.schedule.kind !== 'CALENDAR_OPEN') throw new Error("terms.schedule.kind must be 'CALENDAR_OPEN'");
   const fromTs = inCalendar('terms.schedule.fromTs', u32('terms.schedule.fromTs', terms.schedule.fromTs));
   const toTs = inCalendar('terms.schedule.toTs', u32('terms.schedule.toTs', terms.schedule.toTs));
@@ -140,6 +148,7 @@ export function canonicalInputs(inputs) {
   if (asyncPpm >= PPM) throw new Error('terms.asyncPpm must be less than 1e6 (a network cannot be wholly asynchronous)');
 
   if (!isObject(terms.quorum)) throw new Error('terms.quorum must be an object { n, f }');
+  closed('inputs.terms.quorum', terms.quorum, ['n', 'f']);
   const n = u32('terms.quorum.n', terms.quorum.n);
   const f = u32('terms.quorum.f', terms.quorum.f);
   if (n === 0) throw new Error('terms.quorum.n must be non-zero');
@@ -147,11 +156,18 @@ export function canonicalInputs(inputs) {
 
   // An action is an IDENTIFIED on-chain record, not a bare instant. A timestamp alone is copyable,
   // and one copied timestamp is enough to discharge two overlapping obligations — see `matchSlots`.
+  closed('inputs.observed', observed, ['source', 'account', 'count', 'actions']);
   if (!Array.isArray(observed.actions)) throw new Error('observed.actions must be an array');
   if (observed.actions.length > MAX_ACTIONS) throw new Error(`observed.actions must hold at most ${MAX_ACTIONS} records`);
+  if ('count' in observed) {
+    if (!Number.isSafeInteger(observed.count) || observed.count < 0 || observed.count !== observed.actions.length) {
+      throw new Error('inputs.observed.count must equal inputs.observed.actions.length');
+    }
+  }
   const ids = new Set();
   const actions = observed.actions.map((a, i) => {
     if (!isObject(a)) throw new Error(`observed.actions[${i}] must be an object { id, ts }`);
+    closed(`inputs.observed.actions[${i}]`, a, ['id', 'ts']);
     const id = actionId(`observed.actions[${i}].id`, a.id);
     if (ids.has(id)) throw new Error(`observed.actions[${i}].id is a duplicate: ${id}`);
     ids.add(id);
