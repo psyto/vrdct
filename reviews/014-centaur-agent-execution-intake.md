@@ -427,10 +427,10 @@ without again converting an omitted column into an absence of capability.
 This is the reviewer record required by the new AGENTS.md rule. All commands below ran at
 `74979c19bf0b37cfc2c4b1f5510713841af03df1`; exit status is stated explicitly.
 
-| decisive proposition | original command / scope / exit | broader reviewer command / scope / exit | candidate disposition |
+| evidence ID / decisive proposition | original command / scope / exit | broader reviewer command / scope / exit | candidate disposition |
 | --- | --- | --- | --- |
-| Test 1 lacks execution-bound provenance | `sed -n '1806,1808p' services/api-rs/crates/centaur-api-server/src/routes.rs`; the document's cited three-line route scope; **0** | `git grep -nE 'ExecuteSessionRequest\|ExecuteSessionInput\|execute_session\(\|execution_metadata\(\|create_execution\(' -- 'services/api-rs/crates/centaur-api-server/src/*.rs' 'services/api-rs/crates/centaur-session-runtime/src/*.rs' 'services/api-rs/crates/centaur-session-sqlx/src/*.rs'`; the full API → runtime → SQL execution path; **0**, 31 hits | The original candidate is a Slack archive import, not execution. The broader candidates divide into client/route/type plumbing; the production execution flow, which passes `metadata` through to SQL; and unit-test constructors. The production path derives only duration fields, not model/sampling/harness provenance. A separate broader provenance-token search over the same agent-session/API source scope returned **0**, 36 hits: activity-summary and title-generator model calls, persona `prompt_hash`, mock/test data, comments/error text. None is a record of the external harness model or a binding of caller metadata to it. |
-| Test 3 has no demonstrated integrity commitment over the published Postgres audit rows | `git grep -n 'Sha256::new()\|Sha256::digest\|Sha256::default()' -- '*.rs' \| grep -v '/tests/\|_test\.rs'`; all Rust paths, excluding the document's test patterns; **0**, 8 hits | `git grep -niE 'blake3\|ed25519\|secp256\|merkle\|hash.?chain\|previous_?hash\|prev_?hash\|record_?hash\|event_?hash\|signature' -- '*.rs' '*.sql'`; all Rust and SQL paths, including alternate commitment names; **0**, 126 hits | The eight SHA sites are the already enumerated sandbox-spec identity, two thread-parent bucketing values, ETL deduplication, inbound webhook-body hash, persona prompt file, bearer token, and harness-server bucketing—none commits to an audit row. The broader candidates are: activity-summary's plain concatenated de-duplication string (8); API/MCP method-signature text, JWT token signing, and webhook verification (74); Iron Proxy/perms/control outbound-HMAC configuration and templates (19); workflow inbound-webhook auth (10); tool discovery/signature-header descriptions (3); proxy/header/test fixtures (12). The one real outbound signer remains residual 7; the search found no writer binding it, or any candidate, to an audit-row commitment. |
+| **N1 — Test 1 lacks execution-bound provenance** | Current author trace: `sed -n '775,791p' services/api-rs/crates/centaur-api-server/src/routes.rs` then `sed -n '321,336p' services/api-rs/crates/centaur-session-sqlx/src/lib.rs`; API execute handler and SQL insert; **0** for both. The previous `sed -n '1806,1808p' .../routes.rs` is retained in F8 as the historical wrong-feature command; **0**, Slack archive import. | `git grep -nE 'ExecuteSessionRequest\|ExecuteSessionInput\|execute_session\(\|execution_metadata\(\|create_execution\(' -- 'services/api-rs/crates/centaur-api-server/src/*.rs' 'services/api-rs/crates/centaur-session-runtime/src/*.rs' 'services/api-rs/crates/centaur-session-sqlx/src/*.rs'`; the full API → runtime → SQL execution path; **0**, 31 hits | The current trace and broader candidates divide into client/route/type plumbing; the production execution flow, which passes `metadata` through to SQL; and unit-test constructors. The production path derives only duration fields, not model/sampling/harness provenance. A separate broader provenance-token search over the same agent-session/API source scope returned **0**, 36 hits: activity-summary and title-generator model calls, persona `prompt_hash`, mock/test data, comments/error text. None is a record of the external harness model or a binding of caller metadata to it. |
+| **N2 — Test 3 has no demonstrated integrity commitment over the published Postgres audit rows** | `git grep -n 'Sha256::new()\|Sha256::digest\|Sha256::default()' -- '*.rs' \| grep -v '/tests/\|_test\.rs'`; all Rust paths, excluding the document's test patterns; **0**, 8 hits | `git grep -niE 'blake3\|ed25519\|secp256\|merkle\|hash.?chain\|previous_?hash\|prev_?hash\|record_?hash\|event_?hash\|signature' -- '*.rs' '*.sql'`; all Rust and SQL paths, including alternate commitment names; **0**, 126 hits | The eight SHA sites are the already enumerated sandbox-spec identity, two thread-parent bucketing values, ETL deduplication, inbound webhook-body hash, persona prompt file, bearer token, and harness-server bucketing—none commits to an audit row. The broader candidates are: activity-summary's plain concatenated de-duplication string (8); API/MCP method-signature text, JWT token signing, and webhook verification (74); Iron Proxy/perms/control outbound-HMAC configuration and templates (19); workflow inbound-webhook auth (10); tool discovery/signature-header descriptions (3); proxy/header/test fixtures (12). The one real outbound signer remains residual 7; the search found no writer binding it, or any candidate, to an audit-row commitment. |
 
 The Test 3 record is sufficient for the scoped, behavioral conclusion once F9's wording is corrected.
 The Test 1 row records that its former citation was not a search of the relevant behavior; F8 must be
@@ -526,3 +526,48 @@ labelled non-decisive unknowns.
 - Ran the full tracked-tree commitment search above (exit **0**, five hits) and the expanded migration
   sampling search (exit **1**, zero hits).
 - `git diff --check main...35dd4e8`: clean.
+
+---
+
+# Re-review — Task 014, Centaur agent-execution intake (`e9b5dd1`)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/centaur-intake`
+
+## Verdict
+
+**APPROVE.** F10 is correctly fixed. The Rust-only primitive search and the full-tree search now have
+their real, different scopes and exit statuses; all five full-tree candidates are named and none is a
+commitment over the audit record.
+
+`N1` and `N2` are the right—and only—admission-deciding negatives. N1 is the lack of a
+harness-derived, execution-bound provenance mapping; its reviewer row traces the actual API → runtime
+→ SQL path and the broader provenance candidates. N2 is the lack of a demonstrated
+generated-and-verifiable integrity binding over the scoped Postgres audit trail; its row traces the
+eight SHA candidates and the broader commitment candidates. The normal mutability and RLS facts in
+Test 3 are positive, cited implementation observations supporting N2, not a hidden third negative.
+
+The remaining negative statements are either evidence within N1/N2, retrospective corrections, or
+explicitly non-decisive residuals (notably external-proxy capture, outbound-signature retrieval, and
+external transcript binding). None opens a further admission gate. The two evidence IDs below are
+now also literal matrix identifiers, so a reader can verify compliance without reconstructing review
+history.
+
+The behavioural restatements do not weaken refusal below the bar. Admission requires affirmative,
+canonical provenance and independently checkable integrity for the offered source; the reviewed source
+does not establish either. The refusal is therefore appropriately an intake decision, not a claim that
+no deployment could be configured differently.
+
+## Reviewer matrix ID update
+
+The existing reviewer-owned rows have been labelled **N1** and **N2** to match the task document. The
+N1 row now also records the corrected author command alongside the historical F8 command, preserving
+both the current evidence and the reason the first citation was rejected.
+
+## Checks performed
+
+- Re-ran the scoped `*.rs` commitment search: no output, exit **1**.
+- Re-ran the full tracked-tree commitment search: five hits, exit **0**; reviewed their Discord-key
+  documentation/configuration and documentation-site dependency contexts.
+- Verified `N1` and `N2` are tagged at their result claims and have matching reviewer-owned rows.
+- Reviewed every remaining negative statement for whether it independently changes admission.
+- `git diff --check main...e9b5dd1`: clean.
