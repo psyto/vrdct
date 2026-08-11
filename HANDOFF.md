@@ -31,8 +31,13 @@ that, so the failure is an error rather than a silence.
 
 ## State of `main`
 
-`main` = `df35ac1`, `npm run test:canonical` green: 75 JS tests, 162 parity vectors, 2 definition
-vectors, 20 Rust tests. Corpus `inputs_hash` unmoved throughout.
+`main` = `6f1f6ff` — the commit that added this file. The last commit that moved code is `df35ac1`,
+and on it `npm run test:canonical` is green: 75 JS tests, 162 parity vectors, 2 definition vectors,
+20 Rust tests. Corpus `inputs_hash` unmoved throughout.
+
+*(Written here as `main` = `df35ac1`, which the act of committing this file falsified. Corrected in
+the consolidated window — and it is the same defect the document goes on to describe: a sentence that
+was true when drafted and that nothing re-checked before it was published.)*
 
 Five claim-types and one adapter:
 

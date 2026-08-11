@@ -78,7 +78,14 @@ Guidance, not a hard boundary. The quality control is the cross-review.
   `docs/tasks/` before claiming a number.
 - **Stage by path, never `git add -A`.** In a shared tree it will pick up another window's untracked
   files; it came within one commit of doing so.
-- The repo is the only shared memory.
+- **The repo is the only shared memory — and "the repo" means `origin`, not this disk.** The canonical
+  review record is `reviews/NNN-slug.md` on `main`; task branches (`cc/*`) are pushed and in sync. The
+  `codex/*` branches on which reviews are *authored* are local working branches: not pushed, not
+  shared memory, and nothing may depend on them surviving. As at 2026-08-11 twenty-one such commits —
+  the 007–011 review rounds — exist on one disk only. That is this rule working, not a backlog.
+  **Per-branch status will not tell you this.** A branch with no upstream never reports as *ahead*, so
+  a tree with plenty unshared reads as "no unpushed work". The question "is anything unshared?" has
+  exactly one answer: `git log --branches --not --remotes`.
 - Keep durable product direction in `README.md`.
 - Prefer small, reviewable changes over hidden rewrites.
 - Never weaken a stated honest-scope caveat without saying so in the same change.
