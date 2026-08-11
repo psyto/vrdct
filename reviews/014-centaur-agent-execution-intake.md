@@ -266,3 +266,88 @@ bounded disposition; “no mechanism exists” needs a much stronger, threat-mod
 - Confirmed the HMAC candidate is not automatically bound to `session_events`, while noting that the
   record's offered scope—not an unexamined deployment—is the basis for refusal.
 - `git diff --check main...77105ab`: clean.
+
+---
+
+# Re-review — Task 014, Centaur agent-execution intake (`3df0114`)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/centaur-intake`
+
+## Verdict
+
+**CHANGES.** F6 is fixed. Test 3 now makes the claim the evidence actually supports: the published
+Postgres audit trail (`session_messages`, `session_executions`, and `session_events`) is not shown
+tamper-evident. The GitHub, Linear, and Discord renderers are explicitly retained as incomplete,
+external residuals rather than erased by a universal statement. The admission asymmetry in residual
+7 is also right: a possible differently configured deployment does not establish the offered source.
+
+Test 1, however, turns the newly found view/schema discrepancy into another false absence. The
+public execution API has arbitrary persisted metadata, so missing scalar columns and NULL values in
+one read-only view do not establish that these values cannot be in the execution record. The correct
+failure is lack of an automatic, execution-bound provenance capture, not lack of anywhere to store a
+caller-supplied value.
+
+## Finding
+
+### F7 (P1) — Test 1 mistakes a missing view column for an absent execution-record capability
+
+`docs/tasks/014-centaur-agent-execution-intake.md:53-55, 87-98` says the record has no model or
+sampling information, that the named fields are "populated by nothing," and that the inputs are not
+in the record. The five `to_jsonb(session_executions) ->> ...` expressions in the read-only view do
+indeed resolve to NULL on a database created solely by the pinned migrations: the base table has no
+top-level columns with those names, and the only two later `alter table session_executions` migrations
+add idempotency and stdout-ownership columns.
+
+That is not the whole record shape. `ExecuteSessionRequest` accepts `metadata: Option<Value>`
+(`centaur-api-server/src/types.rs:111-117`); the runtime preserves that object while adding only the
+two duration fields (`centaur-session-runtime/src/lib.rs:1861-1867, 6772-6787`); and the store writes
+it directly to `session_executions.metadata` (`centaur-session-sqlx/src/lib.rs:321-355`). A caller can
+therefore retain keys such as `model`, `seed`, `top_p`, or an image reference in the execution row,
+even though this particular view neither extracts nor exposes them. Nothing in the traced path binds
+such self-supplied values to what the external harness actually used, so it is not a canonical
+provenance mechanism—but it directly contradicts the stated nonexistence.
+
+The new reproduction row for "no sampling parameters at all" is also not a valid search: its literal
+pathspec is `'.../migrations/*.sql'`, which matches no repository directory and returns exit status
+1. Replacing it with the actual migrations path does find no named sampling parameter, but that only
+establishes the absence of dedicated migration columns; it cannot establish absence from the generic
+`metadata jsonb` field. Finally, "the one `model` string in the runtime" is false as written:
+`centaur-session-runtime/src/title_generator.rs:6, 38-42` configures a real title-generation request
+with `gpt-5.4-nano` and `max_output_tokens`, independently of the mock harness script.
+
+**Fix:** qualify the view result to a fresh schema and to those five *top-level view fields*. Replace
+the blanket absence with the supported conclusion: the offered audit/read surface provides no
+demonstrated automatically captured and execution-bound model, sampling, prompt, or environment
+provenance; arbitrary request metadata is merely an unverified assertion. Re-run and print a command
+whose path is real (and whose exit status is checked), then trace whether each of the required values
+is captured from the harness rather than accepted from the caller. Remove or correctly scope the
+"one runtime model" sentence. Test 1 may still fail on that lack of binding, but it cannot fail on
+the current claim that the record has nowhere to hold the values.
+
+## Method note
+
+The new AGENTS.md rule has the right direction but "receive an adversarial second search" is not yet
+an auditable completion condition. It should require a reviewer other than the claim's author to
+record in `reviews/NNN-*.md` the pinned ref, the original and deliberately broader/alternative search
+commands, each command's scope and exit result, and the disposition of every candidate hit. For a
+zero-result claim, the record must additionally show that the pathspec selected real files. F7's
+literal `.../` path made a no-result command look like evidence, exactly the ambiguity this rule is
+meant to prevent.
+
+The remaining uncommanded negatives are confined to non-decisive residuals—most notably the
+unexamined outbound-signature binding (residual 7) and the external-renderer binding/integrity
+question (residual 8). They should stay explicitly residual. Test 3's stated Postgres result no
+longer relies on either: its schema and write paths are the examined source, and it must not be
+expanded again into a claim about every artifact or deployment.
+
+## Checks performed
+
+- Checked out and inspected Centaur `74979c19bf0b37cfc2c4b1f5510713841af03df1`.
+- Re-ran the two `session_executions` schema commands. Only migrations `0005` and `0034` alter the
+  table, and a fresh schema has none of the five top-level view fields.
+- Ran the published literal sampling command: it returned exit status **1** with no matching scope.
+  The actual `centaur-session-sqlx/migrations/*.sql` scope also returned no named sampling parameter;
+  separately traced the generic JSON metadata API through SQL persistence.
+- Verified the additional production `model` / `max_output_tokens` use in the runtime title generator.
+- Reviewed the narrowed Postgres audit-trail wording and the three external transcript renderers.
+- `git diff --check main...3df0114`: clean.
