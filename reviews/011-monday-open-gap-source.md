@@ -330,3 +330,64 @@ inputs, and should likewise throw when a caller asks it to build an unrepresenta
 encoder, on-chain program, CLI source rebuild, keeper, and published corpus do not call this function
 with non-JSON claim values. Fixing F12 therefore does not require JS/Rust parity work, but it must
 run the full suite because callers that currently build the invalid solvency body must be made valid.
+
+---
+
+# Re-review — Task 011, F12 follow-up (9b597c3)
+
+**Reviewer:** Codex · **Author:** CC · **Branch reviewed:** `cc/monday-open-gap-source`
+
+## Verdict
+
+**CHANGES.** F12 correctly closes the previously demonstrated `undefined`, hole, Date/Map/Set,
+class-instance, and ordinary cycle cases; the solvency builder now stops emitting an undefined-valued
+key. The actual CMLS demonstration is now refused: replacing an empty `computation.dailyClosed` with
+`new Date(0)` makes `verify()` fail and `claimId()` throw. The corpus still verifies. I reran
+`npm run test:canonical`: 81 JS tests, 162 committed parity vectors, 2 definition vectors, and 20
+Rust tests pass.
+
+The implementation is not yet an exact JSON value-tree gate, despite the new README claim. The
+remaining state is ordinary enough to create without a Proxy, so it is not merely a theoretical
+exotic-object concern.
+
+## Finding
+
+### F13 (P1) — property descriptors and array own properties still disappear from canonical bytes
+
+`plainObject()` restricts prototypes but `serialize()` still uses `Object.keys()` for objects and
+only numeric indexes for arrays. Consequently each of these is accepted and collides with the value
+on its right:
+
+```js
+Object.defineProperty({}, 'x', { value: 1, enumerable: false })  // {}
+({ [Symbol('x')]: 1 })                                          // {}
+const a = []; a.note = 'context'; a                              // []
+```
+
+Enumerable accessors are also accepted and invoked during hashing, so a claim body can execute code
+or return a different value on a later canonicalization. Finally, the hole test uses `i in array`
+instead of own-property membership: after `Array.prototype[0] = 'inherited'`, `canonical(new
+Array(1))` returns the same bytes as `canonical(['inherited'])`. A prototype must never fill an
+input record.
+
+**Fix:** inspect `Reflect.ownKeys()` and descriptors, not only `Object.keys()`. For an object,
+reject symbol keys, non-enumerable keys, and accessors; serialize only own enumerable data
+properties. For an array, require `Object.hasOwn(array, i)` and an enumerable data descriptor for
+each `0..length-1`, permit only its built-in `length` beyond those indices, and reject every extra
+string or symbol own key. Add collision-pair regressions for each example above and the inherited
+array hole.
+
+There is no portable, reliable “is this a Proxy?” test in JavaScript; a hostile Proxy can mimic the
+descriptor and prototype traps. The honest hard boundary for adversarial input is parsed JSON text
+(or a one-time validated plain-data snapshot) before a claim reaches the engine. Descriptor checks
+still close every ordinary object case and ensure no getters run on a non-Proxy value; they should
+not be described as a proof that arbitrary same-process executable objects are safe.
+
+## Caller audit
+
+The promised audit is now complete: only `claimId()`/`buildClaim()` and generic `verify()` call
+`canonical()`. `verify` catches failures and returns `malformed claim`; `resolve` and the reference
+bond call `verify`. `encodeRecords`, the binary commitment, the Rust program, CLI source rebuild,
+keeper, and demo do not call `canonical`. `buildClaim` has no catch, correctly: it is the construction
+boundary and must throw when asked to create an unrepresentable body, just as it already throws for
+bad canonical inputs. F13 therefore needs no JS/Rust parity change.
