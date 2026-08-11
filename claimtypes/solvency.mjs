@@ -76,7 +76,12 @@ export function checks(claim, r) {
 }
 
 export function build({ subject, window, quantities }) {
-  return buildClaim({ type, subject, inputs: { trusted: { chain: subject.chain }, oracle_inputs: [], window, observed: { source: 'chain re-computation', quantities } } });
+  // The key is OMITTED when the subject names no chain, rather than set to `undefined`. A claim body
+  // is a JSON value tree; `{ chain: undefined }` is not one, and the canonicalizer that hashes it now
+  // says so (Codex, reviews/011 F12). Absent and present-but-undefined are the same fact, and only
+  // one of them can be content-addressed.
+  const trusted = subject?.chain === undefined ? {} : { chain: subject.chain };
+  return buildClaim({ type, subject, inputs: { trusted, oracle_inputs: [], window, observed: { source: 'chain re-computation', quantities } } });
 }
 
 registerClaimType({ type, invariant, canonicalInputs, reexec, checks });

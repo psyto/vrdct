@@ -29,6 +29,36 @@ byte-for-byte with the on-chain program). Zero dependencies.
 The engine is **claim-type-agnostic** — new surfaces are added by registering a module, never by
 editing the engine. This is `1 engine × N surfaces`.
 
+`verify` binds the **whole** re-executed output: the complete `computation`, the complete `verdict`
+(not only its flag), and the registered `invariant`, each compared canonically against the claim
+body. A claim-type's own checks explain *which* part disagreed; they are not the binding. That
+division exists because the alternative had failed — while each type enumerated the fields it
+compared, any produced-but-unenumerated field could be edited, the `claim_id` recomputed so the
+content hash agreed, and the claim would verify. A hash over a body is consistent with whatever that
+body says; it is not evidence that anything checked it.
+
+That binding is only as strong as the canonicalizer underneath it, so `canonical` accepts a **JSON
+value tree** and refuses everything else. A serializer that maps one value onto another value's bytes
+lets two different bodies be the same claim: the content hash does not move, and nothing above can
+tell them apart. Three families did exactly that — `NaN` and both infinities became `null`;
+`undefined` and array holes vanished, so `[undefined]`, `[,]` and `[]` were one string; and `Date`,
+`Map`, `Set`, `RegExp` and class instances all have no own enumerable keys, so each of them was `{}`.
+Cycles are refused too, having no canonical form. A body that is not a JSON value tree now cannot be
+content-addressed at all, which is the honest answer: it was never a claim.
+
+**And the boundary that is trusted, stated rather than implied.** A JavaScript object graph carries
+state JSON does not — non-enumerable and symbol-keyed properties, accessors, own keys on an array
+beside its indices, a prototype that can make a hole read as filled. Every one of those is refused,
+by reading own keys with `Reflect.ownKeys` and values from property descriptors rather than by
+indexing. One is not detectable in standard JavaScript: a **Proxy**, which can answer differently
+each time it is asked. So `canonical` is not an adversarial parser for an arbitrary in-memory graph
+and is not offered as one. **The trust boundary is `JSON.parse` output or a validated snapshot** — a
+body that arrived as text, or one a registered claim-type built from inputs its own `canonicalInputs`
+accepted. Every entry point in this repo is on that side of the line, checked rather than assumed:
+`reconstruct` reads a claim as text through `JSON.parse`; `cli/vrdct.mjs` builds one from account
+data it decoded itself; `resolve-live` and `demo` call a claim-type's `build`. None of them accepts a
+caller-supplied object graph.
+
 ## Claim-types (`claimtypes/`)
 
 Each surface is a pluggable module —
@@ -61,21 +91,36 @@ and ended. A venue that defines its own reopen instant is marking its own exam. 
 derives it as a pure function of `(timestamp, calendar)`, so the boundary is re-executable and the
 market can exist at all.
 
-**Honest scope.** The claim does not receive the boundary instants. It derives the closure from the
-**close print's own session** — the bell that ends it, then the first bell after that — and admits
-the reopen print only if the session *it* belongs to is that reopen. Nothing is searched for, so
-there is no boundary a print can be paired with except the one its own session gives it.
+**Honest scope.** The claim does not receive the boundary instants, and it does not receive the two
+prints either. `terms.anchorTs` names the closure — any instant inside it — and `campana` gives the
+bell that ends the preceding session and the first bell after; no price is consulted. The claim then
+pins the **observation set** around both boundaries, and re-execution **selects** the prints from it:
+the last update at or before the closing bell, the first at or after the reopen, ordered by
+`(blockTime, slot, sig)`. `maxLagSecs` is a staleness guard, not a bound on a choice — there is no
+choice left to bound.
 
-The residual that remains is **unclosed, and this type has no mechanism that closes it.** It cannot
-prove a pinned print is the closest one to its boundary; `maxLagSecs` bounds how far the pinner may
-reach, and within that bound the pinner chooses. An earlier version of this section said a challenger
-holding a nearer print disputes and the nearer print wins. **That was false and is worth saying
-plainly rather than deleting:** a market commits to `inputs_hash`, a challenge asserts a different
-*flag* over those same pinned prints, and `settle` accepts only a feed matching that commitment — so
-a nearer print is a *different market*, not a correction to this one. Closing it needs a
-reconstructible source descriptor and a canonical first-print rule, the way CMLS has one; until then
-a gap verdict says the prints were near their bells, and says nothing about what other prints
-existed.
+The source descriptor is **consensus, not a label**: `canonicalInputs` requires a well-formed
+`{kind, chain, account, from_ts, to_ts}`, rejects any pinned update outside that window, and
+re-execution refuses unless the window reaches `maxLagSecs` either side of the closure. `chain` is
+part of it because a base58 pubkey is not unique to a cluster — the same 32 bytes name unrelated
+accounts on devnet or on a fork — and it is bound to `subject.chain`, so a claim cannot present an
+account as belonging somewhere it does not. A claim therefore names exactly which cluster, account
+and window a rebuild must target, and a set inconsistent with its own descriptor never re-executes.
+
+Every object in that input domain is **closed**: a key nothing parses is rejected, not ignored.
+Removing a field from the *builder* does not remove it from the domain — a verifier that ignores
+unknown keys will certify a body carrying whatever was put there, and the content hash agrees with
+it, so the hash is no defence. `trusted.chain`, `observed.count` and a purported
+`source.genesis_hash` were each hand-authored back into a claim that verified, before this closed.
+
+**The residual is still open, and this is the third answer to it.** The first promised that *"a
+challenger holding a nearer print disputes, and the nearer print wins"* — a mechanism this market does
+not have. The second called the residual open, which was honest but not a fix. This one does the half
+that can be done: selection removes the choice *within* a set, and the descriptor is now binding. What
+it does not do is close omission, because that needs anyone to be able to **rebuild** the set and see
+a mismatch before bonding — and rebuilding here has to decode *prices* from the account, not merely
+observe it was written to, which is account-layout-specific in a way CMLS's timestamp-only rebuild is
+not. No such adapter ships. Necessary condition, not sufficient one.
 
 ### Settling silence — and the boundary past which nobody can
 
@@ -385,18 +430,18 @@ Three residual assumptions, all named rather than hidden:
    (through its 13:00 ET close) as **open**; only updates outside those sessions count toward its
    closed-market liveness signal.
 
-   `monday-open-gap` pins two prints and cannot prove either is the *closest* one to its boundary —
-   the same omission problem, on two observations instead of thousands. It bounds the choice rather
-   than removing it: the terms declare `maxLagSecs`, re-execution derives the closure from the close
-   print's own session and admits a reopen print only from the session that ends that closure, and a
-   print outside the declared lag returns `STALE`. So a settled verdict always rests on prints inside
-   the right two sessions and near their bells.
+   `monday-open-gap` no longer pins two chosen prints: `terms.anchorTs` names the closure, the
+   calendar gives both bells, and re-execution **selects** the last update at or before the closing
+   bell and the first at or after the reopen from a pinned set. Its source descriptor is validated
+   consensus — cluster, account, window, and a refusal to re-execute a set that reaches outside it or
+   a window that stops short of the bells.
 
-   **Unlike the cases above, this one is unsourced and therefore genuinely open.** This type has no
-   source descriptor and no reconstruction rule, so a challenger holding a nearer print cannot make
-   this market pay on it: `inputs_hash` commits the two prints and a challenge only asserts a
-   different flag over them. A nearer print is a different market. Nobody should read a gap verdict
-   as a claim that no closer print existed, and nobody should expect the protocol to adjudicate one.
+   **It is still in the unsourced case, and the reason is worth being exact about.** Selection removes
+   the choice within a set; only a *rebuild* closes omission, and rebuilding here must decode prices
+   from the account rather than merely observe it was written to — account-layout-specific in a way
+   CMLS's timestamp-only rebuild is not. Until that adapter exists, a gap verdict says the selected
+   prints were the nearest **in the set the claim pinned**, and nobody should read it as a claim about
+   what the account actually printed.
 2. **Unchallenged assertions.** A false claim nobody disputes settles optimistically at the end of
    its window — the usual optimistic-oracle assumption that challenging a false claim is profitable.
    A settled `Market.by_reexecution` is `1` only when the stored verdict came from on-chain

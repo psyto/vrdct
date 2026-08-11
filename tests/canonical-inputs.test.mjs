@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { encodeRecords, inputsCommitment } from '../core/encode.mjs';
 import * as cmls from '../claimtypes/closed-market-soundness.mjs';
 import * as solvency from '../claimtypes/solvency.mjs';
-import { registerClaimType } from '../core/claim.mjs';
+import { registerClaimType, claimId } from '../core/claim.mjs';
+import { canonical } from '../core/hash.mjs';
 import { verify } from '../core/verify.mjs';
 // keeper/window.mjs only, never keeper/lib.mjs: the root suite must stay runnable on a clean clone,
 // and lib.mjs pulls in a Solana client the root package does not depend on.
@@ -60,6 +61,104 @@ test('verify keeps its result contract for malformed non-input claim fields', ()
   assert.equal(result.ok, false);
   assert.equal(result.verdict, null);
   assert.equal(result.checks[0][0], 'malformed claim');
+});
+
+// Codex, reviews/011 F11 and F12. The engine binds bodies by comparing canonical strings, so any
+// value the canonicalizer maps onto ANOTHER value's bytes is two different bodies being one claim.
+// Each case below is a pair that used to serialize identically.
+test('canonical accepts a JSON value tree and refuses every value that would collide with another', () => {
+  const collides = [
+    // coerced to null
+    ['NaN', Number.NaN], ['Infinity', Infinity], ['-Infinity', -Infinity],
+    // dropped: [undefined], [,] and [] all rendered as []
+    ['undefined', undefined],
+    // impersonating {}: Object.keys is empty for every one of these
+    ['a Date', new Date(0)], ['a Map', new Map()], ['a Set', new Set()], ['a RegExp', /x/],
+    ['a class instance', new (class Thing { constructor() { this.x = 1; } })()],
+    // not JSON at all
+    ['a bigint', 1n], ['a function', () => 1], ['a symbol', Symbol('s')],
+  ];
+  for (const [what, value] of collides) {
+    assert.throws(() => canonical({ v: value }), /canonical:/, `${what} was accepted inside an object`);
+    assert.throws(() => canonical([value]), /canonical:/, `${what} was accepted inside an array`);
+  }
+  // an array hole is the same collision as [undefined], reached a different way
+  assert.throws(() => canonical([, 1]), /hole/);
+  // a cycle has no canonical form, and walking it used to end the stack rather than return a verdict
+  const cyclic = { a: 1 }; cyclic.self = cyclic;
+  assert.throws(() => canonical(cyclic), /cyclic/);
+  assert.throws(() => canonical([[cyclic]]), /cyclic/);
+
+  // the collisions themselves, stated as the equalities they used to be
+  for (const [a, b] of [[[undefined], []], [[, 1], [1]], [new Date(0), {}], [new Map(), {}]]) {
+    assert.throws(() => canonical(a), /canonical:/);
+    assert.doesNotThrow(() => canonical(b));
+  }
+
+  // and a JSON value tree is untouched, so this refuses only what has no canonical form
+  assert.equal(canonical({ b: [1, 'x', null, { c: true }], a: -0 }), '{"a":0,"b":[1,"x",null,{"c":true}]}');
+  assert.equal(canonical(Object.create(null)), '{}');
+});
+
+// Codex, reviews/011 F13. A JS object graph carries state JSON does not, and two graphs differing
+// only in that state used to serialize to the same bytes. Everything below can be SEEN, so it is
+// refused. The last case cannot be seen, and is recorded rather than claimed.
+test('canonical refuses object state JSON cannot carry, and records the one it cannot detect', () => {
+  const hidden = { a: 1 };
+  Object.defineProperty(hidden, 'b', { value: 2, enumerable: false });
+  assert.throws(() => canonical(hidden), /non-enumerable/);
+
+  const symboled = { a: 1, [Symbol('s')]: 2 };
+  assert.throws(() => canonical(symboled), /symbol-keyed/);
+
+  let asked = 0;
+  const accessor = { get a() { return asked++; } };
+  assert.throws(() => canonical(accessor), /accessor/);
+  assert.equal(asked, 0, 'the getter must not be invoked while deciding to refuse it');
+
+  const labelled = [1, 2];
+  labelled.note = 'for the reader';
+  assert.throws(() => canonical(labelled), /an array owns 'note'/);
+
+  // the prototype must not be able to fill a hole: `i in v` and `v[i]` both consult it, so the walk
+  // reads descriptors instead. Without this, Array.prototype[0] = 'x' rewrites the bytes of a value
+  // nobody touched.
+  const holed = [, 1];
+  assert.throws(() => canonical(holed), /hole/);
+  try {
+    Array.prototype[0] = 'filled-from-the-prototype';
+    assert.equal(holed[0], 'filled-from-the-prototype', 'the fixture must actually reach the prototype');
+    assert.throws(() => canonical(holed), /hole/, 'a prototype filled a hole');
+  } finally {
+    delete Array.prototype[0];
+  }
+
+  // AND THE LIMIT, stated because it is the reason the trust boundary is JSON.parse output rather
+  // than this function. A Proxy is not reliably detectable in standard JS: an inert one passes, and
+  // a hostile one can answer differently each time it is asked, so canonical() is not stable over it.
+  assert.equal(canonical(new Proxy({ a: 1 }, {})), '{"a":1}');
+  let n = 0;
+  const shifty = new Proxy({ a: 1 }, { getOwnPropertyDescriptor: () => ({ value: n++, enumerable: true, configurable: true }) });
+  assert.notEqual(canonical(shifty), canonical(shifty), 'if this ever becomes equal, the limit has changed and the comment above is stale');
+});
+
+// Codex, reviews/011 F12, demonstrated on a real claim: a body that is not a JSON value tree was
+// being content-addressed anyway, so two different bodies shared a claim_id and a verdict.
+test('a non-JSON body cannot be content-addressed, and the builders no longer produce one', () => {
+  const corpus = JSON.parse(readFileSync(new URL('../corpus/jupiter-spyx-cmls.claim.json', import.meta.url)));
+  assert.equal(verify(corpus).ok, true);
+
+  const impersonated = JSON.parse(JSON.stringify(corpus));
+  impersonated.inputs.trusted.dailyClosed = new Date(0);
+  assert.equal(verify(impersonated).ok, false, 'a Date impersonating {} survived the verifier');
+  assert.throws(() => claimId(impersonated), /not a JSON object/);
+
+  // the builder side of the same finding: an absent chain is an ABSENT KEY, not `undefined`
+  const claim = solvency.build({ subject: {}, window: {}, quantities: { virtualValue: '100', liability: '100', inv2b_ok: true, staleRecords: 0 } });
+  assert.deepEqual(claim.inputs.trusted, {});
+  assert.ok(!('chain' in claim.inputs.trusted), 'an undefined chain must be omitted, not carried');
+  assert.equal(verify(claim).ok, true);
+  assert.equal(solvency.build({ subject: { chain: 'solana-mainnet' }, window: {}, quantities: { virtualValue: '100', liability: '100', inv2b_ok: true, staleRecords: 0 } }).inputs.trusted.chain, 'solana-mainnet');
 });
 
 test('claim-types must supply a canonical parser when registered', () => {
