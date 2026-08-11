@@ -68,7 +68,34 @@ Ok(Some(LoadedPluginMeta::Persona(PersonaDefinition { id, ..., prompt_hash
 The digest is taken over a file on disk at load time, and stored on a `PersonaDefinition`. Nothing
 downstream re-hashes what was assembled for a turn.
 
-**Result: FAIL.** The inputs that made the run come out the way it did are not in the record.
+**The named-but-empty slot, which is the sharpest form of this finding.** "No model identifier" was an
+absence claim that had never been searched — five review rounds, and it survived because nobody asked.
+Run under the standing rule now in `AGENTS.md`, it holds, and it produces something better than the
+sentence it was defending. The read-only view names exactly the provenance a resolver would want:
+
+```sql
+create or replace view centaur_readonly_session_executions as select
+    execution_id, thread_key, status,
+    to_jsonb(session_executions) ->> 'model'           as model,
+    to_jsonb(session_executions) ->> 'harness_run_id'  as harness_run_id,
+    to_jsonb(session_executions) ->> 'base_image_ref'  as base_image_ref,
+    to_jsonb(session_executions) ->> 'base_image_hash' as base_image_hash,
+    to_jsonb(session_executions) ->> 'overlay_hash'    as overlay_hash,
+```
+`migrations/0019_centaur_readonly_role.sql:45-55`
+
+**`session_executions` has none of those columns.** It is created at `0001:28-38` with
+`execution_id, thread_key, status, metadata, error` and five timestamps, and the only migrations that
+alter it are `0005` (handoff idempotency) and `0034` (stdout owner). `to_jsonb(row) ->> 'model'` over
+a row with no `model` field is NULL, so all five view columns evaluate to NULL at this commit.
+
+Model, harness run, base image, overlay — the fields that would identify *what actually ran* — are
+named in the published read surface and populated by nothing. No sampling parameter, `top_p`, `seed`
+or `max_tokens` appears in any migration at all. The one `"model"` string in the runtime is inside
+`mock_app_server_script()` (`lib.rs:3762`), a test double.
+
+**Result: FAIL.** The inputs that made the run come out the way it did are not in the record — and the
+schema names five of them without holding any.
 
 ## Test 2 — external calls: are egress responses recorded?
 
@@ -396,6 +423,9 @@ git checkout 74979c19bf0b37cfc2c4b1f5510713841af03df1   # 2026-08-10 22:17:16 +0
 | redaction precedes persistence | `grep -n 'async fn append_output_line\|fn redact_sensitive_text' services/api-rs/crates/centaur-session-runtime/src/lib.rs` | `6389` and `6410` |
 | `prompt_hash` is over `PROMPT.md` | `sed -n 501,515p services/api-rs/crates/centaur-api-server/src/tool_discovery.rs` | the digest, taken over a file read from `plugin_dir` |
 | protection is RLS | `ls services/api-rs/crates/centaur-session-sqlx/migrations \| grep -E '^00(19\|2[0-3]\|42)'` | six migrations |
+| the provenance view is empty | `sed -n '45,55p' services/api-rs/crates/centaur-session-sqlx/migrations/0019_centaur_readonly_role.sql` then `awk '/create table if not exists session_executions/,/^\);/' .../0001_session_control_plane.sql` | the view names `model`, `harness_run_id`, `base_image_ref`, `base_image_hash`, `overlay_hash`; the table has none of them |
+| …and nothing added them later | `git grep -n 'alter table session_executions' -- '*.sql'` | only `0005` (idempotency) and `0034` (stdout owner) |
+| no sampling parameters at all | `git grep -ni 'temperature\|top_p\|top_k\|seed\|max_tokens' -- '.../migrations/*.sql'` | **0** |
 | **audit** | `git grep -in audit \| wc -l` | **34**, not four |
 | | `git grep -in audit -- '*.rs' '*.sql' \| wc -l` | **0** |
 | | `sed -n 123,131p docs/pages/security.mdx` | a section titled **Audit trail** |
