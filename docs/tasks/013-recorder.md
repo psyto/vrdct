@@ -31,16 +31,32 @@ settlement-grade is the claim that those inputs were the real chain state.
 
 ## What a recorder is, and the one property that makes it worth anything
 
-A permissionless program that, at slot `S`, appends a leaf `(S, account, sha256(account.data))` to an
-append-only structure whose root lives on chain. Later, anyone proves *"account A held bytes B at
-slot S"* against that root.
+A permissionless program that appends a leaf to an append-only structure whose root lives on chain.
+Later, anyone proves a fact about that leaf against the root.
 
 The property that matters, and it is the whole design:
 
 > **The program hashes the bytes the runtime hands it.** A Solana instruction that takes the target
-> account as an input is given the *real* account at that slot — the runtime guarantees it. So the
-> recorder does not trust the submitter, does not verify a signature, and has no notion of an
-> attester. Anyone may crank it, including an adversary, and the leaf is still the truth.
+> account as an input is given the *real* account — the runtime's transaction account locks and
+> serialised execution mean the submitter cannot substitute arbitrary bytes. So the recorder does not
+> trust the submitter, does not verify a signature, and has no notion of an attester. Anyone may
+> crank it, including an adversary, and the leaf is still the truth.
+
+**But the fact a leaf establishes is narrower than the first version of this brief claimed**, and the
+correction is load-bearing rather than pedantic (Codex, reviews/013 F1). That version defined a leaf as
+`(S, account, sha256(account.data))` and read it as *"account A held bytes B at slot S"*. **A slot is a
+batch, not a per-account instant.** If another transaction writes the target account in the same slot,
+a recorder transaction can serialise before that write or after it, and both leaves carry the same `S`.
+Neither establishes the account's final state for the slot. Two mutually incompatible leaves for one
+`(S, account)` are reachable by ordinary transaction ordering — no forgery required — and a later
+`settle` cannot tell from `(S, account, hash)` which one a claim meant. This bites hardest on exactly
+the fast-moving oracle, vault and ticket accounts a resolver cares about.
+
+So the fact is: **the target account's state at the instant this recorder instruction executed.** The
+leaf must therefore carry, or make retrievable, the recorder tree sequence and the transaction that
+produced it, and every consumer must either bind its own required boundary to that ordering or refuse
+a target account modified in the relevant slot. Final-slot semantics are not promised, because this
+design supplies no way to prove them.
 
 That is a materially stronger trust model than N-of-M attestation, which is the alternative named in
 the README. Attestation needs you to believe M signers. This needs you to believe the runtime, which
@@ -70,26 +86,63 @@ Two more limits, in the same spirit:
 
 ## What it would actually upgrade
 
+**One rule decides every entry below, and it is the review's real contribution.** A recorder proves
+**membership** — this named address held these bytes when the instruction ran. It proves nothing about
+**completeness**. So it reaches a claim-type exactly when that type's complete account set is **fixed
+by the terms**, declared before the fact, and not derived from on-chain state at read time. Where the
+set is derived, the recorder proves the state of whatever was handed to it and leaves the omission
+open — which is the whole failure it was supposed to close.
+
+By that rule the brief opened by naming three surfaces that hit one wall, and **reaches one of them.**
+
 - **`reserve-solvency`** — the simplest and the first consumer. A solvency claim is a snapshot of
   balances; with recorded leaves the snapshot stops being asserted and becomes provable. This is the
   slice to build first if anything is built.
-- **`restaking-robustness` / the Jito adapter** — replaces "two reads with equal endpoints, not
-  settlement-grade" with a proof that each account held those bytes at a slot. The graph stops being
-  an observation.
+- **`restaking-robustness` / the Jito adapter — RETRACTED. The recorder does not lift its
+  `settlement_grade: NO`** (Codex, reviews/013 F2). The first version said the leaf format turns the
+  graph from an observation into a proof. It does not, and the reason is the difference between
+  membership and completeness. A leaf proves the state of an address *someone supplied*. The Jito
+  graph is derived from a `getProgramAccounts` enumeration, and its safety depends on there being no
+  omitted delegation, state or ticket that changes reachability. **A permissionless instruction
+  cannot enumerate every account a program owns, and a tree containing leaves for a declared set
+  cannot prove that an undisclosed matching account did not exist.** An adversary records every
+  favourable address, omits one unfavourable relationship, and every proof verifies over a graph that
+  never equalled chain state — which is precisely the property task 010's review named as missing.
+  Closing it needs an authenticated-enumeration design proving membership *and relevant absence*
+  against a declared query predicate. That is a different design, not a use of this one.
 - **`closed-market-liquidation-soundness`** — already sourced via signature history, so it gains
   little; its bound is RPC retention, which a recorder would also relieve.
-- **`monday-open-gap`** — only via the caveat above, and it is the weakest case.
+- **`monday-open-gap`** — the weakest case, and under the rule above it is weaker than the first
+  version allowed. Task 011's addendum established that the pinned account stores no price: it is a
+  config chaining up to four sources evaluated at read time. So a rebuild needs the config *and* every
+  source it names — a set **derived from on-chain state**, not fixed by terms. That is F2's
+  completeness problem in miniature. It becomes reachable only if a future version of the type pins
+  the full source set in its terms, at which point the recorder proves each one; it is not reachable
+  as the type stands.
 
-## The composition worth noticing
+## The composition that was claimed, and what it actually is
 
-The recorder's own liveness is exactly what **`obligated-liveness`** (claim-type #4) adjudicates. A
-recorder that declares a schedule, misses slots, and blames the network is the type's motivating
-example — it was written because a Vesper keeper slept through a session. So the recorder does not
-need a trusted operator SLA: it can be held to its schedule by a claim in the same engine, with the
-excusable-miss budget and the `x < 1/2` boundary already implemented.
+The first version said the recorder needs no trusted operator SLA because **`obligated-liveness`**
+(claim-type #4) can hold it to its schedule, and called that the first real composition between two
+surfaces in this repo. That is wrong in three ways at once (Codex, reviews/013 F3), and the middle one
+is fatal to the argument:
 
-That is the first time two surfaces in this repo compose rather than merely coexist, and it is an
-argument for the recorder that has nothing to do with the wall.
+1. **`obligated-liveness` adjudicates; it does not schedule.** It decides whether a **named obligor**
+   supplied identifiable on-chain actions during a window. It cannot cause a missed observation to
+   appear. A RED verdict may allocate blame, or a bond if a market is built around it, but the leaf
+   that was never recorded stays never recorded — and a historical-state claim that needed it still
+   cannot settle.
+2. **A permissionless recorder has no obligor.** That is its whole point: anyone may crank it. Naming
+   an operator so the type has someone to judge **restores exactly the operator dependency the brief
+   said the design removes.** The argument was circular.
+3. **It is not settleable on chain today.** `claimtypes/obligated-liveness.mjs:60-62` says so itself:
+   offline-complete, not wired to `core/encode.mjs` or the Rust twin. It cannot hold anything to a
+   `vrdct-bond`-enforceable schedule until that port exists. Its action evidence would also need a
+   recorder-specific source definition — a transaction signature does not establish that every
+   required leaf was committed.
+
+What survives is smaller and worth keeping as that: a possible future **economic accountability
+layer** over a declared recorder, not a liveness solution and not a composition that exists yet.
 
 ## What would have to be measured before building, not asserted
 
@@ -234,10 +287,23 @@ than a check.
 
 ### Standing state of this brief
 
-The design in the body is unchanged and still small. Its premise was wrong in one clause (there is a
-per-block state commitment), the correction to that premise was itself overstated (it does not help
-in practice), and the net effect on what to build is: **nothing changed**. The recorder is the answer,
-it is not urgent, and the demand observation the brief ends on is untouched.
+Its premise was wrong in one clause (there is a per-block state commitment), the correction to that
+premise was itself overstated (it does not help in practice), and review then took three more claims
+out of the design proper:
+
+- the fact a leaf establishes is **the state when the instruction ran**, not "the state at slot `S`" —
+  a slot is a batch, and two incompatible leaves for one `(S, account)` need no forgery (F1);
+- it proves **membership, never completeness**, so it does not lift the Jito adapter's
+  `settlement_grade: NO` and reaches only claim-types whose account set is **fixed by terms** (F2);
+- **`obligated-liveness` does not give it liveness.** It adjudicates a named obligor after the fact,
+  a permissionless recorder has no obligor, naming one restores the dependency the brief claimed to
+  remove, and the type is not settleable on chain yet anyway (F3).
+
+The design is still small and still probably right *for what is left of it*. What changed is its
+reach: it was written as the answer to a wall three surfaces hit, and it answers one — `reserve-solvency`,
+whose reserve addresses can be named in the terms. **Net effect on what to build is still nothing**,
+and the demand observation the brief ends on is untouched, but the case for building it is now
+one-third the size it looked.
 
 The measurements still owed before any code are 1, 2 and 3 from the body — cost per leaf, which
 accounts and who chooses, and proof verification cost inside `settle` — plus finishing 4 properly by
