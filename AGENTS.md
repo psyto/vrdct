@@ -79,10 +79,15 @@ Guidance, not a hard boundary. The quality control is the cross-review.
   absence failed at least once: four digest sites became seven became eight; "every HMAC
   authenticates inbound" met an outbound request-signer; "every artifact is a mutable Postgres row"
   met three integrations that post transcripts elsewhere. A line count had stood in for a capability
-  each time. So a negative claim that changes an admission result must **name its exact scope and
-  command**, **trace every candidate the command returns to actual behaviour**, and **receive an
-  adversarial second search** before it is published. *"No demonstrated mechanism in the examined
-  source"* is a valid bounded disposition; *"no mechanism exists"* needs a threat-modelled argument.
+  each time. And the first version of this rule said such a claim must "receive an adversarial second
+  search", which is a mechanism named rather than implemented — nothing could check whether one
+  happened. The criterion is therefore: **a negative claim that changes an admission result is not
+  published until the OTHER agent records, in `reviews/NNN-slug.md`, the ref it searched, the original
+  command and a broader one, the scope each covered, their exit status, and what every candidate they
+  returned turned out to be.** Exit status is in the list because a claim in task 014 was supported by
+  a command that matched no files and returned 1; its zero was a path error, and it agreed with the
+  truth by accident. *"No demonstrated mechanism in the examined source"* is a valid bounded
+  disposition; *"no mechanism exists"* needs a threat-modelled argument.
 - **Task numbers are a shared resource too.** Two windows numbered a task 012 on the same day. Read
   `docs/tasks/` before claiming a number.
 - **Stage by path, never `git add -A`.** In a shared tree it will pick up another window's untracked

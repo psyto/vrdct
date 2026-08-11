@@ -68,10 +68,22 @@ Ok(Some(LoadedPluginMeta::Persona(PersonaDefinition { id, ..., prompt_hash
 The digest is taken over a file on disk at load time, and stored on a `PersonaDefinition`. Nothing
 downstream re-hashes what was assembled for a turn.
 
-**The named-but-empty slot, which is the sharpest form of this finding.** "No model identifier" was an
-absence claim that had never been searched — five review rounds, and it survived because nobody asked.
-Run under the standing rule now in `AGENTS.md`, it holds, and it produces something better than the
-sentence it was defending. The read-only view names exactly the provenance a resolver would want:
+**The failure is missing PROVENANCE, not missing storage — and getting that wrong was the sixth
+instance of this document's pattern, committed in the same change that claimed to have fixed the
+method** (Codex, reviews/014 F7). `session_executions.metadata` is `jsonb not null default '{}'`, and
+`centaur-api-server/src/routes.rs:1806-1807` persists whatever the caller sent:
+`if request.metadata.is_object() { request.metadata }`. A model name, a temperature, a seed — any of
+them **can** be stored there today. "Holds none of them" was false.
+
+What is absent is the thing that would make such a value evidence. Nothing requires the field, nothing
+validates it, nothing derives it from the run, and nothing binds it to what actually executed. It is
+caller-supplied, which in this repo's own vocabulary is the exact defect task 011 spent seven rounds
+closing: *a field nothing validates is a field that can claim a different context.* Unconstrained
+storage is the opposite of provenance — a slot the caller fills is a slot the caller can fill with
+anything.
+
+The read surface makes the gap legible, because it names exactly the provenance a resolver would want
+and defines none of it as a column:
 
 ```sql
 create or replace view centaur_readonly_session_executions as select
@@ -90,12 +102,21 @@ alter it are `0005` (handoff idempotency) and `0034` (stdout owner). `to_jsonb(r
 a row with no `model` field is NULL, so all five view columns evaluate to NULL at this commit.
 
 Model, harness run, base image, overlay — the fields that would identify *what actually ran* — are
-named in the published read surface and populated by nothing. No sampling parameter, `top_p`, `seed`
-or `max_tokens` appears in any migration at all. The one `"model"` string in the runtime is inside
-`mock_app_server_script()` (`lib.rs:3762`), a test double.
+named in the published read surface and defined by no column, so the view returns NULL for all five.
+No sampling parameter appears in any migration; the command for that is in *Reproducing this*, and the
+first version published here was **broken** — it used a literal `.../migrations/*.sql`, matched no
+files, exited 1, and its "0" was a path error rather than a measurement. The corrected command returns
+the same answer, which does not rescue it: a broken command that happens to agree is not evidence.
 
-**Result: FAIL.** The inputs that made the run come out the way it did are not in the record — and the
-schema names five of them without holding any.
+And **`mock_app_server_script()` is not the only runtime `"model"` string** — that was also false.
+`title_generator.rs:6` sets `const SESSION_TITLE_MODEL: &str = "gpt-5.4-nano"`, and `:38-42` sends a
+production request carrying `"model"` and `"max_output_tokens": 24`. It generates a session title
+rather than running the agent turn, so it does not make a turn reproducible; but the sentence was a
+universal about the runtime and it was wrong.
+
+**Result: FAIL** — on execution-bound provenance. A turn's model, sampling parameters, seed and
+assembled prompt are not recorded as anything derived from or bound to the run. They may be *stored*,
+by a caller, in an unvalidated jsonb field the schema neither requires nor checks.
 
 ## Test 2 — external calls: are egress responses recorded?
 
@@ -425,7 +446,9 @@ git checkout 74979c19bf0b37cfc2c4b1f5510713841af03df1   # 2026-08-10 22:17:16 +0
 | protection is RLS | `ls services/api-rs/crates/centaur-session-sqlx/migrations \| grep -E '^00(19\|2[0-3]\|42)'` | six migrations |
 | the provenance view is empty | `sed -n '45,55p' services/api-rs/crates/centaur-session-sqlx/migrations/0019_centaur_readonly_role.sql` then `awk '/create table if not exists session_executions/,/^\);/' .../0001_session_control_plane.sql` | the view names `model`, `harness_run_id`, `base_image_ref`, `base_image_hash`, `overlay_hash`; the table has none of them |
 | …and nothing added them later | `git grep -n 'alter table session_executions' -- '*.sql'` | only `0005` (idempotency) and `0034` (stdout owner) |
-| no sampling parameters at all | `git grep -ni 'temperature\|top_p\|top_k\|seed\|max_tokens' -- '.../migrations/*.sql'` | **0** |
+| no sampling parameter in any migration | `git grep -ni 'temperature\|top_p\|top_k\|seed\|max_tokens' -- 'services/api-rs/crates/centaur-session-sqlx/migrations/*.sql'` | no output, **exit 1**. The version first published here used a literal `.../migrations/*.sql`, matched no files, and returned the same exit 1 for the wrong reason |
+| metadata takes whatever the caller sends | `sed -n '1806,1808p' services/api-rs/crates/centaur-api-server/src/routes.rs` | `if request.metadata.is_object() { request.metadata }` |
+| a production model string exists | `sed -n '6p;38,42p' services/api-rs/crates/centaur-session-runtime/src/title_generator.rs` | `gpt-5.4-nano`, `"max_output_tokens": 24` |
 | **audit** | `git grep -in audit \| wc -l` | **34**, not four |
 | | `git grep -in audit -- '*.rs' '*.sql' \| wc -l` | **0** |
 | | `sed -n 123,131p docs/pages/security.mdx` | a section titled **Audit trail** |
