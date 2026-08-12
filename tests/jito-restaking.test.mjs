@@ -166,7 +166,7 @@ test('a graph from the adapter produces a claim the engine verifies', () => {
   const claim = buildRestakingClaim({
     subject: { network: 'jito-restaking', chain: 'solana-mainnet' },
     terms: { gamma: { num: 1, den: 10 }, shockPsiBps: 10 },
-    services: g.services, validators: g.validators, source: { kind: 'TEST' },
+    services: g.services, validators: g.validators, source: { kind: 'JITO_RESTAKING_OBSERVATION' },
   });
   assert.equal(verify(claim).ok, true);
   assert.equal(claim.computation.services, 2);
@@ -195,7 +195,7 @@ test('the declared prices and NCN terms are pinned in the claim, not pointed at'
     subject: { network: 'jito-restaking', chain: 'solana-mainnet' },
     terms: { gamma: { num: 1, den: 10 }, shockPsiBps: 10 },
     services: g.services, validators: g.validators,
-    source: { kind: 'T', declared: { numeraire: 'SOL', mint_prices: mints, ncn_terms: {} } },
+    source: { kind: 'JITO_RESTAKING_OBSERVATION', declared: { numeraire: 'SOL', mint_prices: mints, ncn_terms: {} } },
   });
   const a = mk({ [MINT_A]: { num: 1, den: 1 } });
   assert.deepEqual(a.inputs.observed.source.declared.mint_prices, { [MINT_A]: { num: 1, den: 1 } });

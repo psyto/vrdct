@@ -7,7 +7,7 @@ import { resolve } from '../core/resolution.mjs';
 const svc = (id, profit, num = 1, den = 2) => ({ id, profit: String(profit), alpha: { num, den } });
 const val = (id, stake, services) => ({ id, stake: String(stake), services });
 const terms = (num, den, shockPsiBps = 10) => ({ gamma: { num, den }, shockPsiBps });
-const inputs = (t, services, validators) => ({ terms: t, observed: { source: 'test', services, validators } });
+const inputs = (t, services, validators) => ({ terms: t, observed: { source: { kind: rsk.SOURCE_KIND.DECLARED_GRAPH }, services, validators } });
 const run = (t, services, validators) => rsk.reexec(inputs(t, services, validators));
 
 test("the abstract's own instance: a 10% buffer caps a 0.1% shock at 1.1% of stake", () => {
@@ -167,7 +167,7 @@ test('a claim re-executes end-to-end, resists tampering, and resolves a market',
   const subject = { network: 'restaking-network-under-test', chain: 'ethereum' };
   const services = [svc('s1', 100, 1, 3), svc('s2', 40, 1, 2)];
   const validators = [val('v1', 300, ['s1']), val('v2', 200, ['s1', 's2'])];
-  const claim = rsk.build({ subject, terms: terms(1, 10), services, validators, source: 'pinned-snapshot' });
+  const claim = rsk.build({ subject, terms: terms(1, 10), services, validators, source: { kind: rsk.SOURCE_KIND.DECLARED_GRAPH } });
 
   const v = verify(claim);
   assert.equal(v.ok, true, JSON.stringify(v.checks));

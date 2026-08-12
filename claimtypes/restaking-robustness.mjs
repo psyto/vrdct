@@ -71,6 +71,29 @@ export const invariant = {
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const U128_MAX = (1n << 128n) - 1n;
+export const SOURCE_KIND = {
+  DECLARED_GRAPH: 'DECLARED_RESTAKING_GRAPH',
+  JITO_OBSERVATION: 'JITO_RESTAKING_OBSERVATION',
+};
+const JITO_SOURCE_KEYS = [
+  'kind', 'restaking_program', 'vault_program', 'reads', 'observed_from', 'observed_to',
+  'certifies', 'does_not_certify', 'settlement_grade', 'evaluated_at_slot', 'epoch_length',
+  'active_stake_rule', 'security_measure', 'manifest', 'declared', 'contributing_mints',
+  'stake_reduction', 'reproducible',
+];
+const PROFIT_ESTIMATES = 'declared in terms.* / observed.services[].profit — see honest scope';
+
+function sourceDescriptor(value) {
+  if (!isObject(value)) throw new Error('inputs.observed.source must be an object descriptor');
+  if (value.kind === SOURCE_KIND.DECLARED_GRAPH) {
+    closed('inputs.observed.source', value, ['kind']);
+  } else if (value.kind === SOURCE_KIND.JITO_OBSERVATION) {
+    closed('inputs.observed.source', value, JITO_SOURCE_KEYS);
+  } else {
+    throw new Error(`inputs.observed.source.kind must be '${SOURCE_KIND.DECLARED_GRAPH}' or '${SOURCE_KIND.JITO_OBSERVATION}'`);
+  }
+  return value;
+}
 
 /// Re-execution has to terminate for a verifier with a laptop, and an attacker must not be able to
 /// make one claim cost a year of CPU. Cardinality alone does not deliver that: `T_v` is an exact sum
@@ -156,7 +179,12 @@ export function canonicalInputs(inputs) {
     throw new Error('inputs.terms and inputs.observed must be objects');
   }
   closed('inputs', inputs, ['trusted', 'oracle_inputs', 'terms', 'observed']);
-  if ('trusted' in inputs) closed('inputs.trusted', inputs.trusted, ['network', 'profit_estimates']);
+  if ('trusted' in inputs) {
+    closed('inputs.trusted', inputs.trusted, ['network', 'profit_estimates']);
+    if (inputs.trusted.profit_estimates !== PROFIT_ESTIMATES) {
+      throw new Error('inputs.trusted.profit_estimates must name the declared profit estimates');
+    }
+  }
   if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
     throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
   }
@@ -169,6 +197,7 @@ export function canonicalInputs(inputs) {
   if (shockPsiBps === 0 || shockPsiBps > 10_000) throw new Error('terms.shockPsiBps must be within (0, 10000]');
 
   closed('inputs.observed', observed, ['source', 'services', 'validators']);
+  sourceDescriptor(observed.source);
   if (!Array.isArray(observed.services) || observed.services.length === 0) throw new Error('observed.services must be a non-empty array');
   if (!Array.isArray(observed.validators) || observed.validators.length === 0) throw new Error('observed.validators must be a non-empty array');
   if (observed.services.length > MAX_SERVICES) throw new Error(`observed.services must hold at most ${MAX_SERVICES} entries`);
@@ -345,7 +374,10 @@ export function reexec(inputs) {
 }
 
 export function checks(claim, r) {
+  const subjectNetwork = claim?.subject?.network;
+  const trustedNetwork = claim?.inputs?.trusted?.network;
   return [
+    ['subject names the network the trusted context names', typeof subjectNetwork === 'string' && subjectNetwork === trustedNetwork, `${subjectNetwork ?? 'missing'} vs ${trustedNetwork ?? 'missing'}`],
     ['certified buffer reproduces', r.computation.gamma_max === claim.computation.gamma_max, `${r.computation.gamma_max}`],
     ['binding validator reproduces', r.computation.binding_validator === claim.computation.binding_validator, `${r.computation.binding_validator}`],
     ['cascade bound reproduces', r.computation.cascade_bound_bps === claim.computation.cascade_bound_bps, `${r.computation.cascade_bound_bps} bps`],
@@ -354,11 +386,13 @@ export function checks(claim, r) {
 }
 
 export function build({ subject, terms, services, validators, source }) {
+  if (typeof subject?.network !== 'string') throw new Error('subject.network must name the trusted network');
+  sourceDescriptor(source);
   return buildClaim({
     type,
     subject,
     inputs: {
-      trusted: { network: subject.network, profit_estimates: 'declared in terms.* / observed.services[].profit — see honest scope' },
+      trusted: { network: subject.network, profit_estimates: PROFIT_ESTIMATES },
       oracle_inputs: [],
       terms,
       observed: { source, services, validators },

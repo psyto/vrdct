@@ -17,6 +17,37 @@ export const invariant = {
 };
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+export const MARKET_ID = 'US_EQUITIES_REGULAR';
+export const OBSERVATION_SOURCE = 'getSignaturesForAddress';
+
+function u32(name, value) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
+    throw new Error(`${name} must be a safe u32 integer`);
+  }
+  return value;
+}
+
+function windowDescriptor(window, observations) {
+  if (!isObject(window)) throw new Error('inputs.window must be an object');
+  closed('inputs.window', window, ['from_ts', 'to_ts', 'from_iso', 'to_iso']);
+  // Some direct canonical-input callers intentionally supply no display window. Once a window is
+  // present, though, it is a claim about the pinned set and cannot be decorative.
+  if (Object.keys(window).length === 0) return;
+  const fromTs = u32('inputs.window.from_ts', window.from_ts);
+  const toTs = u32('inputs.window.to_ts', window.to_ts);
+  if (toTs < fromTs) throw new Error('inputs.window.to_ts must not precede inputs.window.from_ts');
+  if (Object.hasOwn(window, 'from_iso') && window.from_iso !== new Date(fromTs * 1000).toISOString()) {
+    throw new Error('inputs.window.from_iso must exactly represent inputs.window.from_ts');
+  }
+  if (Object.hasOwn(window, 'to_iso') && window.to_iso !== new Date(toTs * 1000).toISOString()) {
+    throw new Error('inputs.window.to_iso must exactly represent inputs.window.to_ts');
+  }
+  observations.forEach((observation, i) => {
+    if (observation.blockTime < fromTs || observation.blockTime > toTs) {
+      throw new Error(`inputs.observed.observations[${i}].blockTime lies outside inputs.window`);
+    }
+  });
+}
 
 // The sole raw-JSON reader for this surface. The returned values are representable by Rust's u32
 // timestamp record and are the input domain shared with the canonical encoder.
@@ -28,12 +59,17 @@ export function canonicalInputs(inputs) {
   // blockTimes, then Rust receives only those u32 records, so no unrecognised JSON key can reach
   // the re-execution twin.
   closed('inputs', inputs, ['trusted', 'oracle_inputs', 'window', 'observed']);
-  if ('trusted' in inputs) closed('inputs.trusted', inputs.trusted, ['market_id']);
+  if ('trusted' in inputs) {
+    closed('inputs.trusted', inputs.trusted, ['market_id']);
+    if (inputs.trusted.market_id !== MARKET_ID) throw new Error(`inputs.trusted.market_id must be '${MARKET_ID}'`);
+  }
   if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
     throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
   }
-  if ('window' in inputs) closed('inputs.window', inputs.window, ['from_ts', 'to_ts', 'from_iso', 'to_iso']);
   closed('inputs.observed', inputs.observed, ['source', 'account', 'count', 'observations']);
+  if ('source' in inputs.observed && inputs.observed.source !== OBSERVATION_SOURCE) {
+    throw new Error(`inputs.observed.source must be '${OBSERVATION_SOURCE}'`);
+  }
   const observations = inputs.observed.observations;
   if (observations.length === 0) throw new Error('inputs.observed.observations must be non-empty');
   if ('count' in inputs.observed) {
@@ -54,6 +90,7 @@ export function canonicalInputs(inputs) {
     }
     return observation.blockTime;
   });
+  if ('window' in inputs) windowDescriptor(inputs.window, observations);
   return { blockTimes };
 }
 
@@ -93,14 +130,18 @@ export function reexec(inputs) {
   };
 }
 export function checks(claim, r) {
+  const subjectAccount = claim?.subject?.priceAccount;
+  const observedAccount = claim?.inputs?.observed?.account;
   return [
+    ['subject names the account the inputs came from', typeof subjectAccount === 'string' && subjectAccount === observedAccount, `${subjectAccount ?? 'missing'} vs ${observedAccount ?? 'missing'}`],
     ['liveness signal reproduces', r.computation.signal === claim.computation.signal, `${r.computation.signal}`],
     ['closed-window updates reproduce', r.computation.closedUpdates === claim.computation.closedUpdates, `${r.computation.closedUpdates}`],
     ['max gap reproduces', r.computation.maxGapMin === claim.computation.maxGapMin, `${r.computation.maxGapMin}`],
   ];
 }
 export function build({ subject, window, observations }) {
-  return buildClaim({ type, subject, inputs: { trusted: { market_id: 'US_EQUITIES_REGULAR' }, oracle_inputs: [], window, observed: { source: 'getSignaturesForAddress', account: subject.priceAccount, count: observations.length, observations } } });
+  if (typeof subject?.priceAccount !== 'string') throw new Error('subject.priceAccount must name the observed account');
+  return buildClaim({ type, subject, inputs: { trusted: { market_id: MARKET_ID }, oracle_inputs: [], window, observed: { source: OBSERVATION_SOURCE, account: subject.priceAccount, count: observations.length, observations } } });
 }
 
 registerClaimType({ type, invariant, canonicalInputs, reexec, checks });

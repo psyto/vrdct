@@ -14,7 +14,10 @@ const ACCOUNT = 'A2GDb4Um4Tr42iKgPz5fQ2d7pYTnaUuHN3d5V41Cywff';
 function validClaims() {
   return [
     cmls.build({
-      subject: { priceAccount: ACCOUNT }, window: { from_ts: 1785600000, to_ts: 1785600060, from_iso: '2026-08-01T00:00:00.000Z', to_iso: '2026-08-01T00:01:00.000Z' },
+      subject: { priceAccount: ACCOUNT }, window: {
+        from_ts: 1785600000, to_ts: 1785600060,
+        from_iso: new Date(1785600000 * 1000).toISOString(), to_iso: new Date(1785600060 * 1000).toISOString(),
+      },
       observations: [{ sig: 'a', slot: 1, blockTime: 1785600000 }],
     }),
     solvency.build({
@@ -36,14 +39,14 @@ function validClaims() {
         schedule: { kind: 'CALENDAR_OPEN', fromTs: unix(2026, 8, 6, 0), toTs: unix(2026, 8, 7, 0), periodSecs: 3600 },
         graceSecs: 300, asyncPpm: 100_000, quorum: { n: 1, f: 0 },
       },
-      actions: [], source: 'getSignaturesForAddress',
+      actions: [], source: liveness.OBSERVATION_SOURCE,
     }),
     restaking.build({
       subject: { network: 'restaking-network-under-test' },
       terms: { gamma: { num: 1, den: 10 }, shockPsiBps: 10 },
       services: [{ id: 's', profit: '1', alpha: { num: 1, den: 2 } }],
       validators: [{ id: 'v', stake: '100', services: ['s'] }],
-      source: 'pinned-snapshot',
+      source: { kind: restaking.SOURCE_KIND.DECLARED_GRAPH },
     }),
   ];
 }
@@ -60,6 +63,21 @@ function atPath(value, path) {
 
 function reseal(claim) {
   return { ...claim, claim_id: claimId(claim) };
+}
+
+function claimOf(type) {
+  const claim = validClaims().find((candidate) => candidate.claim_type === type);
+  assert.ok(claim, `missing ${type} fixture`);
+  assert.equal(verify(claim).ok, true, `${type}: the baseline must verify`);
+  return claim;
+}
+
+function refusedAfterReseal(claim, label, mutate) {
+  const forged = JSON.parse(JSON.stringify(claim));
+  mutate(forged);
+  const resealed = reseal(forged);
+  assert.equal(claimId(resealed), resealed.claim_id, `${label}: the fixture must be self-consistent before rejection`);
+  assert.equal(verify(resealed).ok, false, `${label}: the verifier accepted the changed context`);
 }
 
 test('every claim-type rejects a resealed unknown key at every semantic input object', () => {
@@ -90,4 +108,30 @@ test('derived observed counts agree with their arrays before a claim can verify'
     assert.equal(claimId(resealed), resealed.claim_id, `${honest.claim_type}: the fixture must be self-consistent before rejection`);
     assert.equal(verify(resealed).ok, false, `${honest.claim_type}: observed.count disagreed with its own array`);
   }
+});
+
+test('subject and trusted context cannot name a different source after a reseal', () => {
+  refusedAfterReseal(claimOf(cmls.type), 'CMLS subject account', (claim) => { claim.subject.priceAccount = '11111111111111111111111111111111'; });
+  refusedAfterReseal(claimOf(liveness.type), 'liveness subject account', (claim) => { claim.subject.account = 'OTHER_ACCOUNT'; });
+  refusedAfterReseal(claimOf(liveness.type), 'liveness trusted obligor', (claim) => { claim.inputs.trusted.obligor = 'other-obligor'; });
+  refusedAfterReseal(claimOf(cmls.type), 'CMLS market id', (claim) => { claim.inputs.trusted.market_id = 'TOKYO_EQUITIES'; });
+  refusedAfterReseal(claimOf(solvency.type), 'solvency trusted chain', (claim) => { claim.inputs.trusted.chain = 'ethereum-mainnet'; });
+  refusedAfterReseal(claimOf(liveness.type), 'liveness calendar', (claim) => { claim.inputs.trusted.calendar = 202501; });
+  refusedAfterReseal(claimOf(restaking.type), 'restaking trusted network', (claim) => { claim.inputs.trusted.network = 'other-network'; });
+});
+
+test('every source label is a typed descriptor or the type-specific literal', () => {
+  refusedAfterReseal(claimOf(cmls.type), 'CMLS source', (claim) => { claim.inputs.observed.source = 'made up'; });
+  refusedAfterReseal(claimOf(solvency.type), 'solvency source', (claim) => { claim.inputs.observed.source = 'made up'; });
+  refusedAfterReseal(claimOf(liveness.type), 'liveness source', (claim) => { claim.inputs.observed.source = 'made up'; });
+  refusedAfterReseal(claimOf(restaking.type), 'restaking source kind', (claim) => { claim.inputs.observed.source.kind = 'made up'; });
+});
+
+test('CMLS window must bracket its observations and ISO strings must represent its timestamps', () => {
+  refusedAfterReseal(claimOf(cmls.type), 'CMLS window ISO', (claim) => { claim.inputs.window.from_iso = '2026-01-01T00:00:00.000Z'; });
+  refusedAfterReseal(claimOf(cmls.type), 'CMLS window bounds', (claim) => {
+    const before = claim.inputs.observed.observations[0].blockTime - 1;
+    claim.inputs.window.to_ts = before;
+    claim.inputs.window.to_iso = new Date(before * 1000).toISOString();
+  });
 });

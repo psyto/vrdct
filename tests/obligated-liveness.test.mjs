@@ -26,7 +26,7 @@ const terms = (o = {}) => ({
 // separate acts" cannot accidentally test "one act listed twice" — which is F1's whole point.
 let seq = 0;
 const act = (ts, id) => ({ id: id ?? `tx${String(seq++).padStart(4, '0')}`, ts });
-const inputs = (t, actions) => ({ terms: t, observed: { source: 'test', actions } });
+const inputs = (t, actions) => ({ terms: t, observed: { source: olv.OBSERVATION_SOURCE, actions } });
 const run = (t, actions) => olv.reexec(inputs(t, actions));
 
 const slotsOf = (t) => olv.deriveSlots(t.schedule.fromTs, t.schedule.toTs, t.schedule.periodSecs);
@@ -258,7 +258,7 @@ test('canonicalInputs rejects what it cannot represent exactly', () => {
 test('a claim re-executes end-to-end, resists tampering, and resolves a market', () => {
   const t = terms();
   const subject = { obligor: 'keeper-under-test', account: 'KEEPER_ACCOUNT_UNDER_TEST', chain: 'solana' };
-  const claim = olv.build({ subject, terms: t, actions: [], source: 'getSignaturesForAddress' });
+  const claim = olv.build({ subject, terms: t, actions: [], source: olv.OBSERVATION_SOURCE });
 
   assert.equal(claim.verdict.flag, 'RED');
   const v = verify(claim);
@@ -277,7 +277,7 @@ test('a claim re-executes end-to-end, resists tampering, and resolves a market',
   assert.equal(res.reproduces, true);
 
   // and a market that asks the same question of an excused obligor does not resolve YES
-  const excused = olv.build({ subject, terms: terms({ asyncPpm: 900_000 }), actions: [], source: 'test' });
+  const excused = olv.build({ subject, terms: terms({ asyncPpm: 900_000 }), actions: [], source: olv.OBSERVATION_SOURCE });
   assert.equal(excused.verdict.flag, 'UNKNOWN');
   assert.equal(resolve(excused, { market: 'same', yesWhen: ['RED'] }).resolved, 'NO');
 });

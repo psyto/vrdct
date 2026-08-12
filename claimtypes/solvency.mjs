@@ -16,6 +16,7 @@ export const invariant = {
 
 const U128_MAX = (1n << 128n) - 1n;
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+export const OBSERVATION_SOURCE = 'chain re-computation';
 
 function quantity(name, value) {
   let parsed;
@@ -42,8 +43,16 @@ export function canonicalInputs(inputs) {
   if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
     throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
   }
-  if ('window' in inputs) closed('inputs.window', inputs.window, []);
+  if ('window' in inputs) {
+    closed('inputs.window', inputs.window, ['epoch']);
+    if (Object.hasOwn(inputs.window, 'epoch') && (!Number.isSafeInteger(inputs.window.epoch) || inputs.window.epoch < 0 || inputs.window.epoch > 0xffffffff)) {
+      throw new Error('inputs.window.epoch must be a safe u32 integer');
+    }
+  }
   closed('inputs.observed', inputs.observed, ['source', 'quantities']);
+  if ('source' in inputs.observed && inputs.observed.source !== OBSERVATION_SOURCE) {
+    throw new Error(`inputs.observed.source must be '${OBSERVATION_SOURCE}'`);
+  }
   const q = inputs.observed.quantities;
   closed('inputs.observed.quantities', q, ['virtualValue', 'liability', 'inv2b_ok', 'staleRecords']);
   const staleRecords = q.staleRecords;
@@ -77,7 +86,10 @@ export function reexec(inputs) {
   };
 }
 export function checks(claim, r) {
+  const subjectChain = claim?.subject?.chain;
+  const trustedChain = claim?.inputs?.trusted?.chain;
   return [
+    ['subject names the chain the inputs were recomputed from', subjectChain === trustedChain, `${subjectChain ?? 'absent'} vs ${trustedChain ?? 'absent'}`],
     ['backing ≥ liability reproduces', r.computation.inv1_ok === claim.computation.inv1_ok, `${r.computation.inv1_ok}`],
     ['redeemable-backing reproduces', r.computation.inv2b_ok === claim.computation.inv2b_ok, `${r.computation.inv2b_ok}`],
     ['no-stale-records reproduces', r.computation.stale_ok === claim.computation.stale_ok, `${r.computation.stale_ok}`],
@@ -90,7 +102,7 @@ export function build({ subject, window, quantities }) {
   // says so (Codex, reviews/011 F12). Absent and present-but-undefined are the same fact, and only
   // one of them can be content-addressed.
   const trusted = subject?.chain === undefined ? {} : { chain: subject.chain };
-  return buildClaim({ type, subject, inputs: { trusted, oracle_inputs: [], window, observed: { source: 'chain re-computation', quantities } } });
+  return buildClaim({ type, subject, inputs: { trusted, oracle_inputs: [], window, observed: { source: OBSERVATION_SOURCE, quantities } } });
 }
 
 registerClaimType({ type, invariant, canonicalInputs, reexec, checks });

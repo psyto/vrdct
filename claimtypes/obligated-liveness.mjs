@@ -86,6 +86,7 @@ const MIN_PERIOD_SECS = 60;
 const MAX_PERIOD_SECS = 86_400;
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+export const OBSERVATION_SOURCE = 'SOLANA_SIGNATURE_HISTORY';
 
 function u32(name, value) {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
@@ -116,7 +117,12 @@ export function canonicalInputs(inputs) {
     throw new Error('inputs.terms and inputs.observed must be objects');
   }
   closed('inputs', inputs, ['trusted', 'oracle_inputs', 'terms', 'observed']);
-  if ('trusted' in inputs) closed('inputs.trusted', inputs.trusted, ['obligor', 'calendar']);
+  if ('trusted' in inputs) {
+    closed('inputs.trusted', inputs.trusted, ['obligor', 'calendar']);
+    if (inputs.trusted.calendar !== CALENDAR_2026.version) {
+      throw new Error(`inputs.trusted.calendar must be ${CALENDAR_2026.version}, the calendar this re-execution uses`);
+    }
+  }
   if ('oracle_inputs' in inputs && !(Array.isArray(inputs.oracle_inputs) && inputs.oracle_inputs.length === 0)) {
     throw new Error('inputs.oracle_inputs has no input domain in this type: it may be absent or the empty array, nothing else');
   }
@@ -157,6 +163,9 @@ export function canonicalInputs(inputs) {
   // An action is an IDENTIFIED on-chain record, not a bare instant. A timestamp alone is copyable,
   // and one copied timestamp is enough to discharge two overlapping obligations — see `matchSlots`.
   closed('inputs.observed', observed, ['source', 'account', 'count', 'actions']);
+  if ('source' in observed && observed.source !== OBSERVATION_SOURCE) {
+    throw new Error(`inputs.observed.source must be '${OBSERVATION_SOURCE}'`);
+  }
   if (!Array.isArray(observed.actions)) throw new Error('observed.actions must be an array');
   if (observed.actions.length > MAX_ACTIONS) throw new Error(`observed.actions must hold at most ${MAX_ACTIONS} records`);
   if ('count' in observed) {
@@ -298,7 +307,13 @@ export function reexec(inputs) {
 }
 
 export function checks(claim, r) {
+  const subjectAccount = claim?.subject?.account;
+  const observedAccount = claim?.inputs?.observed?.account;
+  const subjectObligor = claim?.subject?.obligor;
+  const trustedObligor = claim?.inputs?.trusted?.obligor;
   return [
+    ['subject names the account the actions came from', typeof subjectAccount === 'string' && subjectAccount === observedAccount, `${subjectAccount ?? 'missing'} vs ${observedAccount ?? 'missing'}`],
+    ['subject names the obligor the trusted context names', typeof subjectObligor === 'string' && subjectObligor === trustedObligor, `${subjectObligor ?? 'missing'} vs ${trustedObligor ?? 'missing'}`],
     ['obligated schedule reproduces', r.computation.obligated_slots === claim.computation.obligated_slots, `${r.computation.obligated_slots} slots`],
     ['missed slots reproduce', r.computation.missed_slots === claim.computation.missed_slots, `${r.computation.missed_slots}`],
     ['async budget reproduces', r.computation.excusable_misses === claim.computation.excusable_misses, `${r.computation.excusable_misses} excusable`],
@@ -307,6 +322,9 @@ export function checks(claim, r) {
 }
 
 export function build({ subject, terms, actions, source }) {
+  if (typeof subject?.account !== 'string') throw new Error('subject.account must name the observed action account');
+  if (typeof subject?.obligor !== 'string') throw new Error('subject.obligor must name the trusted obligor');
+  if (source !== OBSERVATION_SOURCE) throw new Error(`source must be '${OBSERVATION_SOURCE}'`);
   return buildClaim({
     type,
     subject,
@@ -314,7 +332,7 @@ export function build({ subject, terms, actions, source }) {
       trusted: { obligor: subject.obligor, calendar: CALENDAR_2026.version },
       oracle_inputs: [],
       terms,
-      observed: { source, account: subject.account ?? null, count: actions.length, actions },
+      observed: { source, account: subject.account, count: actions.length, actions },
     },
   });
 }
