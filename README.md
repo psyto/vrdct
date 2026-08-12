@@ -370,6 +370,31 @@ What that last command does, on a live validator:
 Same program, same code path, opposite winners — the program has no preference for whoever opened
 the market.
 
+### It has run on devnet, and here is where to look
+
+Everything above ran for months only against `solana-test-validator -r` — an ephemeral chain on one
+laptop. On **2026-08-12** the program was deployed to devnet and both markets settled there by
+re-execution:
+
+| | |
+| --- | --- |
+| program | [`7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS`](https://explorer.solana.com/address/7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS?cluster=devnet) |
+| Market A | [`BNkBDacodR2YSkDnNXjjBG523bB6zNWqSyw64yF4L86B`](https://explorer.solana.com/address/BNkBDacodR2YSkDnNXjjBG523bB6zNWqSyw64yF4L86B?cluster=devnet) — 3,789 records folded on-chain in 19 tx, `RED`, resolver slashed |
+| Market B | [`Ejt9rn41h769WMAqkKG9W3iwMJtLcPoeoM6XE2oUSvAH`](https://explorer.solana.com/address/Ejt9rn41h769WMAqkKG9W3iwMJtLcPoeoM6XE2oUSvAH?cluster=devnet) — forged feed refused, then `GREEN`, challenger slashed |
+
+The first real cluster broke three things the local validator had been hiding, all of them in the
+client rather than the program: confirmation used `signatureSubscribe`, which a hosted RPC need not
+offer; funding trusted the airdrop's receipt, and devnet's faucet returns a signature that confirms
+with `err: null` and **credits nothing**; and the bond was hard-coded at 2 SOL, which assumes free
+airdrops. Funding is now verified by balance, confirmation polls, and `BOND_SOL` / `ACTOR_SOL` /
+`PAYER` make the run fit a finite wallet.
+
+**Two honest limits on visiting it.** Both markets are *settled*, so `vrdct.mjs markets` correctly
+reports none live — there is nothing open to arrive at until someone opens one. And `check` against
+Market A needs a source RPC with enough throughput to rebuild 3,789 signatures; on a rate-limited
+endpoint it stops with **`⛔ DO NOT BOND — source reconstruction failed`**, which is the tool
+behaving correctly: it refuses rather than guessing.
+
 ### Take a market as a stranger
 
 `cli/vrdct.mjs` is the path from a visible Market PDA to an informed decision. Reading needs only an
