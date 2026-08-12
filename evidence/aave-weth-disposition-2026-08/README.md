@@ -76,6 +76,29 @@ shapes over 12 borrow transactions:
 Seven unwraps in twelve borrow transactions. Any classifier that reads only `Transfer` misses them,
 which is what probe 1 predicted and probe 2 confirmed.
 
+## The two events that would have inverted everything, identified without a recalled constant
+
+WETH emits two log shapes that arity cannot tell apart — both `topics=2, words=1`, one indexed party
+and one value. One is the wrap, one is the unwrap. **Getting them backwards inverts every disposition
+verdict**, so neither was taken from memory. `identify-events.mjs` decides it from behaviour: the WETH
+contract's own ETH balance rises by exactly what is wrapped and falls by exactly what is unwrapped, so
+for every block
+
+```
+balance(block) - balance(block-1)  ==  sum(Deposit) - sum(Withdrawal)
+```
+
+Run over blocks where the two sums differ, only one assignment reproduces the delta. **10 of 10
+blocks agree**, including blocks moving 12+ ETH where a coincidence is not available:
+
+| topic0 | is |
+| --- | --- |
+| `0xe1fffcc4…9109c` | **Deposit** — ETH → WETH, the wrap |
+| `0x7fcf532c…81b65` | **Withdrawal** — WETH → ETH, the unwrap |
+
+WETH9 emits no `Transfer` on either, which is why the first attempt at this — pairing them with a
+mint/burn `Transfer` to `0x0` — found nothing and proved nothing.
+
 ## The wall: the keyless path probes, it does not measure
 
 `eth.drpc.org` served ~40 calls and then began refusing — first
