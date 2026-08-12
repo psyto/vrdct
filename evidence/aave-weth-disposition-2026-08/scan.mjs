@@ -13,13 +13,13 @@ const POOL = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
 const WETH = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
 const BORROW = '0xb3d084820fb1a9decffb176436bd02558d15fac9b0ddfed8c465bc7359d7dce0';
 const STEP = 10;            // the free-tier eth_getLogs range
-const PARALLEL = 8;
+const PARALLEL = Number(process.env.PARALLEL ?? 4);
 const OUT = 'borrows.json';
 
 const hex = (n) => '0x' + n.toString(16);
 const addr = (t) => '0x' + t.slice(26).toLowerCase();
 let calls = 0;
-async function rpc(method, params, tries = 6) {
+async function rpc(method, params, tries = 14) {
   for (let attempt = 1; ; attempt++) {
     calls++;
     try {
@@ -30,7 +30,9 @@ async function rpc(method, params, tries = 6) {
       return j.result;
     } catch (e) {
       if (attempt >= tries) throw new Error(`${method}: ${e.message}`);
-      await new Promise((r) => setTimeout(r, 300 * attempt * attempt));
+      // An empty body or a 429 is the provider throttling, not a fact about the chain. Back off
+      // hard and keep going: the first run died after six quick retries and lost four hours.
+      await new Promise((r) => setTimeout(r, Math.min(30000, 400 * attempt * attempt) + Math.random() * 500));
     }
   }
 }
@@ -40,8 +42,19 @@ const DAYS = Number(process.env.DAYS ?? 90);
 const BLOCKS = Math.round(DAYS * 86400 / 12);
 const start = Number(process.env.FROM ?? latest - BLOCKS);
 
+// The window is PINNED on the first run and reused on every later one.
+//
+// The first version compared the checkpoint's `to` against a freshly read `latest`, which advances
+// every twelve seconds — so the stored window was always 'stale', the file was always discarded, and
+// the scan restarted from zero every time while reporting itself as resumable. It was described as
+// resumable for hours and had never once resumed; 4,292 collected borrows were overwritten proving
+// it. A resume that keys on a moving value is not a resume.
+//
+// Set RESCAN=1 to deliberately start a new window.
 let state = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf8')) : null;
-if (!state || state.from !== start || state.to !== latest) {
+if (state && !state.complete && !process.env.RESCAN) {
+  console.log(`resuming the PINNED window ${state.from}..${state.to} — latest is now ${latest}, which does not move it`);
+} else {
   state = { from: start, to: latest, cursor: start, complete: false, borrows: [], rpc_host: new URL(RPC).host };
 }
 console.log(`window ${state.from}..${state.to} (${DAYS}d, ${state.to - state.from} blocks), resuming at ${state.cursor}, have ${state.borrows.length}`);
