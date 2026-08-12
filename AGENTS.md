@@ -73,7 +73,12 @@ Guidance, not a hard boundary. The quality control is the cross-review.
   Discipline is the wrong instrument. Two worktrees cannot hold the same branch — git *refuses* — so
   the collision becomes an error instead of a silence. Task 007's review ran in its own worktree and
   nothing went wrong; from 008 onward reviews ran in the shared directory, and that is exactly where
-  the three misplaced commits are. See `HANDOFF.md` for what it cost.
+  the three misplaced commits are. What it cost, all of it silent: a CC fix landed on a Codex review
+  branch **three times** (tasks 008, 010, 011), and each subsequent `git push <task-branch>` was a
+  no-op that reported the fix as pushed when it was not; task 011's F5/F6 review sat on the
+  reviewer's branch and was **found by accident** while preparing an unrelated request; `git add -A`
+  came one commit from pulling another window's untracked `evidence/` into an unrelated branch; and
+  two different task 012s existed at once.
 - **A grep is candidate discovery, never proof of a capability or its absence.** Adopted after task
   014, where every `file:line` citation held across ten findings and *every* claim that quantified an
   absence failed at least once: four digest sites became seven became eight; "every HMAC

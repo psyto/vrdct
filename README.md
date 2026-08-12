@@ -481,13 +481,26 @@ Three residual assumptions, all named rather than hidden:
    who is watching the clock can therefore still take the pot from a resolver whose completed Feed
    would have proven them right. Removing that race needs expiry to be conditional on no completed
    Feed existing, which the program cannot check; it is open, not solved.
+4. **An adapter's output is not automatically settlement-grade, and the one adapter here says so.**
+   `adapters/jito-restaking` reads a live restaking graph from mainnet and produces a claim the
+   engine verifies — and it stamps that claim **`settlement_grade: NO`**. The reason is not effort:
+   `getProgramAccounts` takes no slot, so two reads establish that the endpoint answered the same way
+   twice and never that the graph equalled chain state at any instant. Task 013's review sharpened
+   why a recorder does not fix it either — a leaf proves *membership* of an address someone supplied,
+   and a program-account enumeration needs *completeness*, which no permissionless instruction can
+   establish. So `restaking-robustness` is offline-complete and the adapter feeding it refuses to
+   claim more than it has. **A verdict carrying `settlement_grade: NO` is a board reading, not
+   something to bond against.**
 
 The 2026 calendar is valid only for 2026 timestamps, which the JS and Rust parsers both reject
 outside its half-open range — so the holiday table cannot silently classify a window it does not
 describe.
 
-And the on-chain half has run only against a local validator so far, with that 2026 NYSE calendar
-compiled into the program. Devnet, a governed calendar, and a live market are next.
+The on-chain half ran only against a local validator until 2026-08-12; it now also runs on devnet,
+with the two settled markets linked above. What that leaves is a **governed calendar** — the 2026
+NYSE table is still compiled into the program — and a **market left open** for someone who is not the
+author to arrive at, since both devnet markets are settled and `vrdct.mjs markets` therefore lists
+none live. Mainnet is behind both.
 
 ## How this repo is built
 
