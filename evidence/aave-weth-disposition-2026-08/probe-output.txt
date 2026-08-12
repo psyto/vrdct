@@ -1,0 +1,21 @@
+window 25733564..25735564 (2000 blocks)
+WETH Borrow events: 12
+  0x0b607f0684  borrowed 6.201 WETH  logs=37  received: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48,0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x6c0a267980  borrowed 4.000 WETH  logs=6  received: 0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x940e0aeef3  borrowed 7.100 WETH  logs=5  received: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x437f06e5ab  borrowed 7.205 WETH  logs=6  received: 0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x009c1b6b53  borrowed 6.705 WETH  logs=6  received: 0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x3973881501  borrowed 15.000 WETH  logs=6  received: 0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0xb79db1b9f2  borrowed 40.000 WETH  logs=6  received: 0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x44982c51cf  borrowed 0.270 WETH  logs=6  received: 0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x093ed58f4e  borrowed 0.240 WETH  logs=6  received: 0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x6b3a7c5831  borrowed 3.205 WETH  logs=35  received: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0xdcee036a3c  borrowed 1.069 WETH  logs=35  received: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  0x9455d5f41b  borrowed 0.542 WETH  logs=35  received: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+
+--- shapes ---
+  7x  0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  4x  0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+  1x  0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48,0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2,0xea51d7853eefb32b6ee06b1c12e6dcca88be0ffe
+
+rpc calls: 14
