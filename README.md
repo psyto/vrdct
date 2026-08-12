@@ -361,7 +361,7 @@ What that last command does, on a live validator:
 - **Market A** — the *real* corpus claim (3,789 pinned Jupiter Lend SPYx updates). The resolver
   asserts `GREEN` ("the venue liquidates soundly") and bonds 2 SOL; a challenger asserts `RED` and
   matches. The program folds all 3,789 records on-chain in 19 transactions, reproduces the offline
-  verdict exactly (683 updates while OPEN, 3,106 while CLOSED, max gap 4 min → `RED`), and
+  verdict exactly (683 updates while OPEN, 3,106 while CLOSED, max gap 242 s → `RED`), and
   **slashes the resolver**: challenger +1.8 SOL, completed-feed feeder +0.2 SOL.
 - **Market B** — the real Marinade solvency snapshot, honest resolver, frivolous challenge. Someone
   first tries to feed forged inputs that would flip the verdict to `RED`; `settle` refuses. The

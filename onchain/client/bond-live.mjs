@@ -28,7 +28,10 @@ import { inputsCommitment, marketId, marketDefinitionHash, yesWhenMask, FLAG_ID,
 const RPC = process.env.RPC || 'http://127.0.0.1:8899';
 // Mirrors `declare_id!` in programs/vrdct-bond/src/lib.rs. Override if you deploy under your own.
 const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID || '7EtJACKUvpWGB524uqTykTzyCx1DyxKb76iEZVAiWwKS');
-const BOND = 2 * LAMPORTS_PER_SOL;
+// A parameter, not the claim. The demonstration is that re-execution decides WHO is slashed; the
+// size of the stake is set by whoever opens the market. Kept at 2 SOL for a local validator, where
+// airdrops are free, and lowered on a real cluster where the wallet is finite.
+const BOND = Math.round(Number(process.env.BOND_SOL ?? 2) * LAMPORTS_PER_SOL);
 const SOL = (l) => (l / LAMPORTS_PER_SOL).toFixed(4);
 
 // ── Anchor wire format, hand-rolled (no anchor client dep) ───────────────────────────────────────
@@ -45,7 +48,27 @@ const rw = (pubkey, signer = false) => ({ pubkey, isSigner: signer, isWritable: 
 const ro = (pubkey, signer = false) => ({ pubkey, isSigner: signer, isWritable: false });
 
 const conn = new Connection(RPC, 'confirmed');
-const send = (tx, signers) => sendAndConfirmTransaction(conn, tx, signers, { commitment: 'confirmed' });
+
+/// Confirmation by POLLING, not by websocket subscription.
+///
+/// `sendAndConfirmTransaction` and `confirmTransaction` both subscribe via `signatureSubscribe`, and
+/// a hosted RPC is entitled not to offer it — Alchemy's devnet endpoint completes the websocket
+/// handshake and then answers `Method 'signatureSubscribe' not found`, so every send failed after a
+/// 30-second timeout while the transactions themselves were landing and finalising. This script
+/// previously only ever ran against `solana-test-validator`, which does offer it; the first attempt
+/// on a real cluster is what surfaced the assumption.
+async function confirm(signature, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const { value } = await conn.getSignatureStatuses([signature], { searchTransactionHistory: true });
+    const status = value[0];
+    if (status?.err) throw new Error(`${signature} failed: ${JSON.stringify(status.err)}`);
+    if (status && (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized')) return signature;
+    if (Date.now() > deadline) throw new Error(`${signature} not confirmed in ${timeoutMs / 1000}s`);
+    await new Promise((r) => setTimeout(r, 700));
+  }
+}
+const send = async (tx, signers) => confirm(await conn.sendTransaction(tx, signers, { preflightCommitment: 'confirmed' }));
 
 // ── Market account decoding (layout mirrors state.rs) ─────────────────────────────────────────────
 function decodeMarket(data) {
@@ -78,9 +101,29 @@ function decodeFeed(data) {
   };
 }
 
-async function fundedKeypair(sol = 10) {
+/// Funding is verified by BALANCE, never by the airdrop's own receipt.
+///
+/// On devnet the faucet reachable from here returns a signature that confirms with `err: null` and
+/// credits nothing — measured: balance identical before and after a 2 SOL request. A confirmed
+/// transaction is not a funded account, and trusting the receipt is how this script reported success
+/// while the next instruction failed with "attempt to debit an account but found no record of a
+/// prior credit". So: ask the faucet, then look; if the money is not there, move it from PAYER.
+const PAYER = process.env.PAYER
+  ? Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(process.env.PAYER, 'utf8'))))
+  : null;
+
+async function fundedKeypair(sol = Number(process.env.ACTOR_SOL ?? 10)) {
   const kp = Keypair.generate();
-  await conn.confirmTransaction(await conn.requestAirdrop(kp.publicKey, sol * LAMPORTS_PER_SOL), 'confirmed');
+  const want = Math.round(sol * LAMPORTS_PER_SOL);
+  try { await confirm(await conn.requestAirdrop(kp.publicKey, want)); } catch { /* the faucet is advisory */ }
+  if (await conn.getBalance(kp.publicKey) >= want) return kp;
+  if (!PAYER) {
+    throw new Error(`the faucet credited nothing and PAYER is unset — export PAYER=<keypair.json> to fund actors from a real wallet`);
+  }
+  const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: PAYER.publicKey, toPubkey: kp.publicKey, lamports: want }));
+  await send(tx, [PAYER]);
+  const got = await conn.getBalance(kp.publicKey);
+  if (got < want) throw new Error(`funding ${kp.publicKey.toBase58()} left ${got} lamports, wanted ${want}`);
   return kp;
 }
 
