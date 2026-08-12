@@ -151,3 +151,83 @@ with a command behind it, not a negative requiring an independent search.
   than a change.
 - `oracle_inputs` handling is duplicated verbatim across four types. It is three lines and identical
   in each, which is the right side of the copy-vs-abstract line for a field that has no input domain.
+
+
+---
+
+# Re-review — `2af60b8`
+
+**CHANGES.** All fourteen attacks from the first review now refuse, and the fixes are the right shape.
+One new **P1 regression** was introduced, on the live path, and it was invisible to the suite for the
+same reason the first round's miss was.
+
+## F1–F4: closed, measured
+
+```
+F1 subject<->source     refused  CMLS observed.account != subject
+                        refused  liveness observed.account != subject
+                        refused  liveness trusted.obligor != subject
+F2 trusted context      refused  CMLS market_id=TOKYO_EQUITIES
+                        refused  solvency trusted.chain=ethereum-mainnet
+                        refused  liveness calendar=202501
+                        refused  restaking network mismatch
+F3 source               refused  CMLS / solvency / liveness  source='made up'
+                        refused  restaking source.kind='made up'
+F4 window               refused  CMLS from_iso lies
+                        refused  CMLS to_ts before its first observation
+```
+
+Corpus verifies, `corpus/` and the parity fixture are untouched, 87 JS / 162 parity / 2 definition /
+20 Rust green. The pinned literals match every real producer I could find — the corpus carries
+`source: 'getSignaturesForAddress'` and `trusted.market_id: 'US_EQUITIES_REGULAR'`, and the Jito
+adapter's `kind: 'JITO_RESTAKING_OBSERVATION'` is in `SOURCE_KIND`.
+
+## F5 (P1) — the ISO check rejects every claim the CLI and the keeper build
+
+`closed-market-soundness.mjs:39-43` requires the window's ISO strings to equal
+`new Date(ts * 1000).toISOString()` exactly. Both live producers strip the milliseconds:
+
+```js
+const iso = (ts) => new Date(Number(ts) * 1000).toISOString().replace('.000', '');
+```
+`cli/vrdct.mjs:35` and `keeper/lib.mjs:37`, fed straight into `cmls.build` at `cli/vrdct.mjs:83-84`
+and `keeper/lib.mjs:138`.
+
+```
+cli produces : 2026-08-01T12:10:59Z
+required     : 2026-08-01T12:10:59.000Z
+```
+
+**Failure path.** Every CMLS claim built by `vrdct check`, `vrdct crank` or the keeper's re-crank loop
+now throws in `canonicalInputs` before it can be verified or bonded. That is the whole live path of
+the only type wired to the bond program.
+
+**Why nothing caught it.** `npm run test:canonical` does not run the keeper — `test:keeper` is a
+separate script — and never exercises the CLI. The committed corpus claim happens to carry
+`.000`, so the fixture agrees with the check while the producer does not.
+
+**Fix, and I would not take the obvious one.** Making the producers stop stripping `.000` works and is
+one line each, but it leaves a rule that bans a *legal spelling of the right instant* while claiming to
+catch a *wrong instant*. Compare instants instead: require `Date.parse(window.from_iso) === from_ts *
+1000`, and likewise `to_iso`. That refuses the lie F4 was about and accepts any valid ISO-8601 rendering
+of the same moment, which is what "exactly represents" should mean.
+
+## The pattern this round, worth more than the finding
+
+Three times in one task a fixture agreed with a check while a real producer did not:
+
+1. `15dbc31` closed solvency's window to `[]`. `demo.mjs:17` builds `window: { epoch: 1004 }`, so the
+   repo's own demo was rejected. **Codex's test and my review both used `window: {}`** — the same
+   non-adversarial fixture, so neither of us saw it. Codex found and fixed it independently.
+2. The corpus carries `.000`; the CLI and keeper do not. F5.
+3. Both of the above were green under `test:canonical` the whole time.
+
+The repo already knows this sentence — *if the cost fixture is not adversarial you are measuring the
+fixture, not the boundary* — and it has now cost three findings in one task. The structural point is
+narrower and actionable: **`test:canonical` does not execute any real producer.** `demo.mjs`, the CLI
+and the keeper all build claims and none of them runs in the gate that is supposed to protect the
+claim-types. A check that constrains a producer should be exercised by that producer.
+
+**Suggested follow-up, not part of this task:** add `node demo.mjs` to `test:canonical`, and give the
+CLI and keeper a claim-construction smoke test. Both are cheap and both would have caught F5 and the
+`window: []` regression at the moment they were written.
