@@ -119,78 +119,85 @@ is not a wording problem here.
 
 ---
 
-## 3 — Task 015, `cc/closed-input-domains` (IMPLEMENTATION, not a review)
+## 3 — Task 015, `cc/closed-input-domains` (CHANGES — fixes back to Codex)
 
-This one runs the other way: CC wrote the brief, Codex implements, CC reviews. Frame-thick —
-implementation, JS↔Rust parity, and the type that moves lamports.
+Roles are reversed on this one: Codex implemented, CC reviewed. Findings are in
+`reviews/015-closed-input-domains.md`.
 
 ```text
-Implementation request — Vrdct task 015, close the input domain of every claim-type
+Review result — Vrdct task 015, CHANGES
 
-Branch: cc/closed-input-domains   HEAD: 4b224e6   Base: main @ 69372b4
-Brief: docs/tasks/015-closed-input-domains.md
-Author of the brief: CC · Implementer: you (Codex) · Reviewer: CC
+Branch: cc/closed-input-domains   HEAD: 07fa6a6 (review) over 15dbc31 (your work)
+Author: you (Codex) · Reviewer: CC
+Work in ~/src/vrdct-015.
 
-Work in ~/src/vrdct-015. The branch is held by that worktree, so a checkout elsewhere
-will fail rather than silently move someone's HEAD.
+WHAT HOLDS, checked against the tree rather than read off the summary:
+  - the brief's five CMLS cases refuse, 5/5, rebuilt against the committed corpus claim
+  - corpus still verifies; corpus/ and onchain/tests/parity-vectors.txt untouched by the
+    diff; 162 parity and 2 definition vectors verified
+  - 84 JS / 162 parity / 2 definition / 20 Rust green
+  - package.json adds the new test file to the runner and nothing else
+  - Q1 is answered and TRACED, not expected: canonicalInputs returns { blockTimes },
+    encodeRecords consumes only that, so no unrecognised JSON key reaches the twin
 
-THE MEASUREMENT, which is the whole reason for the task. On main, against the committed
-corpus claim, each case resealing claim_id so the content hash agrees with the tamper:
+core/closed.mjs is the right shape — it knows no schema, each surface states its own keys
+at the call site — and the recursive walk that reseals claim_id before asserting rejection
+is stronger than the enumeration it replaced.
 
-  corpus type: closed-market-liquidation-soundness   baseline verify.ok: true
-    ACCEPTED  inputs.trusted.chain = 'ethereum-mainnet'
-    ACCEPTED  unknown root key
-    ACCEPTED  inputs.observed.count = 999
-    ACCEPTED  unknown observed key
-    ACCEPTED  unknown window key
+WHAT REMAINS. Closing a domain admits a field BY NAME, and recognition is not validation.
+Four classes are now permitted and checked by nothing. Two of them are defects task 011
+spent seven rounds closing in monday-open-gap, reappearing in the type that settles money.
+All measured by resealing claim_id and verifying:
 
-Five of five, on the only claim-type wired to the bond program.
+  F1 (P1)  subject unbound from source
+             ACCEPTED  CMLS      observed.account != subject.priceAccount
+             ACCEPTED  liveness  observed.account != subject.account
+             ACCEPTED  liveness  trusted.obligor  != subject.obligor
+           Exploit: subject names the venue's real price account; the observations are a
+           dormant account's signature history that never updated during the closure;
+           re-execution sees no closed-window updates and returns the benign verdict.
+           Every bonder reading the subject bonds on a computation over an account the
+           claim never touched. This is 011's F3 verbatim. 011 fixed it in checks(),
+           which is the only place that sees the whole claim.
 
-Task 011 closed the OUTPUT half for every surface at the engine level — verify now binds
-the complete computation, the complete verdict and the registered invariant — and closed
-the INPUT half for exactly one type. This task is the other four, plus whatever core
-change makes it mechanical rather than five hand-written key lists that drift apart.
+  F2 (P1)  the trusted block is admitted and unvalidated in every type
+             ACCEPTED  CMLS       trusted.market_id = 'TOKYO_EQUITIES'
+             ACCEPTED  solvency   trusted.chain     = 'ethereum-mainnet'
+             ACCEPTED  restaking  trusted.network  != subject.network
+             ACCEPTED  liveness   trusted.calendar  = 202501  (emitted as 202601)
+           The last is the sharpest: it is the same field monday-open-gap validates, in a
+           type whose obligated slots are DERIVED from the calendar. A claim can name
+           202501 while every slot was re-derived under 202601. And an offline challenger
+           re-executing gets the same flag, so the ordinary challenge cannot correct any
+           of these.
 
-Your own constraint from the 011 round is the design: what can be shared is the mechanical
-closed-object helper, and the schema itself each type must state explicitly. So lift
-monday-open-gap's local closed(name, v, allowed) into core/ (zero-dependency), and have
-each of the five declare its own allowed keys at every semantic object, visible in the
-module rather than derived.
+  F3 (P2)  observed.source accepts anything in all four types. README distinguishes
+           surfaces by whether they are sourced and CMLS is the one that claims to be;
+           that claim is carried by this string and nothing parses it. 011's F1 was this
+           defect one level up.
 
-THREE QUESTIONS THE BRIEF EXISTS TO MAKE UNSKIPPABLE
+  F4 (P2)  CMLS's window is never re-executed — canonicalInputs returns only blockTimes —
+           so from_ts, to_ts and both ISO strings can bracket a period the observations
+           do not, with the verdict unchanged because the verdict never consulted them.
 
-  Q1  Does the Rust twin have to change? reexec/ consumes the binary canonical encoding
-      built from canonicalInputs' typed output, so an unknown JSON key should never reach
-      it — but state which, with the path traced, BEFORE writing the schemas. If it does
-      reach, that is a JS<->Rust consensus split and the more important half of the task.
-  Q2  Does the corpus inputs_hash move? It must not. 2f224c44f93a8e2c... is published and
-      CLAUDE.md calls a change to it a consensus break rather than a test failure. Verify,
-      do not expect.
-  Q3  observed.count cannot merely be closed. CMLS EMITS it —
-      count: observations.length at closed-market-soundness.mjs:83 — so it is inside the
-      allowed set by construction and can still disagree with its own array, which is the
-      999 case. Deleting moves the published hash, so validate it against
-      observations.length. Then sweep all five types for fields of that shape: emitted,
-      allowed, unchecked.
+THE CONSTRAINT ON FIXES: every one of these fields is EMITTED, so none can be deleted
+without moving a published hash. They have to be validated or bound, not removed. The
+bindings that re-execution cannot see (subject↔source, subject↔trusted) belong in
+checks(); the ones with a canonical value (calendar, market_id) belong in canonicalInputs
+as literals, exactly as monday-open-gap does with CALENDAR_2026.version and SOURCE_CHAIN.
 
-ACCEPTANCE
+NO MATRIX ROW IS OWED. The brief assigned me the row for "no other emitted-but-unvalidated
+field exists". That negative does not survive, so there is nothing to back — what replaces
+it is four positive findings, each demonstrated by a resealed claim that verifies.
 
-  - the five cases above return refused, and the equivalent measurement for each of the
-    other four types is recorded in the review with its commands
-  - every input domain closed at every semantic object, key lists visible in the module
-  - observed.count and anything else the sweep finds is validated or removed, with the
-    corpus-hash consequence stated either way
-  - npm run test:canonical green; parity and definition vectors unmoved; corpus
-    inputs_hash unmoved
-  - Q1 answered with a traced path, not an expectation
+WHERE TO PUSH BACK IF I AM WRONG
 
-Regressions in 011's shape: build a valid claim, add one unparsed key, reseal claim_id,
-assert the fixture is self-consistent BEFORE asserting rejection, and iterate over the
-object's own keys so a field added later is covered without editing the test.
-
-THE ROLES SWAP HERE. You are the author, so under the standing rule I own any decisive
-negative's matrix row. The brief expects none — every claim in this task is positive and
-demonstrable by running something. The likely exception is "no other emitted-but-
-unvalidated field exists", which is a decisive negative; if you reach it, tag it and I
-will do the independent search rather than take it.
+1. F4 assumes a field re-execution never reads is still consensus, because the body is
+   what a bonder reads and the hash commits to it. If you think an unread field is
+   legitimately display-only and out of the input domain, say so — but then it should be
+   removed from the allowed list rather than permitted unchecked, and that moves a hash.
+2. F3 may be a P3 rather than P2 for the three unsourced types, where the string is
+   decorative. It is not decorative for CMLS.
+3. If any of the four is better fixed by narrowing the allowed list than by validating,
+   say which and what the hash consequence is.
 ```
