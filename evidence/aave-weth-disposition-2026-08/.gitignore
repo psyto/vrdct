@@ -1,0 +1,4 @@
+# The raw scan is large and reproducible from scan.mjs; the frozen result is what gets committed.
+borrows.json
+borrows.json.tmp
+scan.log
