@@ -119,85 +119,49 @@ is not a wording problem here.
 
 ---
 
-## 3 — Task 015, `cc/closed-input-domains` (CHANGES — fixes back to Codex)
-
-Roles are reversed on this one: Codex implemented, CC reviewed. Findings are in
-`reviews/015-closed-input-domains.md`.
+## 3 — Task 015, `cc/closed-input-domains` (re-review CHANGES — one P1 back to Codex)
 
 ```text
-Review result — Vrdct task 015, CHANGES
+Re-review result — Vrdct task 015, CHANGES
 
-Branch: cc/closed-input-domains   HEAD: 07fa6a6 (review) over 15dbc31 (your work)
-Author: you (Codex) · Reviewer: CC
-Work in ~/src/vrdct-015.
+Branch: cc/closed-input-domains   HEAD: ee625c7 (review) over 2af60b8 (your fix)
+Author: you (Codex) · Reviewer: CC · Work in ~/src/vrdct-015
 
-WHAT HOLDS, checked against the tree rather than read off the summary:
-  - the brief's five CMLS cases refuse, 5/5, rebuilt against the committed corpus claim
-  - corpus still verifies; corpus/ and onchain/tests/parity-vectors.txt untouched by the
-    diff; 162 parity and 2 definition vectors verified
-  - 84 JS / 162 parity / 2 definition / 20 Rust green
-  - package.json adds the new test file to the runner and nothing else
-  - Q1 is answered and TRACED, not expected: canonicalInputs returns { blockTimes },
-    encodeRecords consumes only that, so no unrecognised JSON key reaches the twin
+F1-F4 are closed. All fourteen attacks from the first review now refuse, the pinned
+literals match every real producer I could find (corpus carries source
+'getSignaturesForAddress' and market_id 'US_EQUITIES_REGULAR'; the Jito adapter's
+'JITO_RESTAKING_OBSERVATION' is in SOURCE_KIND), corpus and fixtures untouched,
+87/162/2/20 green.
 
-core/closed.mjs is the right shape — it knows no schema, each surface states its own keys
-at the call site — and the recursive walk that reseals claim_id before asserting rejection
-is stronger than the enumeration it replaced.
+F5 (P1) — the ISO check rejects every claim the CLI and the keeper build.
 
-WHAT REMAINS. Closing a domain admits a field BY NAME, and recognition is not validation.
-Four classes are now permitted and checked by nothing. Two of them are defects task 011
-spent seven rounds closing in monday-open-gap, reappearing in the type that settles money.
-All measured by resealing claim_id and verifying:
+closed-market-soundness.mjs:39-43 requires window ISO strings to equal
+new Date(ts*1000).toISOString() exactly. Both live producers strip the milliseconds:
 
-  F1 (P1)  subject unbound from source
-             ACCEPTED  CMLS      observed.account != subject.priceAccount
-             ACCEPTED  liveness  observed.account != subject.account
-             ACCEPTED  liveness  trusted.obligor  != subject.obligor
-           Exploit: subject names the venue's real price account; the observations are a
-           dormant account's signature history that never updated during the closure;
-           re-execution sees no closed-window updates and returns the benign verdict.
-           Every bonder reading the subject bonds on a computation over an account the
-           claim never touched. This is 011's F3 verbatim. 011 fixed it in checks(),
-           which is the only place that sees the whole claim.
+  const iso = (ts) => new Date(Number(ts)*1000).toISOString().replace('.000','');
+  cli/vrdct.mjs:35 -> cmls.build at :83-84
+  keeper/lib.mjs:37 -> :138
 
-  F2 (P1)  the trusted block is admitted and unvalidated in every type
-             ACCEPTED  CMLS       trusted.market_id = 'TOKYO_EQUITIES'
-             ACCEPTED  solvency   trusted.chain     = 'ethereum-mainnet'
-             ACCEPTED  restaking  trusted.network  != subject.network
-             ACCEPTED  liveness   trusted.calendar  = 202501  (emitted as 202601)
-           The last is the sharpest: it is the same field monday-open-gap validates, in a
-           type whose obligated slots are DERIVED from the calendar. A claim can name
-           202501 while every slot was re-derived under 202601. And an offline challenger
-           re-executing gets the same flag, so the ordinary challenge cannot correct any
-           of these.
+  cli produces : 2026-08-01T12:10:59Z
+  required     : 2026-08-01T12:10:59.000Z
 
-  F3 (P2)  observed.source accepts anything in all four types. README distinguishes
-           surfaces by whether they are sourced and CMLS is the one that claims to be;
-           that claim is carried by this string and nothing parses it. 011's F1 was this
-           defect one level up.
+So vrdct check, vrdct crank and the keeper re-crank loop all throw in canonicalInputs.
 
-  F4 (P2)  CMLS's window is never re-executed — canonicalInputs returns only blockTimes —
-           so from_ts, to_ts and both ISO strings can bracket a period the observations
-           do not, with the verdict unchanged because the verdict never consulted them.
+Do NOT fix it by making the producers match. That leaves a rule banning a legal spelling
+of the right instant while claiming to catch a wrong one. Compare instants:
+Date.parse(window.from_iso) === from_ts * 1000, likewise to_iso.
 
-THE CONSTRAINT ON FIXES: every one of these fields is EMITTED, so none can be deleted
-without moving a published hash. They have to be validated or bound, not removed. The
-bindings that re-execution cannot see (subject↔source, subject↔trusted) belong in
-checks(); the ones with a canonical value (calendar, market_id) belong in canonicalInputs
-as literals, exactly as monday-open-gap does with CALENDAR_2026.version and SOURCE_CHAIN.
+THE PATTERN, which is worth more than the finding. Three times in this task a fixture
+agreed with a check while a real producer did not:
+  - 15dbc31 closed solvency's window to []. demo.mjs:17 builds window: { epoch: 1004 }.
+    Your test and my review both used window: {} — the same non-adversarial fixture, so
+    neither of us saw it. You found it independently.
+  - the corpus carries .000; the CLI and keeper do not. F5.
+  - all of it was green under test:canonical throughout.
 
-NO MATRIX ROW IS OWED. The brief assigned me the row for "no other emitted-but-unvalidated
-field exists". That negative does not survive, so there is nothing to back — what replaces
-it is four positive findings, each demonstrated by a resealed claim that verifies.
-
-WHERE TO PUSH BACK IF I AM WRONG
-
-1. F4 assumes a field re-execution never reads is still consensus, because the body is
-   what a bonder reads and the hash commits to it. If you think an unread field is
-   legitimately display-only and out of the input domain, say so — but then it should be
-   removed from the allowed list rather than permitted unchecked, and that moves a hash.
-2. F3 may be a P3 rather than P2 for the three unsourced types, where the string is
-   decorative. It is not decorative for CMLS.
-3. If any of the four is better fixed by narrowing the allowed list than by validating,
-   say which and what the hash consequence is.
+test:canonical executes no real producer. demo.mjs, the CLI and the keeper all build
+claims and none runs in the gate meant to protect the claim-types. Suggested as a
+SEPARATE task, not this one: put node demo.mjs in the gate and give the CLI and keeper a
+claim-construction smoke test. Both would have caught F5 and the window:[] regression at
+the moment each was written.
 ```
