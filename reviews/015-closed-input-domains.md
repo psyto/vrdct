@@ -63,7 +63,12 @@ published hashes.
    ACCEPTED  CMLS       trusted.market_id = 'TOKYO_EQUITIES'
    ACCEPTED  solvency   trusted.chain     = 'ethereum-mainnet'
    ACCEPTED  restaking  trusted.network  != subject.network
+   ACCEPTED  liveness   trusted.calendar  = 202501   (emitted as 202601)
 ```
+
+The fourth line is the sharpest, because it is the *same field* `monday-open-gap` validates and the
+one whose value the type's own arithmetic depends on: `obligated-liveness` derives its obligated slots
+from the calendar, so a claim may name `202501` while every slot was re-derived under `202601`.
 
 `trusted` is, by its own name, the block a reader is asked to take on trust. `market_id` names the
 market whose calendar the verdict is about; re-execution uses US equities unconditionally. `chain`
@@ -79,10 +84,10 @@ the calendar re-execution actually uses:
 
 > `if (inputs.trusted.calendar !== CALENDAR_2026.version) throw …`
 
-**Fix:** the same treatment per type — pin `market_id` to the market the classifier uses, bind
-`trusted.chain` and `trusted.network` to their subjects in `checks()`, or delete where nothing emits
-them. `obligated-liveness` also allows `trusted.calendar`; check whether it is validated or merely
-permitted.
+**Fix:** the same treatment per type — pin `market_id` to the market the classifier uses, pin
+`trusted.calendar` to `CALENDAR_2026.version` exactly as `monday-open-gap` does, and bind
+`trusted.chain` and `trusted.network` to their subjects in `checks()`. All four are emitted, so none
+can be deleted without moving a published hash.
 
 ## F3 (P2) — `observed.source` is the sourcedness label, and it can say anything
 
