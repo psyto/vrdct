@@ -1,16 +1,29 @@
-# Pending review requests — as at 2026-08-11
+# Pending review requests — HALTED 2026-08-13
 
-**Three** requests are waiting on Codex — two reviews and one implementation. The requests below are reproduced verbatim so the next window
-can relay them by copy-paste without reconstructing anything. **Each names the worktree to run it in**,
-because the branch is held there and a checkout elsewhere fails rather than moving another window's
-HEAD. Delete each once it has been sent and answered.
+> **STOPPED. Do not send any request below. Do not resume without being asked.**
+>
+> Hiro's call, and the reasoning is worth keeping because it is not about quality: the cross-review
+> demonstrably works — across tasks 011, 013, 014 and 015 not one finding was successfully defended
+> by either agent, and several were against work that was already green and already self-reviewed.
+> What it does not do is create demand. Reviewing a claim-type nobody bonds against produces a
+> correct claim-type nobody bonds against, and that is what the last stretch of work was.
+>
+> The requests are kept verbatim rather than deleted, because they are correct and reconstructing
+> them costs more than storing them. **An open handoff is a thing another window picks up and
+> executes** — that happened in this repo on 2026-08-12 — so the halt is stated at the top rather
+> than implied by silence.
 
-*(History, because this file is the thing that has to stay true. It was published saying two, and
-there were three: task 012's re-review was already written, in that task's own Handoff section on a
-branch checked out in a different worktree, and so was invisible from the window that wrote the list.
-Task 011's request has since been sent and answered — seven rounds, `APPROVE`, merged — so it is
-deleted here. Task 014's intake was added, sent, and answered — ten findings, `APPROVE`, merged
-as 3809b44 — so it is deleted too. Two remain.)*
+## Where each branch actually stands
+
+| branch | head | state at the halt |
+| --- | --- | --- |
+| `cc/recorder-brief` | `a1b7694` | 013. Reviewed once (three P1s), **all three fixed**, re-review written but **never sent**. Its conclusion shrank: the recorder reaches one of the three walls it was written for, not three. |
+| `cc/dividend-funding-fidelity` | `98ccde6` | 012. Claim-type **REJECTED and closed**. Only the measurement record's re-review is outstanding, and its own open question is merge-or-drop. |
+| `cc/closed-input-domains` | `ee625c7` | 015. Codex implemented, CC reviewed twice. F1–F4 closed; **F5 is open** — the ISO check rejects every CMLS claim the CLI and keeper build. **Do not merge in this state.** |
+| `cc/borrow-proceeds-disposition` | `eb5cd19` | 016. 90-day scan **complete** (5,119 borrows). Classifier + 11 adversarial fixtures green. `rules.json` is a **draft nobody confirmed**, so no number was produced and none should be quoted. |
+| `cc/sera-route-surplus` | `026a464` | 017. On-chain reading done; three article corrections written and **never sent**. |
+
+Everything is pushed. Nothing is lost by leaving it.
 
 ---
 
