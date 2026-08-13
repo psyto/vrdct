@@ -389,6 +389,15 @@ with `err: null` and **credits nothing**; and the bond was hard-coded at 2 SOL, 
 airdrops. Funding is now verified by balance, confirmation polls, and `BOND_SOL` / `ACTOR_SOL` /
 `PAYER` make the run fit a finite wallet.
 
+**⚠ And a known defect, accepted and unfixed.** On a real cluster `bond-live.mjs` permanently loses
+money: the three actors are ephemeral keypairs nothing sweeps back, and `close_market` returns a
+settled Market's rent to its *recorded resolver*, which is one of those keys — so nobody can reclaim
+it afterwards. Measured on this run: of `4.49335328` SOL that left the payer, `1.99076184` is the
+recoverable deployment and **`2.50859` is not recoverable at all**. Against `solana-test-validator -r`
+this is invisible because the chain is discarded. The fix is specified in
+`reviews/main-2026-08-12-devnet-debt.md` F1 and is not implemented; **do not point this script at a
+wallet you care about.**
+
 **Two honest limits on visiting it.** Both markets are *settled*, so `vrdct.mjs markets` correctly
 reports none live — there is nothing open to arrive at until someone opens one. And `check` against
 Market A needs a source RPC with enough throughput to rebuild 3,789 signatures; on a rate-limited

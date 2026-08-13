@@ -103,6 +103,14 @@ Guidance, not a hard boundary. The quality control is the cross-review.
   in the body is either a positive citation or an explicitly non-decisive residual, and says which.
   Task 014 ended with ten findings and exactly two decisive negatives; that ratio is the argument for
   separating them.
+- **A field nothing validates is a field that can claim a different context.** The content hash does
+  not help: a hash over a wrong field is a perfectly consistent hash. **Prefer deleting such a field
+  to validating it.** This is the rule behind task 011's resealed-provenance attacks — every one of
+  them was a body field that re-execution never read, rewritten and resealed so `claim_id` agreed —
+  and the reason those fixes closed raw input domains rather than only changing builders. It was
+  written in `HANDOFF.md`, and `0240382` deleted that file while asserting every section had a home.
+  This one did not (Codex, `reviews/main-2026-08-12-devnet-debt.md` F2). A deletion is the one edit
+  where being wrong is silent, which is why it was the thing the review was asked to check.
 - **Task numbers are a shared resource too.** Two windows numbered a task 012 on the same day. Read
   `docs/tasks/` before claiming a number.
 - **Stage by path, never `git add -A`.** In a shared tree it will pick up another window's untracked

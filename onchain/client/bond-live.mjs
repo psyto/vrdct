@@ -13,6 +13,26 @@
 //
 // Run:  solana-test-validator -r      (in another terminal)
 //       node client/bond-live.mjs
+//
+// ⚠ ON A REAL CLUSTER THIS SCRIPT PERMANENTLY LOSES FUNDS. KNOWN, MEASURED, NOT FIXED.
+//
+// The three actors are `Keypair.generate()` held only in this process, and nothing sweeps them back
+// before `process.exit()`. Every unspent lamport of `ACTOR_SOL` — including the winner's payout and
+// the feed reward, which are paid to those same temporary keys — is gone when the process ends. The
+// Market PDAs are a second loss: `close_market` returns their rent to the **recorded resolver**,
+// which is one of those ephemeral keys, so after the run nobody can call it.
+//
+// Measured on the 2026-08-12 devnet run:
+//   4.49335328 SOL left the payer
+//     1.99076184  program deployment  (recoverable — the upgrade authority is a real wallet)
+//     2.50259144  actors and fees     (NOT recoverable)
+//     0.00615264  rent in two Market PDAs, resolver key gone (NOT recoverable)
+//
+// Against `solana-test-validator -r` none of this matters: the chain is thrown away. Against devnet
+// or mainnet, a caller with a finite wallet can repeat this script and silently drain it. The fix is
+// specified in `reviews/main-2026-08-12-devnet-debt.md` F1 — close each settled Market with its
+// recorded resolver, then sweep every actor to PAYER from a `finally`, with a regression proving
+// both — and it is NOT implemented. Accepted, unfixed, and marked here so it cannot surprise anyone.
 import {
   Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction,
   ComputeBudgetProgram, sendAndConfirmTransaction, LAMPORTS_PER_SOL,
