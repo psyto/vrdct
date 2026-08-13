@@ -48,7 +48,13 @@ function netDeltas(logs, who, weth) {
   const add = (token, amount) => d.set(norm(token), (d.get(norm(token)) ?? 0n) + amount);
   for (const log of logs) {
     const t0 = log.topics[0];
-    if (t0 === TRANSFER && log.topics.length >= 3) {
+    // An ERC-20 Transfer has EXACTLY three topics and one data word. An ERC-721 Transfer shares the
+    // same topic0 but indexes the tokenId, giving four topics and EMPTY data — so `topics.length >= 3`
+    // matched it, and `BigInt('0x')` threw on the first NFT that appeared in a borrow transaction.
+    // Had it not thrown, an NFT movement would have counted as a non-ETH-denominated GAIN, i.e. as
+    // the borrow leaving ETH denomination. No hand-written fixture produced this: they were all
+    // written in the ERC-20 shape, so the shape was the thing being tested.
+    if (t0 === TRANSFER && log.topics.length === 3 && log.data.length === 66) {
       const value = BigInt(log.data);
       if (addrOf(log.topics[1]) === who) add(log.address, -value);
       if (addrOf(log.topics[2]) === who) add(log.address, value);

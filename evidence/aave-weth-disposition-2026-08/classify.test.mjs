@@ -90,6 +90,17 @@ test('the funds follow `user`, and reading `onBehalfOf` instead changes the answ
     'following onBehalfOf must NOT reproduce the right answer, or the distinction is untested');
 });
 
+test('an ERC-721 transfer is not a token gain, and it is the case no hand-written fixture had', () => {
+  // Same topic0 as ERC-20, but the tokenId is INDEXED: four topics, empty data. Found by the first
+  // real transaction that contained one — BigInt('0x') threw. Had it not thrown, an NFT arriving at
+  // the borrower would have read as a non-ETH-denominated gain, i.e. as a sale.
+  const nft = { address: '0xnft00000000000000000000000000000000000001', topics: [TRANSFER, pad(ROUTER), pad(USER), word(7n)], data: '0x' };
+  assert.equal(nft.topics.length, 4, 'the fixture must have the ERC-721 arity, or it tests nothing');
+  assert.equal(nft.data, '0x');
+  const r = run([...deliver(), nft]);
+  assert.equal(r.verdict, VERDICT.HELD, 'an NFT transfer was read as the borrow leaving ETH denomination');
+});
+
 test('the rule set is declared, and the engine has no opinion about what is ETH', () => {
   const withoutLst = ruleSet({ ethDenominated: [WETH] });
   const logs = [...deliver(), xfer(WETH, USER, ROUTER, AMOUNT), xfer(WSTETH, ROUTER, USER, 4_100000000000000000n)];
