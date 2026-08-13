@@ -1,6 +1,17 @@
 # Aave v3 mainnet — what a WETH borrow does in its own transaction
 
-**Status:** probe only. No claim-type, no classifier, no number to cite yet.
+**Status: FROZEN 2026-08-13. No number was produced and none should be quoted.**
+
+The 90-day scan completed — 5,119 WETH borrows over 648,000 blocks — and the classifier passes eleven
+adversarial fixtures. What does not exist is a confirmed `rules.json`: the survey proposed one and
+nobody pinned it, and the same chain data returns different verdicts under different lists. So the
+9.3% `left-eth` figure in the survey output is **not a result**. It is what a deliberately wrong rule
+set produces, and the survey exists to show it is wrong: 42 of the tokens it counted as "left ETH"
+are ETH assets re-deposited into Aave, Spark or Euler, against 6 that genuinely left.
+
+Frozen because the work had no identified buyer, not because it failed. Resuming means confirming
+`rules.json` — see `rules.md` for what each of the three decisions commits the signer to — and
+re-running the survey over all 5,119 rather than the 300-borrow sample the draft was drawn from.
 
 ## Why this exists
 
