@@ -7,7 +7,8 @@
   "scripts": {
     "demo": "node demo.mjs",
     "generate:parity-vectors": "node tests/generate-parity-vectors.mjs --write",
-    "test:canonical": "node --test tests/canonical-inputs.test.mjs tests/monday-open-gap.test.mjs tests/obligated-liveness.test.mjs tests/restaking-robustness.test.mjs tests/jito-restaking.test.mjs && node tests/generate-parity-vectors.mjs --check && node tests/generate-definition-vectors.mjs && (cd onchain && cargo test -p vrdct-bond)",
+    "generate:calendar-vectors": "node tests/generate-calendar-vectors.mjs --write",
+    "test:canonical": "node --test tests/canonical-inputs.test.mjs tests/monday-open-gap.test.mjs tests/obligated-liveness.test.mjs tests/restaking-robustness.test.mjs tests/jito-restaking.test.mjs && node tests/generate-parity-vectors.mjs --check && node tests/generate-definition-vectors.mjs && node tests/generate-calendar-vectors.mjs && (cd onchain && cargo test -p vrdct-bond) && (cd evm && forge test)",
     "test:keeper": "cd keeper && npm run test:unit && npm run test:local"
   },
   "keywords": ["re-execution", "resolver", "prediction-markets", "solana", "verifiable-claims", "oracle-free"]

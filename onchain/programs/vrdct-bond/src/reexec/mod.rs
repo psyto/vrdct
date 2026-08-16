@@ -99,4 +99,6 @@ pub fn verdict(claim_type: u8, fold: &Fold) -> Result<u8> {
 }
 
 #[cfg(test)]
+mod calendar_tests;
+#[cfg(test)]
 mod parity_tests;
