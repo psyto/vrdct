@@ -61,9 +61,16 @@ On Solana the market is a PDA seeded by `definition_hash`, so a market cannot ex
 that disagrees with its own definition. On EVM the natural translation is
 `mapping(bytes32 => Market)`, and the natural bug is accepting `definitionHash` as an argument.
 
-**The contract computes the key from the definition fields at open time.** Accepting a hash is
-accepting an answer. `market_definition_hash` (`lib.rs:41`) and `header_digest` (`lib.rs:30`) both
-need Solidity twins with the same field order and the same widths.
+**The key must be derived from the definition fields, never trusted as supplied.**
+`market_definition_hash` (`lib.rs:41`) and `header_digest` (`lib.rs:30`) both need Solidity twins
+with the same field order and the same widths.
+
+> **Correction (added after slice 1 review).** This section first said the contract must *compute*
+> the key and never accept one, and called accepting a hash "accepting an answer". That is stricter
+> than the Solana original and would have been implemented as a divergence from it. `open_market`
+> **accepts** `definition_hash` as an argument and `require!`s it equals the recomputed value
+> (`lib.rs:165-179`) — equivalent safety, different shape. Slice 2 preserves require-equality.
+> Recomputing and comparing is the invariant; who supplies the bytes is not.
 
 ### 3. Feeds, chunking, and the bound that must be measured
 
