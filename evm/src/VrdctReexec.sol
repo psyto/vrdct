@@ -75,7 +75,9 @@ library VrdctReexec {
         }
     }
 
-    /// Fold one canonical chunk. A chunk above 200 records reverts; it is never shortened.
+    /// Fold one non-empty claim-type chunk of at most 200 records; it is never shortened. This is
+    /// not the slice-2 feed admission rule: that stateful wrapper must require exactly
+    /// `min(CHUNK_RECORDS, remaining)` records, matching `vrdct_bond::feed`.
     function foldChunk(uint8 claimType, Fold memory fold, bytes memory chunk)
         internal
         pure

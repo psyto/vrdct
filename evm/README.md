@@ -6,9 +6,11 @@ custody, or settlement state machine here; names in `VrdctReexec.Fold` carry onl
 re-execution-state promises documented in that source file.
 
 `test/ReexecParity.t.sol` reads `../onchain/tests/parity-vectors.txt` and
-`../onchain/tests/market-definition-vectors.txt` with `vm.readFile`. Those are the committed
-JS-generated fixtures already consumed by Rust. A Solidity-specific fixture would be a consensus
-fork, so none exists.
+`../onchain/tests/market-definition-vectors.txt` with `vm.readFile`. The independent Campana
+transcription is also held to `../onchain/tests/calendar-vectors.txt`: every 2026 ET session edge,
+all holidays and half-days, and DST transition neighbours. These are committed JS-generated
+fixtures also consumed by Rust. A Solidity-specific fixture would be a consensus fork, so none
+exists.
 
 Run `forge test` here, or run `npm run test:canonical` from the repository root.
 

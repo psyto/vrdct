@@ -36,6 +36,10 @@ contract ReexecHarness {
         return VrdctReexec.solvencyVerdict(record);
     }
 
+    function isSessionOpen(uint64 timestamp) external pure returns (bool) {
+        return VrdctReexec.isSessionOpen(timestamp);
+    }
+
     function marketDefinitionHash(
         bytes32 marketId,
         uint8 claimType,
@@ -138,6 +142,27 @@ contract ReexecParityTest {
             start = end + 1;
         }
         _eqUint(rows, 2);
+    }
+
+    /// Campana is independently transcribed in Solidity, so it gets its own shared JS→Rust→EVM
+    /// sweep rather than relying on the much smaller CMLS re-execution corpus.
+    function testCalendarVectors() public {
+        bytes memory file = bytes(vm.readFile("../onchain/tests/calendar-vectors.txt"));
+        uint256 rows;
+        uint256 start;
+        for (uint256 end; end <= file.length; ++end) {
+            if (end != file.length && file[end] != "\n") continue;
+            if (end > start && file[start] != "#") {
+                bytes memory line = _slice(file, start, end - start);
+                _eqUint(
+                    harness.isSessionOpen(uint64(_parseUint(_field(line, 0)))) ? 1 : 0,
+                    _parseUint(_field(line, 1))
+                );
+                ++rows;
+            }
+            start = end + 1;
+        }
+        _eqUint(rows, 2212);
     }
 
     /// Emits measured gas. CMLS uses the committed corpus's 201-record, two-chunk row; solvency has one.
