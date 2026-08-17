@@ -25,6 +25,28 @@
 
 Everything is pushed. Nothing is lost by leaving it.
 
+## 018 — closed 2026-08-17. State, not requests.
+
+Task 018 (EVM settlement) is **finished and merged**: slice 1 `23565db`, slice 2 `ca57ab3`, the §6
+retraction `8681e5e`. `main` is green end to end — 82 JS, 162 parity / 2 definition / 2212 calendar
+vectors, 21 Rust, 12 Foundry. No branch of it is outstanding and nothing below is a request to send.
+
+Three loose ends, recorded so they are not rediscovered by accident:
+
+1. **`reviews/018-evm-settlement.md` is the only task review record not on `main`.** It sits on
+   `codex/018-source-correction-review` at `51f4191`, unpushed, in `~/src/vrdct-018b-codex`. Every
+   other task's record (001–014, `main-2026-08-12-devnet-debt`) is on `main`.
+2. **019 owns ten sites that still assert the falsified no-slot premise**, enumerated with the
+   three-way split in `docs/tasks/018-evm-settlement.md` §6. Seven are false as written; three are
+   defensible only with the exact-historical-slot qualifier; a further three are *true* and must not
+   be edited. The split matters more than the list.
+3. **Slice 3 is deferred behind 019 Slice A-live, as a stated project choice, not a consequence.**
+   Reasoning and its limits are in 018 §6's sequencing note. What is *not* a choice: slice 3 opens
+   `reserve-solvency`, not CMLS, per 005 §4.
+
+Also true of the working copy rather than the repo: `main` is currently checked out in **no**
+worktree, and `~/src/vrdct` holds `claude/019-slice-a-sourcing` at `968bd46`, which is on no remote.
+
 ---
 
 ## 1 — Task 013, `cc/recorder-brief` (first review, docs only)
