@@ -97,20 +97,74 @@ thing that makes a stranger finish someone else's feed.
 the timestamp is set by a sequencer. That is a new trusted input this system did not have on Solana,
 and it belongs in **Honest scope** in the same commit that introduces it, not later.
 
-### 6. `Source` — the actual reason to do this
+### 6. `Source` — ~~the actual reason to do this~~ (premise falsified; see the correction)
+
+> **Correction, 2026-08-17.** The paragraph below claimed the port's value came from a comparative
+> advantage over Solana's RPC. That premise is **false**, and it was measured false from the Solana
+> side, not the EVM side. Task 019 §1 measured on mainnet that `getProgramAccounts` **does** accept
+> `withContext` and returns a context slot (439752891), and that `minContextSlot` is honoured and
+> names the slot it had when it refuses. `minContextSlot` is a **lower bound on freshness, not an
+> exact historical-slot query** — you cannot ask for slot S in the past — but "it does not take a
+> slot" is wrong as written.
+>
+> **Repair inventory.** Built over three attempts, and the first two were wrong in instructive ways.
+> v1 trusted 019's two citations and both line numbers were off. v2 greped, but only for the
+> *"takes no slot"* phrasings, which silently missed every site that says *"a source that can
+> address a slot, which `getProgramAccounts` cannot"* — and then compounded it by "correcting"
+> `adapters/jito-restaking.mjs:426` as a bad citation when it is a real site. Thirteen sites, and
+> they fall into **three** groups, not two:
+>
+> **(a) False as written** — these assert the API returns no slot at all. It returns a context slot.
+> `README.md:248`, `:506`; `adapters/jito-restaking.mjs:56`, `:443`;
+> `docs/tasks/010-jito-restaking-ingestion.md:111`, `:189`, `:202`.
+>
+> **(b) Defensible but imprecise** — *"settlement needs a source that can address a slot, which
+> `getProgramAccounts` cannot"*. True if *address a slot* means **query state at an exact past
+> slot**, which is still impossible; misleading if read as *returns no slot information*, which is
+> now false. These need the distinction added, not a retraction.
+> `README.md:264`; `adapters/jito-restaking.mjs:426`; `docs/tasks/010-jito-restaking-ingestion.md:286`.
+>
+> **(c) True and untouched by the measurement** — a graph composed from **separate** calls can
+> describe a state that existed at no single slot. A per-call context slot does not repair that:
+> five calls get five context slots. This is the original 010 F3.
+> `README.md:253`; `docs/tasks/010-jito-restaking-ingestion.md:198`; `tests/jito-restaking.test.mjs:209`.
+>
+> 019 owns (a) and (b). **Nothing in (c) should be touched** — repairing it would delete a true
+> statement while fixing a false one. Note that `docs/tasks/010` is an unretracted brief, so a later
+> reader treats it as current framing; it is not exempt for being a task doc.
+>
+> `settlement_grade: NO` still stands, for a **different and more general** reason: a slot-tagged
+> scan is *consistent* but not provably *complete*, because a hostile endpoint can omit a row and
+> nothing in the response reveals it.
+>
+> That is the enumeration-completeness falsifier written below as an EVM-specific risk. It is not
+> EVM-specific. `eth_getLogs` has the same property: a block range proves membership of what it
+> returns, not that nothing else belongs. **Both VMs sit behind the same wall**, so the port has no
+> sourcing advantage to claim and slice 3 must not be written as if it does.
+>
+> What survives untouched: slice 1's actual result — three implementations of the re-execution held
+> to one committed fixture, so a cross-VM disagreement is a test failure in this repo. That never
+> depended on `Source`.
+>
+> The hypothesis below was stated as a hypothesis with a falsifier, and gated behind a two-provider
+> digest match before anything could be written into the README. That gate is what held; the
+> original text is left standing rather than rewritten so the shape of the error stays visible.
 
 `Source.kind = SOLANA_ACCOUNT_SIGNATURES` cannot be ported; EVM needs `kind = EVM_LOGS`
-(`address`, `topic0`, `fromBlock`, `toBlock`).
+(`address`, `topic0`, `fromBlock`, `toBlock`). That part is unchanged.
 
-And this is where the port earns its keep. The Jito adapter is stamped `settlement_grade: NO` for a
+~~And this is where the port earns its keep. The Jito adapter is stamped `settlement_grade: NO` for a
 specific reason: `getProgramAccounts` does not take a slot, so two reads only show that an endpoint
 answered twice the same way. **`eth_getLogs` takes a block range**, and a block number is a
-commitment.
+commitment.~~
 
 So state the hypothesis precisely, and state its falsifier:
 
-> **Hypothesis.** An `EVM_LOGS` source is reconstructible at a pinned block range by any party with
-> an independent node, which is what `SOLANA_ACCOUNT_SIGNATURES` could not promise.
+> **Hypothesis.** ~~An `EVM_LOGS` source is reconstructible at a pinned block range by any party with
+> an independent node, which is what `SOLANA_ACCOUNT_SIGNATURES` could not promise.~~
+> Superseded: the second clause is false (019 §1), and the first is the same claim task 019 makes
+> for Solana under the name **A-live** — N independent endpoints agreeing at a pinned point. Slice 3
+> is the EVM instance of A-live, not a route around it.
 >
 > **What falsifies it.** Enumeration completeness. A log range proves *membership* of what it
 > returns; it does not prove *nothing else belongs*. This is the same leaf-vs-enumeration wall that
@@ -134,6 +188,28 @@ in one line: *a success signal is not a fact; do not say it until you have taken
    is nothing for a stranger arriving now to land on"; shipping this port in the same state repeats
    the defect rather than fixing it.
 4. Honest scope gains: L2 sequencer timestamps (§5), and whatever §6 actually turns out to be.
+
+**Sequencing, added 2026-08-17; restated after review.** Slices 1 and 2 are merged. **Slice 3 is
+deferred behind task 019 Slice A-live — as a project sequencing choice, not a logical consequence.**
+
+The first version of this note claimed the deferral was *required* by done-means 3. It is not, and
+the review was right to reject that. What done-means 3 requires is that a stranger can determine
+the subject's state before bonding. It requires the **capability**, not task 019 specifically; an
+EVM-side equivalent could be built first and would satisfy it.
+
+And A-live does not close enumeration completeness for `getProgramAccounts` either — 019 keeps that
+residual — so the deferral cannot even be justified as "wait for the wall to be solved". It is not.
+
+The actual reason to sequence it this way is that the anchor would otherwise be designed twice.
+A-live's shape — N independent endpoints agreeing at a pinned point, checkable before bonding,
+rather than provable inside `settle` — is the general answer, and §6's correction removed the only
+argument for the EVM needing a different one. Building the general design once and instantiating it
+for EVM afterwards is cheaper than converging two designs later. That is a judgement about effort,
+and it can be overridden.
+
+Independently of ordering, 019 §6 changes *which* market slice 3 opens: `reserve-solvency`, not
+CMLS, which under 005 §4 cannot currently print a sound verdict and is scheduled to print a false
+public RED on 2026-11-27. That one is not a preference.
 
 Default chain: Base Sepolia — cheap calldata. Arbitrum Sepolia is the alternative worth considering
 only because the live subjects already
