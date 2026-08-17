@@ -103,8 +103,25 @@ and it belongs in **Honest scope** in the same commit that introduces it, not la
 > advantage over Solana's RPC. That premise is **false**, and it was measured false from the Solana
 > side, not the EVM side. Task 019 §1 measured on mainnet that `getProgramAccounts` **does** accept
 > `withContext` and returns a context slot (439752891), and that `minContextSlot` is honoured and
-> names the slot it had when it refuses. So "`getProgramAccounts` does not take a slot" is wrong
-> here, and wrong in `README.md:493-502` and `adapters/jito-restaking.mjs:426` — 019 owns those two.
+> names the slot it had when it refuses. `minContextSlot` is a **lower bound on freshness, not an
+> exact historical-slot query** — you cannot ask for slot S in the past — but "it does not take a
+> slot" is wrong as written.
+>
+> **Repair inventory, greped rather than cited (this note's first version trusted 019's two
+> citations and both line numbers were wrong).** Thirteen sites match, and they do *not* all make
+> the same claim, so this is not a find-and-replace:
+>
+> *False as written — the API does take a slot parameter:*
+> `README.md:248`, `README.md:506`, `adapters/jito-restaking.mjs:56`, `adapters/jito-restaking.mjs:443`,
+> `docs/tasks/010-jito-restaking-ingestion.md:111`, `:189`, `:202`.
+>
+> *Still true, and for a reason the measurement does not touch* — these say a graph composed from
+> **separate** calls can describe a state that existed at no single slot. A per-call context slot
+> does not fix that, because five calls get five context slots (the original 010 F3):
+> `README.md:253`, `docs/tasks/010-jito-restaking-ingestion.md:198`, `tests/jito-restaking.test.mjs:209`.
+>
+> 019 owns the repair of the first group. Nothing in the second group should be "corrected" — doing
+> so would delete a true statement while fixing a false one.
 >
 > `settlement_grade: NO` still stands, for a **different and more general** reason: a slot-tagged
 > scan is *consistent* but not provably *complete*, because a hostile endpoint can omit a row and
@@ -162,14 +179,24 @@ in one line: *a success signal is not a fact; do not say it until you have taken
    the defect rather than fixing it.
 4. Honest scope gains: L2 sequencer timestamps (§5), and whatever §6 actually turns out to be.
 
-**Sequencing, added 2026-08-17.** Slices 1 and 2 are merged. **Slice 3 is deferred behind task 019
-Slice A-live**, and this is a consequence of the §6 correction, not a scheduling preference.
-Done-means 3 requires a market left open for a stranger to land on, and a stranger can only land on
-it if they can determine the subject's state before bonding — which is exactly what A-live designs
-and what §6 wrongly assumed the EVM already had. Opening a market before that is opening one nobody
-can check. 019 §6 additionally changes *which* market: `reserve-solvency`, not CMLS, which under
-005 §4 cannot currently print a sound verdict and is scheduled to print a false public RED on
-2026-11-27.
+**Sequencing, added 2026-08-17; restated after review.** Slices 1 and 2 are merged. **Slice 3 is
+deferred behind task 019 Slice A-live — as a project sequencing choice, not a logical consequence.**
+
+The first version of this note claimed the deferral was *required* by done-means 3. It is not, and
+the review was right to reject that. What done-means 3 requires is that a stranger can determine
+the subject's state before bonding. It requires the **capability**, not task 019 specifically; an
+EVM-side equivalent could be built first and would satisfy it.
+
+The actual reason to sequence it this way is that the anchor would otherwise be designed twice.
+A-live's shape — N independent endpoints agreeing at a pinned point, checkable before bonding,
+rather than provable inside `settle` — is the general answer, and §6's correction removed the only
+argument for the EVM needing a different one. Building the general design once and instantiating it
+for EVM afterwards is cheaper than converging two designs later. That is a judgement about effort,
+and it can be overridden.
+
+Independently of ordering, 019 §6 changes *which* market slice 3 opens: `reserve-solvency`, not
+CMLS, which under 005 §4 cannot currently print a sound verdict and is scheduled to print a false
+public RED on 2026-11-27. That one is not a preference.
 
 Default chain: Base Sepolia — cheap calldata. Arbitrum Sepolia is the alternative worth considering
 only because the live subjects already
