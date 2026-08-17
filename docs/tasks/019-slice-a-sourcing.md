@@ -2,8 +2,11 @@
 
 **Frame:** thin (what the anchor is, which claim-types it raises, what it refuses to promise) → CC writes, Codex reviews.
 **Status:** design. Nothing is implemented.
-**Predecessor:** [`013-recorder.md`](./013-recorder.md) and its Addendum, which live in the `vrdct-recorder`
-worktree and have **not** been merged here. This brief assumes that Addendum and re-verifies its premise.
+**Predecessor:** [`013-recorder.md`](./013-recorder.md) and **both** its Addenda, which live on
+`cc/recorder-brief` (worktree `~/src/vrdct-recorder`) and have **not** been merged here. The first
+draft of this brief had read only Addendum 1; §1 and §5 are corrected against Addendum 2.
+**Companion:** [`018-evm-settlement.md`](./018-evm-settlement.md) §6 owns the repair inventory this
+task executes.
 
 > **Numbering.** 016 and 017 exist as review/evidence directories in other worktrees but hold no task
 > brief; 012, 013 and 015 hold briefs that never landed on this `main`. 019 is free in every worktree
@@ -17,7 +20,7 @@ worktree and have **not** been merged here. This brief assumes that Addendum and
 `adapters/jito-restaking.mjs:426` stamps its output `settlement_grade: NO`. Both statements rest on
 one premise: **you cannot ask Solana what an account held at a past slot.**
 
-013's Addendum found that premise out of date and split the wall in two. This brief designs the half
+013's Addendum 1 found that premise out of date and split the wall in two. This brief designs the half
 that is available today, and it arrives at a smaller answer than 013 contemplated — plus one finding
 that changes which claim-type should lead the board.
 
@@ -25,7 +28,7 @@ that changes which claim-type should lead the board.
 
 ## 1. The premise, verified rather than remembered
 
-013's Addendum opens by admitting its body was written from memory and was wrong. That is the exact
+013's Addendum 1 opens by admitting its body was written from memory and was wrong. That is the exact
 failure this section exists to avoid, so every line below is either quoted from the specification or
 measured from mainnet on **2026-08-17**.
 
@@ -49,10 +52,14 @@ measured from mainnet on **2026-08-17**.
 Status `Activated`. **The Snapshot Hash for slot `S` is the 32-byte blake3 of the Accounts Lattice
 Hash at slot `S`.** The merkle-based hash of all accounts is retired as redundant.
 
-This is more useful to us than 013 realised. It means a published Snapshot Hash *is* a commitment to
-total account state that **anybody can recompute**. N-of-M attestation over such a value is no longer
-a trust ceremony — it is a reproducibility check, which is this repo's whole thesis applied one layer
-down.
+A published Snapshot Hash is therefore a commitment to total account state that is **recomputable in
+principle**.
+
+> **Qualified after reading 013 Addendum 2** (`cc/recorder-brief`, not merged here — I had only read
+> Addendum 1 when this section was drafted). *In principle* is carrying real weight: recomputing it
+> means unpacking a snapshot and hashing **every** account, which is what a node does when it boots.
+> So the recomputation is available to validators, not to a challenger with an RPC. See §5, which
+> this changes substantially.
 
 ### Measured here, on mainnet, 2026-08-17
 
@@ -84,12 +91,28 @@ curl -s -X POST https://api.mainnet-beta.solana.com -H 'content-type: applicatio
 #    dataSize=393 on jupnw4B6… -> 4 accounts, context slot 439752891, apiVersion 3.1.12
 ```
 
-**Measurement 4 contradicts a load-bearing sentence in this repo.** `README.md:493-502` and
-`adapters/jito-restaking.mjs:426` both justify `settlement_grade: NO` with *"`getProgramAccounts`
-takes no slot"*. It takes `withContext` and `minContextSlot`, and it returned both. The **conclusion**
-may still stand — a slot-tagged scan is consistent, not provably *complete*, because a hostile
-endpoint can omit a row and nothing in the response reveals it — but the **stated reason is wrong**,
-and a wrong reason in the Honest scope section is a defect under this repo's own rules.
+**Measurement 4 contradicts a load-bearing sentence in this repo**, and the repair inventory is
+**not in this brief**. It is in [`018-evm-settlement.md`](./018-evm-settlement.md) §6, which built it
+over three attempts and is the authority. Two things from there govern this task:
+
+- **Thirteen sites, in three groups — 019 owns two of them.** (a) **seven false as written** (they
+  assert the API returns no slot at all); (b) **three defensible but imprecise** (*"a source that can
+  address a slot, which `getProgramAccounts` cannot"* — true if *address a slot* means query state at
+  an exact past slot, which remains impossible; misleading if read as *returns no slot information*);
+  (c) **three true and untouched by the measurement** — a graph composed from *separate* calls can
+  describe a state that existed at no single slot, and a per-call context slot does not repair that.
+- **⚠️ Nothing in group (c) may be edited.** Repairing it would delete a true statement while fixing
+  a false one. The split matters more than the list.
+
+**Do not re-derive the line numbers from this brief.** 018 §6 records that its first repair attempt
+*"trusted 019's two citations and both line numbers were off"*, and this brief has since been rebased
+onto a `main` that moved the Honest scope section again. 018 §6's enumeration was verified against
+`main` and is the one to use.
+
+The **conclusion** stands for a different and more general reason than the false one: a slot-tagged
+scan is *consistent* but not provably **complete**, because a hostile endpoint can omit a row and
+nothing in the response reveals it. 018 §6 further establishes that `eth_getLogs` has the same
+property, so **both VMs sit behind the same wall** and slice 3 has no sourcing advantage to claim.
 
 Measurement 4 also produced an accidental finding: the same public endpoint answered with
 `apiVersion` **4.2.0** and **3.1.12** within thirty seconds. "One endpoint" is already a load-balanced
@@ -98,11 +121,12 @@ fleet of heterogeneous nodes. That is free diversity we cannot attribute and mus
 ### What I did not verify, and am therefore not building on
 
 - That a vote transaction's `hash` field is the bank hash of the voted slot, and that it is decodable
-  from `TowerSync` instruction data at usable cost. Design §5 depends on this; **it is measurement 1**.
-- Current mainnet full-snapshot size and account count. Every cost figure in §5 is therefore a shape,
-  not a number. **Measurement 2.**
+  from `TowerSync` instruction data at usable cost. **Measurement 1** — now serves only §5's H2, which
+  §5 retracts, so its priority has dropped.
+- Current mainnet full-snapshot size and account count. **Measurement 2** — same demotion.
 - `yorecoprocessor.com`, still unverified from 013 (TLS certificate belongs to an unrelated domain).
-  **Measurement 3**, and it can invalidate §5 entirely if real.
+  **Measurement 3**, and it is the one that still matters: if real, it answers the historical-state
+  question from outside this repo entirely.
 
 ---
 
@@ -133,8 +157,8 @@ have been building claims, not a law.
 | what it anchors on | N independent endpoints agreeing at a pinned slot | total account state, recomputable to a 32-byte published value |
 | trust residual | a colluding majority of chosen endpoints | none for (i)/(ii); needs full state |
 | claims it serves | forward-looking: "is X sound now / at epoch N+1" | retroactive: "was X sound at slot S in the past" |
-| cost | days; no new infrastructure | one full-state pass to bootstrap, then incremental |
-| blocked on | nothing | measurements 1–3 |
+| cost | days; no new infrastructure | **a node boot** — see §5; not a challenger-scale operation |
+| blocked on | nothing | **measured largely dead for this use** (013 Addendum 2) |
 
 The keeper already accumulates forward — Vesper's liveness evidence is *account `updatedTs` sampled
 over time*, which is a history this project **built** rather than reconstructed. A-live generalises
@@ -182,7 +206,7 @@ Four properties, each of which is a refusal rather than a fallback:
 3. **N endpoints, and disagreement is a stop signal.** Every endpoint answers the same pinned read.
    Byte-identical account data across all of them, within `max_slot_spread`, or the observation is
    **refused**. There is no majority vote and no "best" endpoint: this repo's existing discipline is
-   that a descriptor which rebuilds differently tells the challenger not to bond (`README.md:456-458`),
+   that a descriptor which rebuilds differently tells the challenger not to bond (`README.md:467-468`),
    and this is the same rule one layer down.
 4. **The endpoint set is committed in the claim.** A claim that names its endpoints can be re-run
    against them by anyone. A claim that does not is an opaque observation list, which is the thing
@@ -203,7 +227,7 @@ improves a second. It leaves two untouched and one already-solved.
 
 ### 4.3 Why `monday-open-gap` is out of scope here
 
-Its gap is not observation quality. `README.md:473-478` is right: selection removes choice *within* a
+Its gap is not observation quality. `README.md:483-488` is right: selection removes choice *within* a
 pinned set, and only a rebuild closes omission — and rebuilding here must **decode prices from the
 account**, which is account-layout-specific. A-live gives a better-authenticated read of bytes nobody
 has taught the engine to interpret. The decoder is separate work and should get its own brief.
@@ -221,27 +245,50 @@ paragraph is the intended text.
 
 ---
 
-## 5. Slice A-hist — the design, for when it is needed
+## 5. Slice A-hist — **retracted as a challenger-facing route**
 
-Recorded now so the decision is available, **not** to be built in this task.
+This section originally proposed A-hist as "the eventual answer, deferred behind its measurements."
+**013 Addendum 2 had already measured it, and it does not hold.** I had read only Addendum 1 when
+drafting. The measurement, from that brief:
 
-The authentication chain, weakest to strongest:
+1. **Validator-scale, not challenger-scale.** A snapshot holds *every* account; verifying it means
+   unpacking and recomputing the lattice hash across all of them — a node boot, not something a
+   would-be challenger does with an RPC before deciding whether to bond.
+2. **Snapshot-slot granularity**, not the slot a claim's window happens to name.
+3. **It does not reach back.** Public snapshots are recent — a validator typically boots from one
+   within the past 24 hours. *"So this does nothing for a window last week, which is the case every
+   claim in this repo actually has."*
 
-- **H1 — cross-operator Snapshot Hash agreement.** Download a full snapshot, compute the lattice hash
-  over all accounts, blake3 it, compare against the Snapshot Hash other operators publish for the same
-  slot. Since SIMD-0220 that value is recomputable by anyone, so an attester who lies is caught by the
-  next person who checks. Requires one full-state pass; **no consensus reasoning**.
-- **H2 — chain to the bank hash.** Combine the computed lattice hash with the block's other bank-hash
-  inputs, reproduce the bank hash, and compare it against the hash validators voted on — recoverable
-  from vote transactions, which are themselves on-chain and stake-weightable. Fully trustless and
-  entirely a re-execution argument. **Blocked on measurement 1.**
-- **H3 — inclusion proofs inside `settle`.** The recorder, i.e. 013 Slice B. Only binding once
-  something settles on chain against historical state. Nothing does.
+**Point 3 is decisive on its own,** and it kills H1 below as a route to *checkable before bonding*.
 
-The homomorphic property is what makes any of this affordable: verify once at slot `S₀`, then maintain
-by `sub(old); add(new)` over only the accounts each block touches. The expensive part is the bootstrap,
-and it is paid once. **This makes A-hist a service, not a batch job** — which is a different commitment
-than it appears, and is the real reason it should not start until measurements 1–3 are in.
+The chain, kept for the record with its status corrected:
+
+- **H1 — cross-operator Snapshot Hash agreement.** ❌ **Dead for this purpose.** The thing it would
+  check against does not exist for the windows our claims cover, and where it does exist, checking it
+  is a node boot. What survives is smaller and real: snapshots are now self-verifying, so *someone
+  else's* archive has a sound basis. That makes an archive trustworthy-in-principle. **It does not
+  make it trustless to you, and this repo's position is the difference between those.**
+- **H2 — chain to the bank hash.** Same wall, plus measurement 1. Not rescued by being more rigorous.
+- **H3 — inclusion proofs inside `settle`.** The recorder, 013 Slice B. Still the only thing that
+  provides a succinct inclusion proof, and now also the only thing that provides one *cheaply enough
+  to use*. Per 013's own revision its reach is one-third of what that brief first claimed: it answers
+  `reserve-solvency`, **whose reserve addresses can be named in the terms** — not the Jito adapter
+  (membership ≠ completeness) and not `monday-open-gap`.
+
+### What this does to A-live: it strengthens it, and it confirms F-1
+
+If snapshots cannot serve a challenger for a past window, then **moving claims to the head is not a
+shortcut — it is the only route that leaves a challenger able to check at all.** A-live is no longer
+"the cheap one first"; it is the one that exists.
+
+013 Addendum 2 also states F-1's problem independently, from the recorder's side:
+
+> *"The wall stands for a challenger with an RPC, which is the only party whose ability to check makes
+> a market a market rather than a coin flip."*
+
+That is exactly §4's open question — a challenger arriving after slot `S` cannot read slot `S`. Two
+briefs reached it from opposite directions. **It is the central unresolved question of this task, and
+neither snapshots nor the recorder rescues it on the timescale a bonding decision happens.**
 
 ---
 
@@ -291,8 +338,10 @@ change (parity vectors regenerate, corpus window is unaffected) and belongs to C
    quantities, or refuses.
 5. A test that a claim whose endpoints disagree **cannot be built**, and a test that a hand-authored
    `source` with an extra key is rejected.
-6. `README.md` §Honest scope carries §4.4's paragraph, and the false *"getProgramAccounts takes no
-   slot"* reason from §1 measurement 4 is corrected in the same commit.
+6. `README.md` §Honest scope carries §4.4's paragraph, and the repair from **018 §6 groups (a) and
+   (b)** lands in the same commit — (a) retracted, (b) given the exact-historical-slot distinction.
+   **Group (c) is left untouched**, and the commit message says so, so a later reader does not read
+   the omission as an oversight.
 7. No change to `core/` — this is a new module plus one claim-type's `canonicalInputs`. If `core/`
    needs editing, the design is wrong.
 
@@ -309,6 +358,15 @@ change (parity vectors regenerate, corpus window is unaffected) and belongs to C
 
 1. **Is a vote transaction's `hash` the bank hash, and what does decoding `TowerSync` cost?** Gates H2.
 2. **Full-snapshot size and account count on mainnet today.** Gates the A-hist bootstrap estimate.
-3. **`yorecoprocessor.com`** — real, live product or not. If real, §5 may be answered by someone else.
+3. **`yorecoprocessor.com`** — real, live product or not. Still unverified since 013. If real, it
+   answers the historical-state question from outside and §5's retraction becomes moot.
 
-None of the three gates Slice A-live. That is the argument for doing A-live first.
+None of the three gates Slice A-live. Measurements 1 and 2 now serve only H2/H3, which §5 retracted
+or deferred, so their priority has **dropped**. What has risen in their place is one question that is
+not a measurement:
+
+> **F-1 — can a challenger who arrives after slot `S` check a claim pinned at `S` at all?**
+> §5 establishes that neither snapshots nor the recorder answers this on a bonding timescale.
+> If the answer is "only for slowly-moving quantities", then A-live is sound for `reserve-solvency`
+> and unsound as a general anchor, and §4.4 must say which. **This is the task's gate, and it is a
+> design question, not a measurement.**
