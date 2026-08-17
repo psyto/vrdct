@@ -145,6 +145,19 @@ library VrdctReexec {
         revert UnknownClaimType();
     }
 
+    /// Accessors keep consumers of the state machine on the same consensus constants.
+    function chunkRecords() internal pure returns (uint32) {
+        return CHUNK_RECORDS;
+    }
+
+    function calendar2026Version() internal pure returns (uint32) {
+        return CAL_2026_VERSION;
+    }
+
+    function flagMax() internal pure returns (uint8) {
+        return FLAG_STALE;
+    }
+
     function _foldCmls(Fold memory fold, bytes memory chunk) private pure returns (Fold memory) {
         for (uint256 offset; offset < chunk.length; offset += 4) {
             uint64 ts = _readU32LE(chunk, offset);

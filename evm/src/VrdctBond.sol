@@ -44,6 +44,9 @@ contract VrdctBond {
     error ValueMismatch();
     error TransferFailed();
     error Reentrant();
+    error BondTooLarge();
+    error MarketNotFound();
+    error NothingToWithdraw();
 
     struct Source {
         uint8 kind;
@@ -134,8 +137,10 @@ contract VrdctBond {
         uint64 challengeWindowSecs
     ) external payable {
         if (markets[definitionHash].exists) revert WrongState();
-        if (assertedFlag > 4) revert UnknownFlag();
+        if (assertedFlag > VrdctReexec.flagMax()) revert UnknownFlag();
         if (bond == 0) revert ZeroBond();
+        // Definition hashes commit to the Rust/JS u64 bond field. Reject rather than truncate.
+        if (bond > type(uint64).max) revert BondTooLarge();
         if (nRecords == 0) revert NoRecords();
         if (msg.value != bond) revert ValueMismatch();
         if (
@@ -143,7 +148,9 @@ contract VrdctBond {
                 || challengeWindowSecs > MAX_CHALLENGE_WINDOW_SECS
         ) revert ChallengeWindowOutOfBounds();
         _validateSource(claimType, source);
-        if (claimType == 1 && calendarVersion != 202601) revert UnsupportedCalendar();
+        if (claimType == 1 && calendarVersion != VrdctReexec.calendar2026Version()) {
+            revert UnsupportedCalendar();
+        }
         bytes32 actual = VrdctReexec.marketDefinitionHash(
             marketId,
             claimType,
@@ -194,7 +201,7 @@ contract VrdctBond {
         Market storage m = _market(definitionHash);
         if (m.state != STATE_OPEN) revert WrongState();
         if (block.timestamp > m.challengeUntil) revert ChallengeWindowClosed();
-        if (assertedFlag > 4) revert UnknownFlag();
+        if (assertedFlag > VrdctReexec.flagMax()) revert UnknownFlag();
         if (assertedFlag == m.resolverFlag) revert ChallengeMustDiffer();
         if (bond < m.resolverBond) revert ChallengeBondTooSmall();
         if (msg.value != bond) revert ValueMismatch();
@@ -224,7 +231,10 @@ contract VrdctBond {
         uint32 fed = uint32(chunk.length / size);
         uint32 remaining = m.nRecords - f.count;
         if (remaining == 0) revert TooManyRecords();
-        if (fed != (remaining < 200 ? remaining : 200)) revert NonCanonicalChunk();
+        uint32 chunkRecords = VrdctReexec.chunkRecords();
+        if (fed != (remaining < chunkRecords ? remaining : chunkRecords)) {
+            revert NonCanonicalChunk();
+        }
         f.fold = VrdctReexec.foldChunk(m.claimType, f.fold, chunk);
         f.count = f.fold.count;
         f.digest = sha256(bytes.concat(f.digest, chunk));
@@ -298,7 +308,7 @@ contract VrdctBond {
 
     function withdraw() external nonReentrant {
         uint256 amount = pendingWithdrawals[msg.sender];
-        if (amount == 0) revert TransferFailed();
+        if (amount == 0) revert NothingToWithdraw();
         pendingWithdrawals[msg.sender] = 0;
         (bool ok,) = msg.sender.call{value: amount}("");
         if (!ok) revert TransferFailed();
@@ -315,11 +325,11 @@ contract VrdctBond {
 
     function _market(bytes32 h) private view returns (Market storage m) {
         m = markets[h];
-        if (!m.exists) revert WrongState();
+        if (!m.exists) revert MarketNotFound();
     }
 
     function _cut(uint256 amount) private pure returns (uint256) {
-        return amount / 10;
+        return amount / 10_000 * CUT_BPS + amount % 10_000 * CUT_BPS / 10_000;
     }
 
     function _validateSource(uint8 claimType, Source calldata s) private pure {

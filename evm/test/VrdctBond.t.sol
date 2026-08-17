@@ -104,6 +104,20 @@ contract VrdctBondTest {
         _ok(!ok);
     }
 
+    function testBondAboveU64IsRejectedBeforeCustody() public {
+        uint256 huge = uint256(type(uint64).max) + 1;
+        bytes32 h = _definition(huge); // Same preimage as 1 wei under the canonical u64 format.
+        VrdctBond.Source memory s = VrdctBond.Source(0, bytes32(0), 0, 0);
+        bytes32 input = VrdctReexec.hashChain(2, 202601, 1, RECORD);
+        vm.prank(resolver);
+        (bool ok,) = address(bond).call{value: huge}(
+            abi.encodeCall(
+                bond.openMarket, (h, bytes32(uint256(1)), 2, 202601, 1, input, s, 2, 1, huge, 3600)
+            )
+        );
+        _ok(!ok);
+    }
+
     function testSecondFeederCannotMutateFirstFeed() public {
         bytes32 h = _open(1 ether);
         _challenge(h, 1 ether);

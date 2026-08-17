@@ -451,6 +451,9 @@ Residual assumptions, all named rather than hidden:
    already-specified 10% cranker reward: anyone can observe and submit the final valid `feed` or
    `settle` transaction first. This slice adds no ordering mitigation; the feeder address, rather
    than the settling caller, receives the reward, but expiry and settlement still race at the edge.
+   The definition hash's cross-VM bond field is `u64`, so the EVM port rejects a bond above
+   `2^64 - 1` wei (about 18.44 ETH) rather than hashing a narrowed value while custody retains a
+   larger one.
 
 1. **Inputs.** `inputs_hash` *pins* a claim's inputs. Whether it also **sources** them depends on the
    claim-type. A CMLS Market stores and PDA-binds its `(price account, window)` descriptor; every
