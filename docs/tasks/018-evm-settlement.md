@@ -107,21 +107,31 @@ and it belongs in **Honest scope** in the same commit that introduces it, not la
 > exact historical-slot query** — you cannot ask for slot S in the past — but "it does not take a
 > slot" is wrong as written.
 >
-> **Repair inventory, greped rather than cited (this note's first version trusted 019's two
-> citations and both line numbers were wrong).** Thirteen sites match, and they do *not* all make
-> the same claim, so this is not a find-and-replace:
+> **Repair inventory.** Built over three attempts, and the first two were wrong in instructive ways.
+> v1 trusted 019's two citations and both line numbers were off. v2 greped, but only for the
+> *"takes no slot"* phrasings, which silently missed every site that says *"a source that can
+> address a slot, which `getProgramAccounts` cannot"* — and then compounded it by "correcting"
+> `adapters/jito-restaking.mjs:426` as a bad citation when it is a real site. Thirteen sites, and
+> they fall into **three** groups, not two:
 >
-> *False as written — the API does take a slot parameter:*
-> `README.md:248`, `README.md:506`, `adapters/jito-restaking.mjs:56`, `adapters/jito-restaking.mjs:443`,
+> **(a) False as written** — these assert the API returns no slot at all. It returns a context slot.
+> `README.md:248`, `:506`; `adapters/jito-restaking.mjs:56`, `:443`;
 > `docs/tasks/010-jito-restaking-ingestion.md:111`, `:189`, `:202`.
 >
-> *Still true, and for a reason the measurement does not touch* — these say a graph composed from
-> **separate** calls can describe a state that existed at no single slot. A per-call context slot
-> does not fix that, because five calls get five context slots (the original 010 F3):
-> `README.md:253`, `docs/tasks/010-jito-restaking-ingestion.md:198`, `tests/jito-restaking.test.mjs:209`.
+> **(b) Defensible but imprecise** — *"settlement needs a source that can address a slot, which
+> `getProgramAccounts` cannot"*. True if *address a slot* means **query state at an exact past
+> slot**, which is still impossible; misleading if read as *returns no slot information*, which is
+> now false. These need the distinction added, not a retraction.
+> `README.md:264`; `adapters/jito-restaking.mjs:426`; `docs/tasks/010-jito-restaking-ingestion.md:286`.
 >
-> 019 owns the repair of the first group. Nothing in the second group should be "corrected" — doing
-> so would delete a true statement while fixing a false one.
+> **(c) True and untouched by the measurement** — a graph composed from **separate** calls can
+> describe a state that existed at no single slot. A per-call context slot does not repair that:
+> five calls get five context slots. This is the original 010 F3.
+> `README.md:253`; `docs/tasks/010-jito-restaking-ingestion.md:198`; `tests/jito-restaking.test.mjs:209`.
+>
+> 019 owns (a) and (b). **Nothing in (c) should be touched** — repairing it would delete a true
+> statement while fixing a false one. Note that `docs/tasks/010` is an unretracted brief, so a later
+> reader treats it as current framing; it is not exempt for being a task doc.
 >
 > `settlement_grade: NO` still stands, for a **different and more general** reason: a slot-tagged
 > scan is *consistent* but not provably *complete*, because a hostile endpoint can omit a row and
@@ -186,6 +196,9 @@ The first version of this note claimed the deferral was *required* by done-means
 the review was right to reject that. What done-means 3 requires is that a stranger can determine
 the subject's state before bonding. It requires the **capability**, not task 019 specifically; an
 EVM-side equivalent could be built first and would satisfy it.
+
+And A-live does not close enumeration completeness for `getProgramAccounts` either — 019 keeps that
+residual — so the deferral cannot even be justified as "wait for the wall to be solved". It is not.
 
 The actual reason to sequence it this way is that the anchor would otherwise be designed twice.
 A-live's shape — N independent endpoints agreeing at a pinned point, checkable before bonding,
