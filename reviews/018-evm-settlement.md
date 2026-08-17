@@ -65,3 +65,34 @@ Do not present the ordering as entailed by the current done-means criterion.
 - `git diff --check ca57ab3...1e71e6b` passed.
 - The branch changes only `docs/tasks/018-evm-settlement.md`.
 - No slice-1/2 source or fixture has a dependency on the retracted sourcing premise.
+
+---
+
+## Re-review — §6 retraction round 2
+
+**Review target:** `cc/018-source-correction` at `b1b0206`
+**Verdict:** **APPROVE**
+
+F1 is resolved.  The new three-way inventory makes the distinction the original review required:
+
+- **(a)** has seven literal falsehoods: the API does return a context slot when `withContext` is
+  requested;
+- **(b)** has three imprecise statements, but each remains defensible when "address a slot" means
+  request state at an exact historical slot.  `minContextSlot` is only a lower bound, so this
+  capability is still absent.  Requiring the qualifier rather than calling these false is the
+  accurate repair;
+- **(c)** has three true aggregate-read limitations and is correctly left alone.
+
+I repeated candidate discovery using both the direct API name and the semantic forms "historical
+slot", "past slot", "not a historical claim", "only as of now", and "source that can address a
+slot" over runtime source, tests, README, and task docs.  The thirteen listed locations are the
+only current assertions of the corrected/no-exact-slot premise.  The remaining direct API mentions
+are calls (`cli/`, `keeper/`), a market-listing description (task 004), a dated subject-set
+measurement (task 005), or review history; none asserts the falsified API behaviour.
+
+F2 is resolved.  The text now expressly calls the A-live ordering a project choice, names the
+actual duplicate-design rationale, makes it overridable, and does not imply that A-live solves
+enumeration completeness.  "Slice 3 must not be written as if [EVM has a sourcing advantage]" is
+the factual consequence of the correction, not a hidden scheduling requirement.
+
+`git diff --check ca57ab3...b1b0206` passes.  This remains a docs-only branch.
