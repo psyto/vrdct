@@ -443,7 +443,14 @@ deterministically — the slice a price feed can't reach and a vote shouldn't de
 The resolution **logic** is trustless re-execution, now on-chain: anyone re-runs `feed` and the
 program lands on the same verdict, and real lamports move on it.
 
-Three residual assumptions, all named rather than hidden:
+Residual assumptions, all named rather than hidden:
+
+0. **EVM time and ordering.** The EVM port uses `block.timestamp` for `challenge_until` and
+   `settle_by`; on an L2 this is the sequencer's timestamp, so the same terminal-path boundaries
+   now depend on that operator's clock opinion. Its public mempool also changes who receives the
+   already-specified 10% cranker reward: anyone can observe and submit the final valid `feed` or
+   `settle` transaction first. This slice adds no ordering mitigation; the feeder address, rather
+   than the settling caller, receives the reward, but expiry and settlement still race at the edge.
 
 1. **Inputs.** `inputs_hash` *pins* a claim's inputs. Whether it also **sources** them depends on the
    claim-type. A CMLS Market stores and PDA-binds its `(price account, window)` descriptor; every
