@@ -97,20 +97,47 @@ thing that makes a stranger finish someone else's feed.
 the timestamp is set by a sequencer. That is a new trusted input this system did not have on Solana,
 and it belongs in **Honest scope** in the same commit that introduces it, not later.
 
-### 6. `Source` — the actual reason to do this
+### 6. `Source` — ~~the actual reason to do this~~ (premise falsified; see the correction)
+
+> **Correction, 2026-08-17.** The paragraph below claimed the port's value came from a comparative
+> advantage over Solana's RPC. That premise is **false**, and it was measured false from the Solana
+> side, not the EVM side. Task 019 §1 measured on mainnet that `getProgramAccounts` **does** accept
+> `withContext` and returns a context slot (439752891), and that `minContextSlot` is honoured and
+> names the slot it had when it refuses. So "`getProgramAccounts` does not take a slot" is wrong
+> here, and wrong in `README.md:493-502` and `adapters/jito-restaking.mjs:426` — 019 owns those two.
+>
+> `settlement_grade: NO` still stands, for a **different and more general** reason: a slot-tagged
+> scan is *consistent* but not provably *complete*, because a hostile endpoint can omit a row and
+> nothing in the response reveals it.
+>
+> That is the enumeration-completeness falsifier written below as an EVM-specific risk. It is not
+> EVM-specific. `eth_getLogs` has the same property: a block range proves membership of what it
+> returns, not that nothing else belongs. **Both VMs sit behind the same wall**, so the port has no
+> sourcing advantage to claim and slice 3 must not be written as if it does.
+>
+> What survives untouched: slice 1's actual result — three implementations of the re-execution held
+> to one committed fixture, so a cross-VM disagreement is a test failure in this repo. That never
+> depended on `Source`.
+>
+> The hypothesis below was stated as a hypothesis with a falsifier, and gated behind a two-provider
+> digest match before anything could be written into the README. That gate is what held; the
+> original text is left standing rather than rewritten so the shape of the error stays visible.
 
 `Source.kind = SOLANA_ACCOUNT_SIGNATURES` cannot be ported; EVM needs `kind = EVM_LOGS`
-(`address`, `topic0`, `fromBlock`, `toBlock`).
+(`address`, `topic0`, `fromBlock`, `toBlock`). That part is unchanged.
 
-And this is where the port earns its keep. The Jito adapter is stamped `settlement_grade: NO` for a
+~~And this is where the port earns its keep. The Jito adapter is stamped `settlement_grade: NO` for a
 specific reason: `getProgramAccounts` does not take a slot, so two reads only show that an endpoint
 answered twice the same way. **`eth_getLogs` takes a block range**, and a block number is a
-commitment.
+commitment.~~
 
 So state the hypothesis precisely, and state its falsifier:
 
-> **Hypothesis.** An `EVM_LOGS` source is reconstructible at a pinned block range by any party with
-> an independent node, which is what `SOLANA_ACCOUNT_SIGNATURES` could not promise.
+> **Hypothesis.** ~~An `EVM_LOGS` source is reconstructible at a pinned block range by any party with
+> an independent node, which is what `SOLANA_ACCOUNT_SIGNATURES` could not promise.~~
+> Superseded: the second clause is false (019 §1), and the first is the same claim task 019 makes
+> for Solana under the name **A-live** — N independent endpoints agreeing at a pinned point. Slice 3
+> is the EVM instance of A-live, not a route around it.
 >
 > **What falsifies it.** Enumeration completeness. A log range proves *membership* of what it
 > returns; it does not prove *nothing else belongs*. This is the same leaf-vs-enumeration wall that
@@ -134,6 +161,15 @@ in one line: *a success signal is not a fact; do not say it until you have taken
    is nothing for a stranger arriving now to land on"; shipping this port in the same state repeats
    the defect rather than fixing it.
 4. Honest scope gains: L2 sequencer timestamps (§5), and whatever §6 actually turns out to be.
+
+**Sequencing, added 2026-08-17.** Slices 1 and 2 are merged. **Slice 3 is deferred behind task 019
+Slice A-live**, and this is a consequence of the §6 correction, not a scheduling preference.
+Done-means 3 requires a market left open for a stranger to land on, and a stranger can only land on
+it if they can determine the subject's state before bonding — which is exactly what A-live designs
+and what §6 wrongly assumed the EVM already had. Opening a market before that is opening one nobody
+can check. 019 §6 additionally changes *which* market: `reserve-solvency`, not CMLS, which under
+005 §4 cannot currently print a sound verdict and is scheduled to print a false public RED on
+2026-11-27.
 
 Default chain: Base Sepolia — cheap calldata. Arbitrum Sepolia is the alternative worth considering
 only because the live subjects already
