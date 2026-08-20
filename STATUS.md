@@ -1,9 +1,26 @@
-# STATUS — Vrdct / CMLS
+# STATUS — Vrdct
 
-**Phase:** Kill Gate ([`docs/GATE.md`](./docs/GATE.md)) · **Scope:** CMLS only
+**Phase:** Kill Gate · **H1** ([`docs/GATE.md`](./docs/GATE.md), CMLS) — `KILLED`, closed.
+**H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md)) — **OPEN, no evidence.**
 **Updated:** 2026-08-20 · **Ref:** `claude/020-cmls-harness` over `cae200d`
 
-## Verdict
+## Where this stands
+
+**H1 is killed and its conclusion is not being rewritten.** The founder's decision, 2026-08-20: keep
+the KILL, and open H2 using H1's falsifications as *inputs* rather than as things to argue with.
+
+H2 fixes six things before any evidence — buyer, the loss they bear, the condition under which that
+loss and the payout coincide, undetermined-at-participation, third-party reconstructability, and a
+numeric KILL condition per item. It is **a new gate that starts over from zero**; H1's PASSes are not
+credits. Nothing is implemented and nothing may be: H2's current state is a hypothesis, its non-goals,
+its gate and a reproducible verification plan — **written, not run.**
+
+One fact was read while writing it and belongs here because it is structural, not a plan:
+`open_market(… n_records: u32, inputs_hash: [u8; 32] …)` with `require!(n_records > 0)` means the
+current program **cannot express a claim whose window is in the future.** That is H1's 020 §0 confirmed
+at the signature level, and it is H2's item **B4** — an item that can kill H2 without any buyer research.
+
+## H1 verdict
 
 > ## CMLS — the product: `KILLED`
 >
@@ -101,3 +118,4 @@ the gate's own terms a new gate starts over from zero.
 | `tools/relay-codex.sh`, `.claude/commands/relay.md` | the Codex relay: transport automated, decision not |
 | `docs/tasks/020-cmls-product-boundary.md` | the product spec — **frozen pre-gate**; its §0 is the finding this verdict turns on |
 | `.claude/agents/*.md` | five role prompts for two agents, non-concurrent by construction |
+| `docs/GATE-H2.md` | **H2 — open, no evidence.** Hypothesis, non-goals, gate B1–B6 with numeric kills, and a verification plan that has not been run |

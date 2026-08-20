@@ -1,8 +1,14 @@
 <!-- KILL-GATE-BANNER -->
 # ⛔ PHASE: KILL GATE ONLY
 
-**Read `docs/GATE.md` before doing anything in this repo.** It is binding and it overrides any
-older plan, roadmap or task list you find here.
+**Read `docs/GATE-H2.md` before doing anything in this repo**, then [`docs/GATE.md`](docs/GATE.md)
+for the rules it inherits. Both are binding and they override any older plan, roadmap or task list you
+find here.
+
+**H1 (CMLS) is `KILLED` and closed** — `docs/decisions/2026-08-20-cmls-product.md`. Do not reopen it,
+do not treat it as a fallback, and do not reach for another claim-type when H2 runs into trouble.
+**H2 is open with no evidence**, and its current permitted state is spec only: no code, no adapter, no
+program change, no tooling.
 
 The only work permitted right now is producing evidence for this project's kill gate. No
 generalisation, no large UI, no peripheral features, no production deployment, until the gate
