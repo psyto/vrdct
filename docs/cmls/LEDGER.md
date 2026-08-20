@@ -77,4 +77,5 @@ where it can be acted on without being a plan.
 
 | date | change |
 | --- | --- |
+| 2026-08-20 | Codex relay automated as **transport only**: `tools/relay-codex.sh` + `/relay` send a prepared block to `codex exec` in a detached worktree, refusing against this file's `codex_role` lock, against `DO NOT SEND`, and against an unpushed branch. It never commits, never writes the lock, and never adjudicates the reply. Four documents that claimed nothing here could run Codex were corrected in the same commit. |
 | 2026-08-20 | Harness created, CMLS-scoped. Gate evidence V1–V4 run. **V3 = `KILLED`.** Three inherited "current defects" from `005 §4b/§4c` found already fixed at HEAD and recorded as standing corrections. |

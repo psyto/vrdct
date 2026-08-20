@@ -22,8 +22,10 @@ returns `GO`.
 
 Vrdct is built by **two agents that cross-review each other**: Claude Code (CC) and Codex.
 The repo — not chat memory — is the only shared memory. **Every handoff is a committed artifact**
-(task brief, code, review file, or README/roadmap update). The human relays prompts between the two
-agents by copy-paste; anything that must survive that relay lives in a file here.
+(task brief, code, review file, or README/roadmap update). Prompts reach Codex either by copy-paste or
+through `tools/relay-codex.sh`; either way the relay carries no context of its own, so anything that
+must survive it lives in a file here. The transport is automated; **the decision is not** — no agent
+adjudicates a reply, changes a verdict, or opens the next round on its own initiative.
 
 ## Collaboration model
 

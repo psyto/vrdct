@@ -66,9 +66,11 @@ above are *prompts for those two agents*, not five additional agents; at most on
 lock is the `codex_role:` line in [`LEDGER.md`](./LEDGER.md), which both handoff agents read and
 refuse against, because a rule with no mechanism has already failed in this repo.
 
-**Codex is an external executor reached by a committed handoff, not a subagent.** Nothing in this
-harness can run Codex. `cmls-codex-handoff` renders a copy-paste-ready request; the human relays it;
-Codex's reply lands as a commit or a `reviews/NNN-slug.md` file. Until that artifact exists, the task
+**Codex is an external executor reached by a committed handoff, not a subagent.** `cmls-codex-handoff`
+renders the request; `tools/relay-codex.sh` sends it to `codex exec` in a detached worktree, refusing
+against the same role lock; Codex's reply lands as a `reviews/NNN-slug.md` file, **uncommitted**.
+The transport is automated and the decision is not: nothing in this harness may adjudicate that reply,
+change a verdict, or open the next round. `docs/GATE.md` stops at the verdict and the founder decides. Until that artifact exists, the task
 is `BLOCKED (codex)` — never `DONE`, and never quietly done by CC instead.
 
 **The cross-pass rule, stated so a machine can check it.** Every task row in

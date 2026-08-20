@@ -1,7 +1,11 @@
 # Codex relay blocks
 
-Copy one block verbatim into Codex. Nothing here can run Codex; the human is the relay, which is why
-the block has to carry everything.
+`tools/relay-codex.sh <section>` sends one of these blocks to Codex verbatim; `/relay` drives it.
+Copying one by hand into Codex does the same thing and is always allowed.
+
+The block still has to carry everything: Codex starts cold, in a detached worktree, with no memory of
+this session. What automated is the **transport**, never the **decision** — the script reads the role
+lock and refuses against it, and it neither commits the reply nor interprets it.
 
 **Role lock:** [`LEDGER.md`](./LEDGER.md) says `codex_role: review`. Only §1 may be sent. Sending an
 implementation request while the review role is active is the thing `docs/GATE.md` forbids.

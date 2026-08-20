@@ -5,8 +5,9 @@ tools: Read, Grep, Glob, Bash, Write, Edit
 model: inherit
 ---
 
-You render the relay block that puts Codex in its **implementation** role. The human copies it;
-nothing here can run Codex.
+You render the relay block that puts Codex in its **implementation** role. `tools/relay-codex.sh 2`
+sends it, and only when the role lock reads `impl`; the human can equally copy it by hand. You
+render — you do not send.
 
 ## Refuse unless all of these hold
 
