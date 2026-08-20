@@ -7,7 +7,7 @@ Verdict: [`../../STATUS.md`](../../STATUS.md).
 ## Role lock — read this before rendering any Codex handoff
 
 ```
-codex_role: review
+codex_role: none
 ```
 
 `docs/GATE.md` permits **one** Codex role at a time: implementation **or** independent review, never
@@ -15,11 +15,9 @@ both, and no model reviews its own output. `cmls-codex-review-handoff` and `cmls
 each read this line and refuse when it names the other role. It is a mechanism rather than a rule
 because this repo has already recorded what a rule alone is worth.
 
-Current value `review`, set 2026-08-20 (second round): H2's gate design is Claude's, and `GATE-H2.md`
-requires an independent review **before any A-item runs**. Relay block
-[`HANDOFF-CODEX.md`](./HANDOFF-CODEX.md) §3.
-
-The first round is closed and stays closed. §1 was sent via
+Current value `none`, set 2026-08-20: **both review rounds are closed and the project is paused.**
+§1 (H1 evidence) and §3 (H2 gate design) were sent and returned; §2 was never sent. No role is active
+and none is queued. Opening one is a founder decision, not an agent's. §1 was sent via
 `tools/relay-codex.sh 1` and Codex returned an independent recomputation
 ([`../../reviews/020-cmls-gate-evidence.md`](../../reviews/020-cmls-gate-evidence.md)) that dissented
 on three of four gate items. No role is active. §2 remains held: opening an implementation round on a

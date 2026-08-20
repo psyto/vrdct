@@ -1,8 +1,44 @@
 # STATUS — Vrdct
 
-**Phase:** Kill Gate · **H1** ([`docs/GATE.md`](./docs/GATE.md), CMLS) — `KILLED`, closed.
-**H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md), obligor-bonded SLA) — **OPEN, no evidence.**
+# ⏸ PAUSED — 2026-08-20, by the founder
+
+**Nothing is in progress and nothing is waiting on an agent.** No task is half-done, no run is
+pending, no review is outstanding. A session that opens this repo should **stop here and ask**, not
+pick up `GATE-H2.md` and start running A-items.
+
+**Phase:** Kill Gate, paused · **H1** ([`docs/GATE.md`](./docs/GATE.md), CMLS) — `KILLED`, closed.
+**H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md), obligor-bonded SLA) — **stopped at design review, zero
+evidence run.**
 **Updated:** 2026-08-20 · **Ref:** `claude/020-cmls-harness` over `cae200d`
+
+## What this session cost and what it bought
+
+Two hypotheses opened, two stopped, **no code written toward either product**, no funds, no deploy.
+H1 died on measured evidence. H2 died at its own design review before a single A-item ran — which is
+the gate working as designed, at roughly the price of reading.
+
+**The one thing proven, twice, independently:** two implementations written separately — neither
+importing the other's code — rebuilt a 19-day-old input set from a public RPC and reached a
+byte-identical `inputs_hash` `2f224c44f93a8e2c…` and the same verdict.
+
+That is not a side result. `onchain/programs/vrdct-bond/src/state.rs:10-12` says `Source` is **not
+re-executed on-chain**: the chain proves the committed set was folded, not that the set is genuinely
+that account's history. The defence of provenance is *a challenger who reconstructs before bonding.*
+**So independent reconstruction is the security model**, and proving it was the right thing to prove.
+
+**The corollary, which is why T-3 matters more than its severity suggests:** `core/rpc.mjs:19` caps
+the walk at 20 pages and truncates silently. That defect attacks the *sole* defence, and it decays
+with elapsed time.
+
+## The question that was never asked
+
+Both hypotheses fixed their buyer **from inside this repo**. Nobody outside it was asked whether they
+would require a bonded, re-executable guarantee of anything — of whom, or at what price. Codex's
+review of H2's design says the same thing structurally: the buyer items **A2/A3 cannot reliably return
+`NO`** (`reviews/021-h2-gate-design.md` F4–F5).
+
+If work resumes, that is the cheapest unrun experiment in the repo and it needs no code. If it returns
+zero, that is an evidence-based stop rather than this one.
 
 ## Where this stands
 
@@ -126,8 +162,8 @@ the gate's own terms a new gate starts over from zero.
 - No devnet run against a wallet anyone cares about until the unrecoverable-funds defect
   (`reviews/main-2026-08-12-devnet-debt.md` F1, threat-model **T-12**, measured `2.50859` SOL stranded
   per run) is closed. **Unchanged by this verdict, and still open.**
-- One Codex role at a time. `docs/cmls/LEDGER.md` carries the lock; the review round closed with this
-  commit, so it now reads `none` — no Codex role is active.
+- One Codex role at a time. `docs/cmls/LEDGER.md` carries the lock; both review rounds are closed and
+  it reads `none` — no Codex role is active and none is queued.
 - The run stops at the verdict. It has stopped.
 
 ## Committed on this branch

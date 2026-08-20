@@ -1,14 +1,22 @@
 <!-- KILL-GATE-BANNER -->
 # ⛔ PHASE: KILL GATE ONLY
 
-**Read `docs/GATE-H2.md` before doing anything in this repo**, then [`docs/GATE.md`](docs/GATE.md)
-for the rules it inherits. Both are binding and they override any older plan, roadmap or task list you
-find here.
+# ⏸ PAUSED — 2026-08-20, by the founder
 
-**H1 (CMLS) is `KILLED` and closed** — `docs/decisions/2026-08-20-cmls-product.md`. Do not reopen it,
-do not treat it as a fallback, and do not reach for another claim-type when H2 runs into trouble.
-**H2 is open with no evidence**, and its current permitted state is spec only: no code, no adapter, no
-program change, no tooling.
+**Read [`STATUS.md`](./STATUS.md) first, and then stop and ask.** Nothing is in progress, nothing is
+half-done, and no agent is waiting on anything. Do **not** open `docs/GATE-H2.md` and begin running its
+A-items: H2 was stopped at its design review with zero evidence run, deliberately.
+
+- **H1 (CMLS) is `KILLED` and closed** — `docs/decisions/2026-08-20-cmls-product.md`. Not a fallback,
+  not a v2, not to be reopened.
+- **H2 is paused before its first evidence item**, and its own review
+  (`reviews/021-h2-gate-design.md`) found `A5` already failing on current source. Resuming it is a
+  founder decision, and resuming it *as written* is not the obvious move.
+- **The cheapest unrun experiment needs no code**: ask people outside this repo whether they would
+  require a bonded, re-executable guarantee, of whom, and at what price. Both hypotheses fixed their
+  buyer from inside this repo, and that is what killed them.
+
+If a founder asks for work here, the rules below still bind.
 
 The only work permitted right now is producing evidence for this project's kill gate. No
 generalisation, no large UI, no peripheral features, no production deployment, until the gate
