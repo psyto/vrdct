@@ -6,165 +6,185 @@
 
 Every rule in [`GATE.md`](./GATE.md) carries over unchanged — a verdict is a number or a reproducible
 experiment; not-proven is a KILL; adding a hypothesis to stay alive is forbidden; at most two agents
-with one Codex role at a time; the run stops at the verdict. This document adds only what is specific
-to H2. **This is a new gate that starts over from zero. H1's PASSes are not credits.**
+with one Codex role at a time; the run stops at the verdict. **This gate starts over from zero. H1's
+PASSes are not credits.**
+
+> ### The instance changed once, before any evidence ran
+>
+> H2's first fixed instance (2026-08-20, Claude) was an **indemnity**: the buyer was a borrower
+> liquidated against a stale feed. The founder replaced it with the instance below the same day,
+> **before a single verification step had been run.** Under this gate's own rule — *changing the
+> design before the evidence is design; changing it after seeing a number is the failure the gate
+> exists to prevent* — this is legitimate, and it is recorded here rather than quietly overwritten.
+>
+> It was the right call on three checkable points, recorded so the change is auditable and not a
+> matter of taste. **(i)** The old instance's data — liquidation events joined to prices — is the half
+> this repo has *never* sourced; the new instance runs on signature history, the exact shape H1 proved
+> reconstructable byte-for-byte. **(ii)** The old instance had no natural counterparty; the new one has
+> a structurally identified obligor. **(iii)** The old buyer was diffuse, retail and post-hoc; the new
+> buyer signs terms in advance.
+>
+> **One thing the switch makes worse, stated up front:** an indemnity's payout tracks the buyer's
+> actual loss, and a fixed remedy does not. See *What this is not*, below, which is a gate item.
+
+---
+
+## What H2 is
+
+> **A buyer-defined, obligor-bonded, re-executable SLA.**
+
+| | |
+| --- | --- |
+| **buyer** | an integrator, a DAO, or an operator placing funds — a party who depends on someone else's scheduled on-chain action and today has only trust and reputation as recourse |
+| **obligor** | a keeper, an agent, an operator, a service provider — a party who performs that scheduled action |
+| **the product** | the obligor posts a bond against an **explicit future liveness invariant** that the **buyer** fixed first |
+| **on violation** | a **fixed remedy, agreed in advance**, is paid to the buyer |
+| **what Vrdct supplies** | adjudication and bond enforcement that are **re-executable** — the deciding step is re-execution of public data, not a report from a party with an interest |
+
+## What this is not — stated first, because stating it first is the stronger position
+
+**This is not insurance.** It does not make the buyer whole. The remedy is a fixed sum agreed before
+the fact, and a buyer whose loss exceeds it is not covered for the difference. Anyone selling it as
+indemnity is selling something this gate did not test.
+
+What it is instead: **an SLA that executes without trust.** Its value is that the commitment is
+credible, bonded, and adjudicated by re-execution rather than by the obligor's own dashboard or by a
+lawsuit in a jurisdiction the counterparty may not share.
+
+That limit is **A8**, a gate item, not a disclaimer — because `README.md` §Honest scope is a contract
+with readers and H1 died with a false sentence in it.
+
+---
 
 ## What H1 bought, stated once so it is not re-litigated
 
 | from H1 | carried into H2 as |
 | --- | --- |
-| **PROVEN.** Two independently written implementations rebuilt 3,789/3,789 observations from a public RPC on a 19-day-old window and landed on a byte-identical `inputs_hash`. | evidence that *re-execution from public signature history* is a real capability. It is **not** evidence for H2's own reconstruction requirement (B5), which is about a different data shape and must be measured again. |
-| **KILLED.** `open_market` pins `inputs_hash`/`n_records` before money moves, so the answer precedes the market. | **B4.** H2 dies unless the outcome is undetermined at participation. |
-| **FAIL (V1).** The predicate read zero prices while being named for liquidation soundness. | **B3.** The predicate must read the quantity the loss is made of. |
-| **FAIL (V2).** The opener supplied the window. | **B4b.** The window must be fixed by rule before the opener acts. |
-| **T-10.** Four reachable subjects, all printing the same verdict, the rest unnameable. | **B6.** A market needs a counterparty who can rationally disagree. |
+| **PROVEN.** Two independently written implementations rebuilt 3,789/3,789 observations from a public RPC and landed on a byte-identical `inputs_hash`. | evidence that re-execution from **public signature history** is real. H2's invariant lives on that same data shape — but it must be measured again for this shape (**A7**), because H1 measured one account's updates, not an obligor's actions against a schedule. |
+| **KILLED.** `open_market` pins `inputs_hash`/`n_records` before money moves, so the answer precedes the market. | **A6.** H2 dies unless the outcome is undetermined when the buyer signs. |
+| **FAIL (V1).** The predicate read zero prices while being named for liquidation soundness. | **A0.** The profile names exactly what is read, and the product may not be named for more. |
+| **FAIL (V2).** The opener supplied the window. | **A4.** The *buyer* fixes the terms; the obligor bonds them afterwards and cannot influence them. |
+| **T-2.** *"Omission is exculpatory for CMLS."* | **A5.** For an SLA, omission is the entire failure mode. If doing nothing cannot be adjudicated, there is no product. |
+| **T-10.** Four subjects, all printing the same verdict. | **A1.** An obligor population with a zero miss rate has nothing to bond. |
+
+**B6 is withdrawn.** H2's first draft made *"the only rational counterparty is the accused venue"* a
+KILL. That was imported from H1's accusation frame, where someone bonds a claim **about a third
+party**. Here the obligor bonds **its own future conduct**: that is a warranty, and the obligor being
+the counterparty is the design rather than a defect. Recording the withdrawal because a kill condition
+that quietly disappears is how a gate stops being a gate.
 
 ---
 
-## The hypothesis, fixed before any evidence
+## Non-goals — out of scope until this gate returns `GO`
 
-> **H2.** There is a named on-chain invariant whose violation inflicts a **measurable financial loss**
-> on a **countable, reachable** population; a payout can be made to fire **when and only when** that
-> loss occurs; the outcome is **undetermined** when the buyer pays; the window is fixed **by rule**,
-> not by a participant; and a third party can **reconstruct the verdict from public data**.
-
-**Fixed instance under test — one, not a family.** Per `GATE.md`, swapping the instance to stay alive
-is forbidden. If this instance fails, H2 fails; a different instance is H3 and starts over.
-
-| | fixed value |
-| --- | --- |
-| **1. buyer** | the **borrower liquidated against a stale price feed** on a named Solana lending venue — an address that held a position, was liquidated, and whose liquidation executed against a feed that had not updated within the venue's own stated tolerance. |
-| **2. the loss they bear** | the liquidation penalty plus the difference between the price they were closed at and the price a fresh feed would have given, in USD, per event, on-chain and after the fact. |
-| **3. loss ↔ payout** | the payout fires on *the same event that caused the loss*: a liquidation executed against a feed staler than the threshold. Not a correlated proxy, not a portfolio average. |
-| **4. undetermined at participation** | the window is **in the future** when the buyer pays. Nobody, including the seller, can compute the answer at that moment. |
-| **5. reconstructable** | both halves — the liquidation events and the feed's update history — rebuilt from public data to a commitment two independent parties reach byte-identically. |
-| **6. KILL condition** | numeric, per item, stated in the gate below **before** the run. |
-
-**The named risk in this instance, stated by its author.** H1 was gesturing at exactly this and never
-read a price or a liquidation. H2 is therefore the shape most likely to be a rescue of a killed project
-wearing new labels. The defence is structural, not a promise: **B1 and B2 kill H2 on buyer numbers
-alone, before any Vrdct machinery is examined, and they are run first.** If H2 survives them and dies
-at B4, that is a clean death and the technology is not the reason.
-
----
-
-## Non-goals — out of scope until the gate returns `GO`
-
-- **No code.** No claim-type, no adapter, no program change, no test, no tooling. H2's evidence is
-  measurement of public data and reading of existing source, not building.
-- **No program redesign.** B4 asks *whether* a forward-window design exists that preserves
-  re-execution-decides. It does not authorise writing one.
-- **No reviving CMLS.** `closed-market-liquidation-soundness` is killed. It is not a fallback, not a
-  v2, not a subset of H2.
-- **No other claim-type.** `reserve-solvency`, `obligated-liveness`, `restaking-robustness`,
-  `monday-open-gap` are out of scope. Reaching for one when this instance fails is the forbidden move.
-- **No UI, no deploy, no mainnet, no devnet, no real funds, no force push, no secrets.**
-- **No generalisation.** "This would also work for X" is not evidence and does not belong in H2's
-  record.
-- **T-12 stays closed as a blocker.** `2.50859` SOL stranded per run
-  (`reviews/main-2026-08-12-devnet-debt.md` F1). No value moves regardless of H2's verdict.
+- **No code.** No claim-type edit, no adapter, no program change, no test, no tooling.
+- **No `CLAIM_TYPE_ID` / Rust-twin port.** `claimtypes/obligated-liveness.mjs:60-62` records that the
+  surface is offline-complete and **not** wired to `core/encode.mjs` or the on-chain twin. That port is
+  the obvious next build and it is **not authorised by this gate.**
+- **No on-chain market.** No `open_market` call, no devnet, no mainnet, no funds. T-12 stands:
+  `2.50859` SOL stranded per run (`reviews/main-2026-08-12-devnet-debt.md` F1).
+- **No general SLA protocol.** One profile (**A0**), and generalisation is not evidence.
+- **No reviving CMLS**, no reaching for a third claim-type when this one runs into trouble. The
+  instance changed once, at zero evidence, on the founder's proposal, and it is recorded above. **A
+  second change after any A-item has run is the forbidden move**, and this line is the tripwire.
+- No UI, no deploy, no force push, no secrets.
 
 ---
 
 ## The gate
 
-Run **in order.** B1 and B2 are first because they can kill H2 without touching this repo's code.
+Conjunctive — **any single item fails, H2 fails.** Run in the order given. A0 is written before
+anything is measured; A4, A5 and A6 are answered by reading source and cost nothing external, so they
+run before the buyer research they could make moot.
 
 | # | item | verdict must come from | KILL if |
 | --- | --- | --- | --- |
-| **B1** | **The buyer exists and is countable.** How many distinct addresses were liquidated against a feed staler than the venue's own stated tolerance, on named Solana lending venues, in the last 12 months? | a count, from public chain data, per venue and per month | **fewer than 50 distinct addresses**, or the events cluster into **fewer than 3 distinct incidents** — a market on an annual tail event has no recurring buyer |
-| **B2** | **The loss is material to that buyer.** What did they lose, in USD? | median, p90 and total across the B1 events | **median loss < 10× the round-trip cost of participating** (bond + fees + gas). Below that a rational buyer self-insures and there is no premium to collect |
-| **B3** | **Loss and payout coincide.** Applied to the B1 events, how often would the proposed predicate have fired when someone lost, and how often when nobody did? | a confusion matrix over the B1 events | **true-positive rate < 0.90** or **false-positive rate > 0.10**. Outside that band the instrument pays the wrong people and is a lottery, not cover |
-| **B4** | **The outcome is undetermined at participation.** Can a market be opened whose input set does not yet exist? | reading `open_market` and stating what a forward-window design would require | **no design exists that keeps re-execution as the deciding mechanism** while the window is future. Today the answer is no: `open_market(… n_records, inputs_hash …)` with `require!(n_records > 0)` requires the set to exist at open |
-| **B4b** | **The window is fixed by rule.** Who chooses `[from, to]`? | the rule, written, and a re-derivation landing on the same bounds from the rule alone | **any participant can influence the bounds**, or the rule and the descriptor disagree — H1 died partly here |
-| **B5** | **A third party reconstructs it.** Can both the liquidation events and the feed history be rebuilt from public data to a byte-identical commitment? | two independent rebuilds compared | **either half is unsourced.** This repo already reports `settlement_grade: NO` for `getProgramAccounts`-shaped sources (`adapters/jito-restaking.mjs:426`) and `reserve-solvency` as genuinely unsourced. Liquidation events are the untested half |
-| **B6** | **A counterparty exists.** Who rationally takes the other side, and why is it not the accused venue? | naming them, and the reason they disagree at open | **the only rational counterparty is the venue being accused** — that is a fine, not a market — or the answer is knowable at open, which is B4 again |
-
-### KILLED if
-
-**Any single item fails.** They are conjunctive: a buyer with no counterparty is not a market, a
-market with no reconstruction is an oracle, and a reconstruction of an already-settled fact is H1.
+| **A0** | **One profile, fixed in writing first.** *A named Solana keeper executes a named instruction on a named program within a pre-defined slot, on a calendar-derived schedule.* Name the program, the instruction discriminator, the schedule source, and what "executed" means at the byte level. | the written profile, committed before A1 | the profile cannot be stated without a term that a participant supplies at settlement time, or without reading something the chain does not carry |
+| **A1** | **The obligor population exists and its liveness is imperfect but bondable.** For each named keeper, the miss rate against its own calendar-derived slots over 12 months. | counts from public signature history, per obligor, per month | **every obligor's miss rate is 0** (nothing to bond — this is T-10 in a new place), **or** the median obligor's expected annual remedy exceeds its plausible annual revenue from the duty (no obligor rationally participates) |
+| **A2** | **Buyers demand it.** Named integrators, DAOs or fund operators who will state, in writing, that they would require this bond as a condition of integration. | signed or quoted written statements, counted and attributable | **fewer than 5 named buyers**, or fewer than **2** who name a specific obligor they would require it of. A buyer who likes the idea but names no obligor is not a buyer |
+| **A3** | **The bond band is non-empty.** Is there a remedy `R` that buyers call sufficient *and* obligors call acceptable? | the two stated ranges, per party, and their intersection | **the intersection is empty.** Too small and it is advertising rather than an SLA; too large and no obligor posts it. Both failures are the same KILL |
+| **A4** | **The buyer fixes the predicate, before the bond.** The signed terms hash must pin **target program, period, calendar version, tolerated miss rate, and remedy** — and the obligor bonds an already-fixed hash. | the terms schema, and a trace showing the obligor cannot alter any pinned field | **the obligor can choose, propose, or negotiate any pinned field after seeing its own performance data.** This is H1's V2 failure in new clothes and it is the single most likely way H2 dies quietly |
+| **A5** | **Omission is adjudicable, fail-closed.** If the calendar generates obligated slots and the obligor does *nothing*, does the system settle "missed"? | reading `matchSlots`, `open_market`, and `state::Market` end to end, and stating where an empty record set lands | **inaction is exculpatory.** `require!(n_records > 0, VrdctError::NoRecords)` says today that a market cannot even open with zero records — so a total outage, the worst breach, is currently the one case that cannot be settled. `n_records > 0` is not sufficient and A5 is not satisfied by it |
+| **A6** | **The outcome is undetermined when the buyer signs.** Can a market be opened whose input set does not yet exist? | reading `open_market` and stating what a forward-window design must commit instead of `inputs_hash` | **no design keeps re-execution as the deciding mechanism** with a future window. If it requires a trusted party to report the future set, that is a KILL — it reintroduces the oracle Vrdct exists to remove |
+| **A7** | **A third party reconstructs the verdict.** Rebuild one obligor's action history and its calendar-derived slots, twice, independently. | two independent rebuilds compared byte-for-byte | the two disagree, or the obligor's actions cannot be addressed at a slot. H1's method applies; H1's evidence does not transfer |
+| **A8** | **The limit is published, not buried.** Does the deliverable state that this is not indemnity, in the place a buyer reads? | the text, in `README.md` §Honest scope | the deliverable describes it as cover, protection, or insurance, or omits that the remedy is fixed and may be less than the loss |
 
 ### The thresholds are the founder's to change — before the run, not after
 
-`50 addresses`, `3 incidents`, `10×`, `0.90/0.10` are proposed by Claude and are the most arguable
-part of this document. Changing them **before** B1 runs is legitimate gate design. Changing them
-**after** seeing a number is the failure `GATE.md` exists to prevent, and the record must show which
+`0 miss rate`, `5 buyers`, `2 naming an obligor`, `empty intersection` are Claude's proposal and are
+the most arguable part of this document. Changing them **before A1 runs** is gate design. Changing them
+**after seeing a number** is the failure `GATE.md` exists to prevent, and the record must show which
 happened.
 
 ---
 
 ## Verification plan — reproducible, not yet run
 
-Written to the level where a third party can execute it. **Nothing here has been run.**
+**Nothing here has been run.** Written to the level where a third party can execute it.
 
-### B1 — count the buyers
+### A0 — write the profile
 
-1. **Fix the venue set, in writing, before querying.** Named Solana lending venues with (a) a public
-   liquidation instruction, (b) a published price-staleness tolerance, (c) a nameable feed account
-   per market. Record the tolerance and its source URL per venue. A venue with no *stated* tolerance
-   is excluded — inventing one is the V1 error in a new place.
-2. For each venue, enumerate successful liquidation instructions over the last 12 months by walking
-   signature history on the program account. **Page-budget discipline:** H1's kill defect was a fixed
-   20-page cap that truncated silently (`core/rpc.mjs:19`). This walk must record pages consumed and
-   the oldest timestamp reached, and **refuse rather than return** on exhaustion.
-3. For each liquidation, resolve the feed account it priced against and find the last feed update at
-   or before that slot. Compute staleness = `liquidation_blockTime − last_update_blockTime`.
-4. Report: distinct liquidated addresses with `staleness > tolerance`, grouped into incidents by
-   ≥ 24 h gaps, per venue, per month.
+One page, committed before A1. Names the program id, the instruction, the schedule's source and its
+version, the grace period, and the byte-level definition of "executed" (a successful signature
+carrying that discriminator, against that program, within `[slot_start, slot_start + grace]`). If any
+term needs a value supplied at settlement, A0 fails and the rest does not run.
 
-**Output:** a table and the raw event list, committed. **KILL check:** < 50 addresses or < 3 incidents.
+### A4, A5, A6 — read the source, answer in writing, no external data
 
-### B2 — price the loss
+Run **before** A1/A2 because each can kill H2 for free.
 
-For each B1 event: liquidation penalty (from the venue's published parameter) + `|price_used −
-price_at_fresh_feed|` × position size, in USD at the event's timestamp. Report median, p90, total.
-Round-trip participation cost measured, not assumed: bond floor + priority fees + gas at current
-mainnet rates. **KILL check:** median < 10× that cost.
+- **A5** is the sharpest and is answered by tracing one case end to end: an obligor with **zero**
+  actions in a window that the calendar says obligated 30 slots. Follow it through
+  `claimtypes/obligated-liveness.mjs::matchSlots` (which derives slots from terms and can represent
+  absence), then through `open_market`'s `require!(n_records > 0)` (which cannot). State exactly where
+  the case dies and what a fail-closed design would have to commit instead. Do **not** write that
+  design — A5 asks whether one exists, not for one.
+- **A6** asks the same question for a future window: what replaces `inputs_hash` at open, and does
+  re-execution still decide.
+- **A4** reads the terms schema and answers who can write each pinned field, and when.
 
-### B3 — measure basis risk
+### A1 — measure the obligors
 
-State the predicate in one sentence **before** running it. Apply it to the full liquidation set from
-B1 step 2 — *including* the events where staleness was within tolerance. Report the confusion matrix
-against "did this address actually lose money". **KILL check:** TPR < 0.90 or FPR > 0.10.
+1. Fix the obligor set in writing before querying: named Solana keepers with (a) a public, identifiable
+   instruction, (b) a schedule derivable without asking them, (c) history over 12 months.
+2. Walk each obligor's signature history and match actions to calendar-derived slots.
+   **Page-budget discipline:** H1's kill defect was a fixed 20-page cap that truncated silently
+   (`core/rpc.mjs:19`). This walk records pages consumed and the oldest timestamp reached, and
+   **refuses rather than returns** on exhaustion.
+3. Report miss rate per obligor per month, and the distribution of miss-run lengths.
 
-### B4 — is a forward window expressible at all
+**Output:** table plus raw event list, committed. **KILL check:** all-zero miss rates, or expected
+annual remedy above plausible annual revenue.
 
-No code. Read `onchain/programs/vrdct-bond/src/lib.rs::open_market` and
-`state::Market`, and answer in writing: what would a market whose input set does not yet exist have to
-commit at open instead of `inputs_hash`, and does any such commitment keep re-execution — not an
-attestor, not a committee — as the thing that decides? If the answer requires a trusted party to
-report the future set, **that is a KILL**, because it reintroduces the oracle Vrdct exists to remove.
+### A2 / A3 — the two-sided demand test
 
-### B4b — derive the window
+Not chain-measurable, and that is stated rather than worked around. **H1 died from measuring the wrong
+thing precisely; ease of measurement is not a reason to test the wrong instance.**
 
-Write the rule. Re-derive the bounds from the rule alone, with no descriptor in hand, and compare.
-**KILL check:** any participant-supplied input to the bounds.
+Approach each named buyer with the A0 profile and a specific obligor, and record verbatim: would they
+require this bond, of whom, and at what remedy is it sufficient. Then approach obligors with the same
+profile and record the remedy at which they would post. **Both ranges are recorded before the
+intersection is computed**, so the band cannot be fitted after the fact. Every statement is attributed
+and quotable, or it does not count.
 
-### B5 — rebuild it twice
+### A7 — rebuild it twice
 
-Two independently written implementations — different authors, neither importing the other's code nor
-`core/rpc.mjs` — rebuild the B1 event set and the feed history for one named incident and compare
-commitments. This is the method H1 proved; here it is applied to a data shape it has not been applied
-to. **KILL check:** the two disagree, or either half cannot be addressed at a slot.
-
-### B6 — name the counterparty
-
-Write down who sells this and why they believe the answer differs at open. **KILL check:** the only
-name is the accused venue.
+Two independently written implementations, different authors, neither importing the other's code nor
+`core/rpc.mjs`, rebuild one obligor's action set and slot derivation and compare commitments.
 
 ---
 
-## Roles for H2
+## Roles
 
 Unchanged from `GATE.md`. Claude: spec, evidence, task progression. Codex: implementation **or**
-independent review, one at a time, never reviewing its own output. The lock is `codex_role:` in
-[`cmls/LEDGER.md`](./cmls/LEDGER.md) and currently reads `none`.
+independent review, one at a time, never reviewing its own output. Lock: `codex_role:` in
+[`cmls/LEDGER.md`](./cmls/LEDGER.md).
 
-**B1–B3 decide this gate and Claude will produce them, so an independent recomputation is required
-before any `GO`** — the relay is `tools/relay-codex.sh`. H1's record shows why: both of Claude's wrong
-labels and its one numeric error ran towards the project, and the cross-pass is what caught all three.
+**This gate's design is Claude's and therefore requires independent review before any A-item runs.**
+H1's record is the argument: both of Claude's wrong labels and its one numeric error ran towards the
+project, and the cross-pass caught all three.
 
 ## On reaching the gate: stop
 
-`GO` ends H2. It does not start implementation. The founder picks what happens next.
+`GO` ends H2. It does not authorise the `CLAIM_TYPE_ID` port, an on-chain market, or a second profile.
+The founder picks what happens next.

@@ -1,25 +1,44 @@
 # STATUS — Vrdct
 
 **Phase:** Kill Gate · **H1** ([`docs/GATE.md`](./docs/GATE.md), CMLS) — `KILLED`, closed.
-**H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md)) — **OPEN, no evidence.**
+**H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md), obligor-bonded SLA) — **OPEN, no evidence.**
 **Updated:** 2026-08-20 · **Ref:** `claude/020-cmls-harness` over `cae200d`
 
 ## Where this stands
 
-**H1 is killed and its conclusion is not being rewritten.** The founder's decision, 2026-08-20: keep
-the KILL, and open H2 using H1's falsifications as *inputs* rather than as things to argue with.
+**H1 is killed and its conclusion is not being rewritten.** Founder decision, 2026-08-20: keep the
+KILL, and open H2 using H1's falsifications as *inputs* rather than as things to argue with.
 
-H2 fixes six things before any evidence — buyer, the loss they bear, the condition under which that
-loss and the payout coincide, undetermined-at-participation, third-party reconstructability, and a
-numeric KILL condition per item. It is **a new gate that starts over from zero**; H1's PASSes are not
-credits. Nothing is implemented and nothing may be: H2's current state is a hypothesis, its non-goals,
-its gate and a reproducible verification plan — **written, not run.**
+**H2 — [`docs/GATE-H2.md`](./docs/GATE-H2.md) — is a buyer-defined, obligor-bonded, re-executable
+SLA.** A buyer (integrator, DAO, funds operator) fixes an explicit future liveness invariant; an
+obligor (keeper, agent, operator) posts a bond against it; on violation a fixed, pre-agreed remedy is
+paid to the buyer; Vrdct makes the adjudication and the bond enforcement re-executable.
 
-One fact was read while writing it and belongs here because it is structural, not a plan:
-`open_market(… n_records: u32, inputs_hash: [u8; 32] …)` with `require!(n_records > 0)` means the
-current program **cannot express a claim whose window is in the future.** That is H1's 020 §0 confirmed
-at the signature level, and it is H2's item **B4** — an item that can kill H2 without any buyer research.
+**It is not insurance**, and the gate says so as an item rather than a disclaimer (**A8**): the remedy
+is fixed and a buyer whose loss exceeds it is not covered for the difference. What it is instead is an
+SLA that executes without trust.
 
+**No evidence has been run.** H2's current permitted state is spec only — hypothesis, non-goals, gate
+A0–A8 with numeric kills, and a verification plan. No code, no `CLAIM_TYPE_ID` port, no on-chain
+market.
+
+**The instance changed once, at zero evidence.** H2's first draft fixed an *indemnity* (buyer = a
+borrower liquidated against a stale feed). The founder replaced it the same day, before any
+verification step ran. Recorded in `GATE-H2.md` rather than overwritten, with the three checkable
+reasons it was the better instance and the one thing it makes worse. A second change after any A-item
+runs is the forbidden move.
+
+**Two items can kill H2 by reading source, before any buyer research**, which is why they run first:
+
+- **A5 — omission must be adjudicable.** For an SLA, doing nothing *is* the failure. `open_market`'s
+  `require!(n_records > 0, VrdctError::NoRecords)` means a market cannot open with zero records — so a
+  total outage, the worst breach, is currently the one case that cannot be settled. This is threat-model
+  **T-2** (*"omission is exculpatory"*), which was survivable for CMLS and is fatal here.
+- **A6 — the outcome must be undetermined when the buyer signs.** `open_market(… n_records: u32,
+  inputs_hash: [u8; 32] …)` requires the input set to exist at open. That is H1's 020 §0 confirmed at
+  the signature level.
+
+## H1 verdict
 ## H1 verdict
 
 > ## CMLS — the product: `KILLED`
@@ -118,4 +137,4 @@ the gate's own terms a new gate starts over from zero.
 | `tools/relay-codex.sh`, `.claude/commands/relay.md` | the Codex relay: transport automated, decision not |
 | `docs/tasks/020-cmls-product-boundary.md` | the product spec — **frozen pre-gate**; its §0 is the finding this verdict turns on |
 | `.claude/agents/*.md` | five role prompts for two agents, non-concurrent by construction |
-| `docs/GATE-H2.md` | **H2 — open, no evidence.** Hypothesis, non-goals, gate B1–B6 with numeric kills, and a verification plan that has not been run |
+| `docs/GATE-H2.md` | **H2 — open, no evidence.** The buyer-defined, obligor-bonded, re-executable SLA: hypothesis, what it is *not*, non-goals, gate A0–A8 with numeric kills, and a verification plan that has not been run |
