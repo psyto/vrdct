@@ -6,7 +6,7 @@
 | --- | --- |
 | **H1** ([`docs/GATE.md`](./docs/GATE.md), CMLS) | `KILLED`, closed |
 | **H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md), obligor-bonded SLA) | stopped at design review, zero evidence run. **Does not resume** — founder decision, 2026-08-21 |
-| **H3** ([`docs/GATE-H3.md`](./docs/GATE-H3.md)) | **OPEN — design only, unreviewed.** One page |
+| **H3** ([`docs/GATE-H3.md`](./docs/GATE-H3.md)) | design gate **reviewed, did not pass.** `CHANGES`, three P0s: [`reviews/022-h3-design-gate.md`](./reviews/022-h3-design-gate.md). Unadjudicated |
 
 **H3 is restricted, before anything is designed:** obligation, deadline, penalty and verification
 predicate fixed before anyone participates; **only performance evidence** is re-executed;
@@ -18,8 +18,30 @@ It must show three things before anything else, or KILL: **D1** what it settles 
 escrow, SLA bond, HTLC or deadline state-read cannot; **D2** the buyer, named; **D3** the action ↔
 obligation binding.
 
-**Not authorised until this design review passes:** buyer research, implementation, any on-chain
-change. Nothing is running and nothing is half-done.
+**The design review returned and H3 did not pass.** Codex's answer to the question it was asked —
+*can this gate kill H3?* — is **no**: it can declare a stipulated candidate dead, but D1, D2, D3 and D5
+have no candidate, measurement or protocol object to return `NO` against. Its disposition is **do not
+pass H3 and do not begin buyer research, implementation or any on-chain work**, and it proposes no
+repair, because proposing one would be the prohibited new mechanism.
+
+Three P0s, recorded unadjudicated:
+
+- **F1** — the timeout is fail-closed against the **obligor**, not against a false performance claim.
+  A performing obligor whose evidence is censored or priced out is slashed identically to one who did
+  nothing, and the buyer collects either way, so the buyer has an adversarial incentive rather than a
+  neutral one. Same direction as the expiry race already in `THREAT-MODEL.md:184-197`. The gate's claim
+  that H2's A5 is *"dissolved by construction"* is therefore **too strong**.
+- **F2** — the D1/D3 pincer is not proved as a theorem, but **no candidate obligation surviving both is
+  present**, and under the inherited *not-proven is a KILL* that decides the gate. It also finds that H3
+  **changes the security premise**: obligor-submitted evidence with an automatic timeout, with no public
+  source, completeness rule or independent reconstruction. It **may not inherit** the proven
+  reconstruction result as support.
+- **F3** — D2 cannot return `NO` before the research it forbids. An invented buyer story passes.
+
+**This is reported, not acted on.** The gate is unchanged, no verdict is set, and nothing has run.
+
+**Not authorised:** buyer research, implementation, any on-chain change. Nothing is running and
+nothing is half-done.
 
 ## What the first two hypotheses cost and bought
 
