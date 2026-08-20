@@ -7,7 +7,7 @@ The block still has to carry everything: Codex starts cold, in a detached worktr
 this session. What automated is the **transport**, never the **decision** — the script reads the role
 lock and refuses against it, and it neither commits the reply nor interprets it.
 
-**Role lock:** [`LEDGER.md`](./LEDGER.md) says `codex_role: review`. §1 (sent, closed) and §3 are review blocks; only §3 is live. Sending an
+**Role lock:** [`LEDGER.md`](./LEDGER.md) says `codex_role: review`. §1 and §3 are sent and closed. §4 is live. Sending an
 implementation request while the review role is active is the thing `docs/GATE.md` forbids.
 
 ---
@@ -191,6 +191,89 @@ obvious, say so and stop; the founder opens any implementation round.
 
 NOT ASKED FOR. H1 is closed. docs/tasks/020-cmls-product-boundary.md is frozen. Do not
 re-adjudicate the CMLS verdict; your own review of it was adopted.
+```
+
+---
+
+## 4 — Independent review of the H3 design gate · **SEND THIS ONE**
+
+```text
+Review request — Vrdct H3 design gate
+
+Branch: claude/020-cmls-harness   Design commit: 25dea7a
+Author: Claude (spec role) · Reviewer: you (Codex, review role)
+Work in a worktree that is not ~/src/vrdct.
+
+Record findings in reviews/022-h3-design-gate.md.
+
+WHAT THIS IS. H1 (CMLS) was KILLED. H2 (an obligor-bonded SLA) was stopped at its own design
+review -- yours -- which found A5 already failing and F1 unbound; the founder has ruled that
+H2 does not resume. H3 is a NEW design gate, one page, and it passes on a DESIGN rather than
+on evidence. Buyer research, implementation and any on-chain change are forbidden until it
+passes.
+
+Read, in order: docs/GATE-H3.md, docs/GATE.md (rules it inherits), STATUS.md,
+reviews/021-h2-gate-design.md (your own H2 review -- H3 is built from its two P0s),
+onchain/programs/vrdct-bond/src/lib.rs, .../state.rs.
+
+THE SHAPE H3 IS RESTRICTED TO, fixed by the founder before anything was designed:
+  (1) obligation, deadline, penalty and verification predicate are fixed before anyone
+      participates, and no party may alter them after either side commits;
+  (2) only PERFORMANCE evidence is re-executed -- the obligor produces evidence that the
+      obligation was discharged and re-execution verifies that evidence;
+  (3) non-performance resolves by TIMEOUT state transition, never by chain search. Absence is
+      the default: no valid evidence by the deadline, the penalty pays out.
+
+The gate then demands three things be shown before anything else, or KILL: D1 distinctive
+value versus ordinary escrow / SLA bond / HTLC / a deadline state-read; D2 the buyer, named;
+D3 the action-to-obligation binding. Plus D4 (no history walk) and D5 (nothing settable after
+commitment).
+
+THE ONE QUESTION: can this gate kill H3? A gate that cannot return NO is not a gate.
+
+WHERE TO PUSH HARDEST, hardest first. These are the things I do not know the answer to.
+
+  1. ARE D1 AND D3 JOINTLY UNSATISFIABLE? This is the question I most want attacked and I
+     cannot resolve it. D3 requires the fed evidence to be bound to the promised action, which
+     appears to force the obligation to be an ON-CHAIN act. But D1 kills anything a buyer
+     could settle with a plain state read at the deadline -- and an on-chain act is exactly
+     that. If every obligation D3 can bind is one D1 rules out, H3 is dead by construction
+     and this gate should say so on its own page instead of discovering it three rounds in.
+     Work the pincer honestly in both directions: name a candidate obligation that survives
+     both, or state that none does.
+
+  2. DOES THE TIMEOUT SHAPE MOVE THE TRUST RATHER THAN REMOVE IT? Under (3) the obligor must
+     land a transaction to avoid the penalty. So the design penalises a censored or
+     congested obligor identically to a defaulting one, and it hands the buyer an incentive
+     to make feeding hard. H1's own threat model already carries an expiry-race row (T-9).
+     Is "absence is the default" fail-closed, or is it fail-closed against the wrong party?
+
+  3. DOES H3 THROW AWAY THE ONLY PROVEN ASSET? The one thing this repo proved twice
+     independently is reconstruction of an input set from PUBLIC data to a byte-identical
+     commitment -- and state.rs:10-12 says provenance is defended by a challenger who
+     reconstructs before bonding, so that capability IS the security model. H3 has the
+     obligor hand over evidence instead. Is H3 still Vrdct, or a different product living in
+     this repo? If it is different, say so plainly; that is a founder-level finding, not a
+     nit.
+
+  4. CAN EACH OF D1-D5 RETURN NO? Take them one at a time and name any that is unfalsifiable
+     as written or can be argued past. D1's list of alternatives (preimage, state read,
+     trusted-arbiter escrow) may be incomplete in a way that lets a non-product pass, or
+     over-broad in a way that auto-kills. D2 is an argument rather than a survey and I said
+     so; is that honest or is it a hole?
+
+  5. IS ONE PAGE DISCIPLINE OR UNDERSPECIFICATION? H2's gate ran to 190 lines and died at its
+     own review. I cut to 57 and called that a lesson. Argue that I cut load-bearing
+     conditions and that the brevity is the defect.
+
+  6. WHAT IS MISSING. Name a way H3 fails that no D-item would catch.
+
+SCOPE. Docs only. No code was changed and none may be. Do NOT design the H3 mechanism, do NOT
+propose the binding scheme D3 asks about, do NOT port anything, do NOT run a buyer study. The
+role lock is `review`. If you conclude the gate is unsalvageable, say that and stop.
+
+NOT ASKED FOR. H1 is closed; your review of it was adopted. H2 does not resume -- do not
+repair it and do not mine it for scope.
 ```
 
 ---
