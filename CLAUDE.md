@@ -1,20 +1,15 @@
 <!-- KILL-GATE-BANNER -->
 # ⛔ PHASE: KILL GATE ONLY
 
-# ⏸ PAUSED — 2026-08-20, by the founder
-
-**Read [`STATUS.md`](./STATUS.md) first, and then stop and ask.** Nothing is in progress, nothing is
-half-done, and no agent is waiting on anything. Do **not** open `docs/GATE-H2.md` and begin running its
-A-items: H2 was stopped at its design review with zero evidence run, deliberately.
+**Read [`STATUS.md`](./STATUS.md), then [`docs/GATE-H3.md`](docs/GATE-H3.md).** H3 is a **design
+gate**: one page, unreviewed, and it passes on a design rather than on evidence.
 
 - **H1 (CMLS) is `KILLED` and closed** — `docs/decisions/2026-08-20-cmls-product.md`. Not a fallback,
   not a v2, not to be reopened.
-- **H2 is paused before its first evidence item**, and its own review
-  (`reviews/021-h2-gate-design.md`) found `A5` already failing on current source. Resuming it is a
-  founder decision, and resuming it *as written* is not the obvious move.
-- **The cheapest unrun experiment needs no code**: ask people outside this repo whether they would
-  require a bonded, re-executable guarantee, of whom, and at what price. Both hypotheses fixed their
-  buyer from inside this repo, and that is what killed them.
+- **H2 does not resume** (founder, 2026-08-21). Do not run its A-items and do not mine it for scope.
+- **H3 permits design only.** No buyer research, no code, no `CLAIM_TYPE_ID` port, no `open_market`
+  change, no devnet, no mainnet, no funds — until the design review passes. Reaching for H2 or a
+  fourth surface if H3 stalls is the forbidden move.
 
 If a founder asks for work here, the rules below still bind.
 

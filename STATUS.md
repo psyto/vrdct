@@ -1,17 +1,27 @@
 # STATUS — Vrdct
 
-# ⏸ PAUSED — 2026-08-20, by the founder
+**Phase:** design gate, H3 · **Updated:** 2026-08-21 · **Ref:** `claude/020-cmls-harness`
 
-**Nothing is in progress and nothing is waiting on an agent.** No task is half-done, no run is
-pending, no review is outstanding. A session that opens this repo should **stop here and ask**, not
-pick up `GATE-H2.md` and start running A-items.
+| | |
+| --- | --- |
+| **H1** ([`docs/GATE.md`](./docs/GATE.md), CMLS) | `KILLED`, closed |
+| **H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md), obligor-bonded SLA) | stopped at design review, zero evidence run. **Does not resume** — founder decision, 2026-08-21 |
+| **H3** ([`docs/GATE-H3.md`](./docs/GATE-H3.md)) | **OPEN — design only, unreviewed.** One page |
 
-**Phase:** Kill Gate, paused · **H1** ([`docs/GATE.md`](./docs/GATE.md), CMLS) — `KILLED`, closed.
-**H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md), obligor-bonded SLA) — **stopped at design review, zero
-evidence run.**
-**Updated:** 2026-08-20 · **Ref:** `claude/020-cmls-harness` over `cae200d`
+**H3 is restricted, before anything is designed:** obligation, deadline, penalty and verification
+predicate fixed before anyone participates; **only performance evidence** is re-executed;
+**non-performance resolves by timeout state transition, never by chain search.** That shape dissolves
+H2's A5 (omission was unsettleable) by construction. It does **not** dissolve H2's F1 — evidence bound
+to the promised action — which becomes **D3** and is the most likely way H3 dies.
 
-## What this session cost and what it bought
+It must show three things before anything else, or KILL: **D1** what it settles that an ordinary
+escrow, SLA bond, HTLC or deadline state-read cannot; **D2** the buyer, named; **D3** the action ↔
+obligation binding.
+
+**Not authorised until this design review passes:** buyer research, implementation, any on-chain
+change. Nothing is running and nothing is half-done.
+
+## What the first two hypotheses cost and bought
 
 Two hypotheses opened, two stopped, **no code written toward either product**, no funds, no deploy.
 H1 died on measured evidence. H2 died at its own design review before a single A-item ran — which is
