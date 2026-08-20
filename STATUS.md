@@ -28,6 +28,15 @@ verification step ran. Recorded in `GATE-H2.md` rather than overwritten, with th
 reasons it was the better instance and the one thing it makes worse. A second change after any A-item
 runs is the forbidden move.
 
+**The gate design was independently reviewed before any A-item ran** — the one moment when changing a
+gate is legitimate. Codex returned `CHANGES`
+([`reviews/021-h2-gate-design.md`](./reviews/021-h2-gate-design.md), design commit `67e6521`).
+
+Its answer to the question it was asked — *can this gate kill H2?* — is **yes, and A5 already does on
+the current source.** Its disposition: **do not begin buyer research or any other A-item evidence run.**
+Two P0 findings and three P1s are recorded there, unadjudicated. **This is reported, not acted on**;
+the run stopped at the review as instructed, and what it means for H2 is the founder's call.
+
 **Two items can kill H2 by reading source, before any buyer research**, which is why they run first:
 
 - **A5 — omission must be adjudicable.** For an SLA, doing nothing *is* the failure. `open_market`'s
