@@ -139,9 +139,16 @@ Guidance, not a hard boundary. The quality control is the cross-review.
   files; it came within one commit of doing so.
 - **The repo is the only shared memory — and "the repo" means `origin`, not this disk.** The canonical
   review record is `reviews/NNN-slug.md` on `main`; task branches (`cc/*`) are pushed and in sync. The
-  `codex/*` branches on which reviews are *authored* are local working branches: not pushed, not
-  shared memory, and nothing may depend on them surviving. As at 2026-08-11 twenty-one such commits —
-  the 007–011 review rounds — exist on one disk only. That is this rule working, not a backlog.
+  `codex/*` branches on which reviews are *authored* are working branches: nothing may depend on them,
+  and the canonical record is still `main`.
+
+  **Amended 2026-08-21.** This rule used to add *"not pushed"*, and noted that twenty-one such commits
+  — the 007–011 review rounds — existed on one disk only, calling that the rule working rather than a
+  backlog. That held while the project was active and the disk was in daily use. It stopped holding
+  when Vrdct became a **held asset** (`docs/decisions/2026-08-21-vrdct-held.md`): a repository that may
+  sit untouched for a long time has exactly one real risk, and it is that disk. The 22 remaining
+  commits across 18 `codex/*` branches were pushed. They are still not shared memory and still nothing
+  to depend on — `main` remains canonical — they are simply no longer single-copy.
   **Per-branch status will not tell you this.** A branch with no upstream never reports as *ahead*, so
   a tree with plenty unshared reads as "no unpushed work". The question "is anything unshared?" has
   exactly one answer: `git log --branches --not --remotes`.
