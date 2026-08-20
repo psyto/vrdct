@@ -1,3 +1,23 @@
+<!-- KILL-GATE-BANNER -->
+# ⛔ PHASE: KILL GATE ONLY
+
+**Read `docs/GATE.md` before doing anything in this repo.** It is binding and it overrides any
+older plan, roadmap or task list you find here.
+
+The only work permitted right now is producing evidence for this project's kill gate. No
+generalisation, no large UI, no peripheral features, no production deployment, until the gate
+returns `GO`.
+
+- A verdict is a **number or a reproducible experiment** — never an assessment or a plan.
+- **Not-proven is a KILL**, not a pending. Adding a hypothesis to stay alive is forbidden.
+- **At most two agents**: Claude for spec/evidence/task progression, Codex for implementation *or*
+  independent review — **never both at once**, and no model reviews its own output.
+- **On reaching the gate, STOP.** `GO` ends this phase; it does not start the next one. Update
+  `STATUS.md`, commit the evidence, push, and hand back to the founder.
+- Forbidden without exception: real funds, mainnet deploy, force push, adding secrets.
+
+<!-- /KILL-GATE-BANNER -->
+
 # Vrdct
 
 **The neutral resolver. Re-execution decides the payout.** See [`README.md`](./README.md) for what
