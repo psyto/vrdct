@@ -1,5 +1,25 @@
 # Decision — gate item V3, state rebuild: `KILLED`
 
+> ## ⚠ CORRECTED — this item's attribution did not survive independent review
+>
+> Codex recomputed this evidence independently ([`../../reviews/020-cmls-gate-evidence.md`](../../reviews/020-cmls-gate-evidence.md))
+> and dissented on three of four items. **V3 is a PASS as a third-party reconstruction capability**;
+> `reconstruct.mjs:55-75` compares the rebuilt commitment to the pinned one and exits 1 on mismatch,
+> so it fails closed at the command boundary rather than reporting a partial set as a success. The
+> items that actually fail are **V1 and V2**.
+>
+> One number below is also wrong. The reported retention margin of **11.48 h** before `from_ts` was
+> independently measured at **6.60 h** — a discrepancy that favoured the project, in the direction
+> [`../GATE.md`](../GATE.md) predicted. The boundary is still crossed; the conclusion is unchanged.
+>
+> The overall result stands, for different reasons:
+> [`2026-08-20-cmls-product.md`](./2026-08-20-cmls-product.md).
+>
+> This document is left intact below. It is the record of what was measured and concluded on a first
+> pass by one model working alone, and editing it silently would destroy the evidence that the
+> cross-pass is what caught it.
+
+
 **Gate:** [`docs/GATE.md`](../GATE.md) · **Item:** V3 — *can the settled state be rebuilt from public
 data at the deciding moment?* · **Verdict source required:** *a rebuild, run.*
 **Run by:** Claude (evidence role), 2026-08-20 · **Ref:** `claude/020-cmls-harness` over `cae200d`.

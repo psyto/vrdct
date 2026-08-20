@@ -7,7 +7,7 @@ Verdict: [`../../STATUS.md`](../../STATUS.md).
 ## Role lock — read this before rendering any Codex handoff
 
 ```
-codex_role: review
+codex_role: none
 ```
 
 `docs/GATE.md` permits **one** Codex role at a time: implementation **or** independent review, never
@@ -15,27 +15,31 @@ both, and no model reviews its own output. `cmls-codex-review-handoff` and `cmls
 each read this line and refuse when it names the other role. It is a mechanism rather than a rule
 because this repo has already recorded what a rule alone is worth.
 
-Current value `review`, set 2026-08-20: Claude produced the gate evidence *and* adjudicated it, so
-the only legitimate next Codex round is to recompute it. The relay block is prepared
-([`HANDOFF-CODEX.md`](./HANDOFF-CODEX.md) §1) and **not sent** — the run stops at the verdict and the
-founder decides.
+Current value `none`, set 2026-08-20: the review round is **closed.** §1 was sent via
+`tools/relay-codex.sh 1` and Codex returned an independent recomputation
+([`../../reviews/020-cmls-gate-evidence.md`](../../reviews/020-cmls-gate-evidence.md)) that dissented
+on three of four gate items. No role is active. §2 remains held: opening an implementation round on a
+killed surface is a decision no agent may take on its own initiative.
 
 ## Gate items
 
+Labels below are **after** Codex's independent recomputation, which dissented on three of four.
+
 | item | verdict | evidence |
 | --- | --- | --- |
-| V1 price reconstruction | PROVEN, and narrower than the product's name (0 prices read) | [`GATE-EVIDENCE.md`](./GATE-EVIDENCE.md) §V1 |
-| V2 time window | PROVEN for reconstruction; NOT derivable | §V2 |
-| V3 state rebuild | **`KILLED`** — the shipped command returns exit 1 with 515 of 3,789 missing. An instrumented 21-page walk returns 3,789/3,789 and the identical published hash, so the data is reachable and the wall is ours. | §V3 |
-| V4 same verdict | PROVEN (`RED`, 683/3,106, 242 s) | §V4 |
-| **overall** | **`KILLED` on V3** | [`../decisions/2026-08-20-V3-state-rebuild.md`](../decisions/2026-08-20-V3-state-rebuild.md) |
+| V1 price reconstruction | **FAIL** — the reconstructed price-input set is empty; 0 prices read | [`GATE-EVIDENCE.md`](./GATE-EVIDENCE.md) §V1, [review](../../reviews/020-cmls-gate-evidence.md) F1 |
+| V2 time window | **FAIL** — reading a stored descriptor is not a re-derivation, and the one derivation supplied lands elsewhere | §V2, review F2 |
+| V3 state rebuild | **PASS as capability** — 3,789/3,789 and the identical published hash, reached twice independently. The shipped command exits 1 on a 20-page cap but fails closed on the commitment. | §V3, review F3 |
+| V4 same verdict | PASS (`RED`, 683/3,106, 242 s), conditional on V3 | §V4 |
+| **the product** | **`KILLED`** — `open_market` pins the input commitment before money moves, so the answer precedes the market | [`../decisions/2026-08-20-cmls-product.md`](../decisions/2026-08-20-cmls-product.md) |
 
 ## Open defects, ranked
 
 | id | defect | severity | owner | state |
 | --- | --- | --- | --- | --- |
-| T-3 | `core/rpc.mjs:19` caps the walk at 20 pages and returns silently; this window needs 21. Completeness decays with elapsed time, with no error. | **this is the KILL** | Codex | open — no implementation round opened; the verdict is the founder's to act on |
-| — | `README.md:464-466` asserts the shipped command reconstructs the corpus claim. It returns exit 1 today. | published overclaim | CC | open — deliberately not corrected before the recomputation |
+| **020 §0** | `open_market` pins `inputs_hash` and `n_records` before money moves, so the window is past at open and the answer is computable by both sides before bonding. Probability 0 or 1, not a price. | **this is the KILL** | — | not a defect to fix; a fact about the instrument |
+| T-3 | `core/rpc.mjs:19` caps the walk at 20 pages and returns silently; this window needs 21. | availability + diagnostics; **demoted** — `reconstruct.mjs:55-75` fails closed on the commitment | Codex | open, unfixed. Not the kill. |
+| — | `README.md` §Honest scope asserted the shipped command reconstructs the corpus claim, and that retention was the bound. Both false. | published overclaim | CC | **CLOSED** — corrected once the independent recomputation returned |
 | T-1 | the on-chain CMLS source descriptor binds no cluster; `SOURCE_RPC` supplies it out of band | high | Codex | open |
 | T-11 | nothing binds the challenge window to signature retention | high | CC then Codex | open |
 | T-12 | `bond-live.mjs` strands `2.50859` SOL per run; `close_market` returns rent to an ephemeral key | **blocks any real-value run** | Codex | open (`reviews/main-2026-08-12-devnet-debt.md` F1) |
@@ -77,5 +81,6 @@ where it can be acted on without being a plan.
 
 | date | change |
 | --- | --- |
+| 2026-08-20 | **CMLS `KILLED` as a product.** Codex's independent recomputation re-attributed the gate: V1 and V2 FAIL, V3 PASS-as-capability, V4 PASS. The deciding constraint is 020 §0, not T-3. A founder challenge — *demand can be created* — was tested against each finding and does not reach 020 §0. README §Honest scope corrected. Role lock closed to `none`. |
 | 2026-08-20 | Codex relay automated as **transport only**: `tools/relay-codex.sh` + `/relay` send a prepared block to `codex exec` in a detached worktree, refusing against this file's `codex_role` lock, against `DO NOT SEND`, and against an unpushed branch. It never commits, never writes the lock, and never adjudicates the reply. Four documents that claimed nothing here could run Codex were corrected in the same commit. |
 | 2026-08-20 | Harness created, CMLS-scoped. Gate evidence V1–V4 run. **V3 = `KILLED`.** Three inherited "current defects" from `005 §4b/§4c` found already fixed at HEAD and recorded as standing corrections. |

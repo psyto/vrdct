@@ -20,7 +20,7 @@ third party can obtain **today**, not against an archive we hold.
 | | |
 | --- | --- |
 | Is the data reachable today, from a public endpoint, by a stranger? | **Yes — exactly.** 3,789 of 3,789 observations, `inputs_hash` byte-identical to the published one, verdict `RED` reproduced. |
-| Does the project's own published command achieve that? | **No.** `node reconstruct.mjs` returns `❌ Reconstruction diverged`, exit 1, **515 observations missing**. |
+| Does the project's own published command achieve that? | **No.** `node reconstruct.mjs` returns `❌ Reconstruction diverged`, exit 1, **515 observations missing**. ⚠ The *failure* was independently confirmed; **this exact figure was not** — Codex's run hit the endpoint's `Too many requests` before reaching the set comparison. Treat `515` as one observed run, not a reproduced number. |
 | Why the gap? | `core/rpc.mjs:19` walks at most **20 pages**. This window now needs **21**. Off by one page, silently. |
 | Is it RPC retention? | **No.** Retention was explicitly probed and is not the wall — the endpoint served signatures *past* the window's start. |
 

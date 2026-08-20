@@ -5,63 +5,84 @@
 
 ## Verdict
 
-> ## V3 — state rebuild: `KILLED`
+> ## CMLS — the product: `KILLED`
 >
-> A third party following this project's published command cannot rebuild the reference claim.
-> `node reconstruct.mjs corpus/jupiter-spyx-cmls.claim.json` → **exit 1, 515 of 3,789 observations
-> missing**, on a 19-day-old window against a public endpoint.
+> Not because the state cannot be rebuilt. It can: two independently written implementations reached
+> **3,789/3,789** and the byte-identical published `inputs_hash` from a public RPC on a 19-day-old
+> window. The kill is structural. `open_market` pins `inputs_hash` and `n_records` **before any money
+> moves**, so the window is already past when the market opens and the answer is computable by both
+> sides before bonding — probability **0 or 1, not a price**. On top of that the predicate reads
+> **zero** prices, and the only supplied window derivation lands on different bounds.
 >
-> Decision record, with the numbers and the reasoning:
-> [`docs/decisions/2026-08-20-V3-state-rebuild.md`](./docs/decisions/2026-08-20-V3-state-rebuild.md).
-> **The run has stopped.** The founder decides what happens next.
+> Decision record, with the numbers, the founder's demand challenge and why it does not reach:
+> [`docs/decisions/2026-08-20-cmls-product.md`](./docs/decisions/2026-08-20-cmls-product.md).
+> **The run has stopped.** What, if anything, earns a new gate is the founder's call.
 
-## The gate, item by item
+## The gate, item by item — after independent recomputation
 
 All runs 2026-08-20 against `https://api.mainnet-beta.solana.com`, on a window **19 days old**.
-Full evidence and commands: [`docs/cmls/GATE-EVIDENCE.md`](./docs/cmls/GATE-EVIDENCE.md).
+Claude's evidence: [`docs/cmls/GATE-EVIDENCE.md`](./docs/cmls/GATE-EVIDENCE.md). Codex's independent
+recomputation, which **dissented on three of four items**:
+[`reviews/020-cmls-gate-evidence.md`](./reviews/020-cmls-gate-evidence.md).
 
 | # | item | verdict | the number |
 | --- | --- | --- | --- |
-| V1 | price reconstruction | **PROVEN — and narrower than the product's name** | the inputs actually used rebuilt 3,789/3,789. Prices among them: **0**. The predicate reads update *times* only, so it never establishes that anything was liquidated at a wrong price. |
-| V2 | time window | **PROVEN for reconstruction, NOT derivable** | bounds are integers bound into the definition hash, so a stranger cannot be handed different ones; but `from_ts`/`to_ts` equal the first/last observation exactly, and the calendar-derived `tradingWindow` gives a **different** window. |
-| V3 | state rebuild | **`KILLED`** | shipped command: **exit 1, 515 missing**. An instrumented 21-page walk: **3,789/3,789**, `inputs_hash` byte-identical to the published `2f224c44f93a8e2c…`. The wall is `core/rpc.mjs:19`'s 20-page cap — not retention, not rate limiting. |
-| V4 | same verdict | **PROVEN**, conditional on a complete rebuild | recomputed from the rebuild alone: `RED`, 683 open / 3,106 closed / max gap 242 s — matching the published verdict exactly. |
+| V1 | price reconstruction | **FAIL** | the reconstructed price-input set is **empty**. The predicate canonicalizes `blockTimes` only. An empty set shows CMLS makes no price claim; it cannot show price reconstruction. |
+| V2 | time window | **FAIL** | the gate requires *a re-derivation that lands on the same window*. Descriptor `1785586259/1785888421`; `tradingWindow(to_ts)` `1785787200/1785873600`. Reading a stored descriptor is not a derivation. |
+| V3 | state rebuild | **PASS as capability; shipped tool defective** | 3,789/3,789 and `2f224c44f93a8e2c…`, reached twice independently. The shipped command exits 1 — `core/rpc.mjs:19` caps the walk at 20 pages and this window needs 21 — but `reconstruct.mjs:55-75` compares commitments and **fails closed** rather than passing off a partial set. |
+| V4 | same verdict | **PASS**, conditional on V3 | `RED`, 683 open / 3,106 closed / max gap 242 s — reached independently, matching. |
+| — | **the product** | **`KILLED`** | `open_market` pins the input commitment before money moves, so the answer precedes the market. |
 
-**V1, V2 and V4 were run in the same pass as V3.** `/gate` asks for one item per run; V3 is the item
-that decides, and the other three are reported because the same rebuild answers them and withholding
-them would misrepresent what was measured.
+**Claude's first pass labelled V1 and V2 `PROVEN` and V3 `KILLED`.** Both wrong labels ran towards the
+project, as did the one numeric error found: reported retention margin **11.48 h**, independently
+measured **6.60 h**. `docs/GATE.md` predicted the direction and the prediction held. The cross-pass is
+what caught it; a single model working alone did not.
 
-## The defect behind the KILL
+## The defect, demoted
 
-`core/rpc.mjs:19` walks at most **20 pages** and returns silently when the budget runs out. This
-window needs **21**.
+`core/rpc.mjs:19` walks at most **20 pages** and returns silently when the budget runs out; this
+window needs **21**. It is a real availability and diagnostics defect — the helper should say it
+exhausted its budget rather than hand back a short set — but it is **not** what kills CMLS, and the
+first pass said it was.
 
-It is **not** RPC retention — the walk reached 11.5 hours *older* than the window's start — and not
-rate limiting, which 900 ms spacing removed entirely.
+Two claims made around it were also too strong, and Codex narrowed both **in the project's favour**:
 
-**It decays on its own.** The budget is a fixed page count while the signature distance from *now* to
-the window grows daily, so completeness is a function of how long ago the window was. Every CMLS
-claim crosses the line eventually, with no error and no flag, and both honest parties truncate
-identically — so two rebuilders agreeing is not evidence that either is complete.
+- *"every CMLS claim crosses the line eventually"* needs a premise the first pass did not state — that
+  the account keeps emitting signatures. An account that goes quiet has a finite signature distance and
+  need not cross a fixed cap.
+- *"two rebuilders agreeing is not evidence of completeness"* is false once a commitment is pinned.
+  Agreement between two truncated *verdicts* proves nothing, but agreement between a rebuilt
+  `inputs_hash` and the pinned one is evidence of completeness. That is exactly why `reconstruct.mjs`
+  rejects the 20-page set instead of accepting it.
 
-**`README.md:464-466` is false as written today.** It claims the shipped command lands on the
-identical set and hash. The correction is deliberately **not** in this commit: it is a change to the
-honest-scope contract and should follow an independent recomputation, not precede it.
+Retention was never the bound. The first pass reported the walk reaching **11.48 h** before the
+window's start; independently measured, **6.60 h**. The boundary is crossed either way — but the
+error ran towards the project.
+
+`README.md` §Honest scope asserted that the shipped command reconstructs the reference claim. **That
+is corrected in this commit**, together with its claim that RPC retention was the bound. It was held
+back until the independent recomputation returned, and the recomputation has returned.
 
 ## What the KILL does not say
 
-The data *is* reachable. A stranger with a public RPC rebuilt a 19-day-old CMLS input set completely
-and landed on the published commitment and verdict. The wall is this project's fetcher, not the chain
-and not the endpoint. Per `docs/GATE.md` that is recorded as a measurement and **not** converted into
-a rescue — *"it would work if we also had X" is a KILL, not a new scope.*
+**The engine is not implicated, and today it got stronger.** Two implementations written independently
+— Codex used neither `core/rpc.mjs` nor the author's scratchpad, and wrote its own hash — reached a
+byte-identical commitment from a public RPC on a 19-day-old window, and the same verdict. *Re-execution
+decides the payout* is now measured rather than asserted, and it is the strongest evidence in this
+repo. `core/` is claim-type-agnostic by construction; what died is one registered surface.
+
+Per `docs/GATE.md` that is recorded as a measurement and **not** converted into a rescue. It does not
+authorise a successor claim-type. Which one, if any, earns a new gate is the founder's call, and under
+the gate's own terms a new gate starts over from zero.
 
 ## Standing prohibitions in force
 
 - No real funds, no mainnet deploy, no force push, no secrets.
 - No devnet run against a wallet anyone cares about until the unrecoverable-funds defect
   (`reviews/main-2026-08-12-devnet-debt.md` F1, threat-model **T-12**, measured `2.50859` SOL stranded
-  per run) is closed.
-- One Codex role at a time. `docs/cmls/LEDGER.md` carries the lock; it currently reads `review`.
+  per run) is closed. **Unchanged by this verdict, and still open.**
+- One Codex role at a time. `docs/cmls/LEDGER.md` carries the lock; the review round closed with this
+  commit, so it now reads `none` — no Codex role is active.
 - The run stops at the verdict. It has stopped.
 
 ## Committed on this branch
@@ -69,11 +90,14 @@ a rescue — *"it would work if we also had X" is a KILL, not a new scope.*
 | file | what it is |
 | --- | --- |
 | `STATUS.md` | this |
-| `docs/decisions/2026-08-20-V3-state-rebuild.md` | the V3 verdict, its numbers, and what would have changed it |
+| `docs/decisions/2026-08-20-cmls-product.md` | **the verdict** — CMLS killed on market structure, with the founder's demand challenge and why it does not reach |
+| `docs/decisions/2026-08-20-V3-state-rebuild.md` | the first-pass V3 verdict, left intact under a correction header — the record of what one model concluded alone |
+| `reviews/020-cmls-gate-evidence.md` | Codex's independent recomputation, dissenting on three of four items |
 | `docs/cmls/GATE-EVIDENCE.md` | V1–V4, run, with commands and raw output |
-| `docs/cmls/THREAT-MODEL.md` | 15 rows, each with a `file:line` and the direction the error runs; includes three inherited "current defects" found already fixed at HEAD |
+| `docs/cmls/THREAT-MODEL.md` | 15 rows, each with a `file:line` and the direction the error runs |
 | `docs/cmls/HARNESS.md` | the CMLS-only operating harness, subordinate to the gate |
 | `docs/cmls/LEDGER.md` | defect ranking, carried risks, and the Codex role lock |
-| `docs/cmls/HANDOFF-CODEX.md` | the paste-ready relay blocks — §1 prepared, not sent |
-| `docs/tasks/020-cmls-product-boundary.md` | the product spec — **frozen pre-gate**, not active work |
+| `docs/cmls/HANDOFF-CODEX.md` | the relay blocks — §1 sent, §2 held |
+| `tools/relay-codex.sh`, `.claude/commands/relay.md` | the Codex relay: transport automated, decision not |
+| `docs/tasks/020-cmls-product-boundary.md` | the product spec — **frozen pre-gate**; its §0 is the finding this verdict turns on |
 | `.claude/agents/*.md` | five role prompts for two agents, non-concurrent by construction |

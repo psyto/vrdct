@@ -461,11 +461,22 @@ Residual assumptions, all named rather than hidden:
    input set. Anyone with an RPC can run `vrdct check` before bonding, instead of being handed an
    opaque observation list.
 
-   Measured, not asserted: `node reconstruct.mjs corpus/jupiter-spyx-cmls.claim.json` re-fetches the
-   reference claim from mainnet and lands on the identical 3,789-observation set and the identical
-   `inputs_hash`. **The bound is RPC retention** — reconstruction works while the RPC still serves
-   signature history for the window. A descriptor that rebuilds differently is a stop signal, not a
-   fallback: `vrdct check` tells the challenger not to bond.
+   Measured, and **corrected on 2026-08-20** — an earlier version of this paragraph asserted the
+   shipped command reconstructs the reference claim, and it does not. `node reconstruct.mjs
+   corpus/jupiter-spyx-cmls.claim.json` **exits 1** today: `core/rpc.mjs:19` walks at most 20 pages
+   and this 19-day-old window needs 21, so the rebuilt set is short and its commitment does not match
+   the pinned one. It fails closed rather than returning a partial set as a success, which is the
+   behaviour that matters — but it does not reconstruct, and this section said it did.
+
+   What *is* measured: two independently written implementations — one of them using neither
+   `core/rpc.mjs` nor the other's code — rebuilt the full 3,789-observation set from
+   `api.mainnet-beta.solana.com` and landed on the identical `inputs_hash`
+   `2f224c44f93a8e2c…` and the identical verdict. So the data is reachable and the bound is **this
+   project's fetcher, not RPC retention** — the walk reached hours older than the window's start
+   before running out of pages. The earlier claim that retention was the bound was also wrong.
+
+   A descriptor that rebuilds differently is a stop signal, not a fallback: `vrdct check` tells the
+   challenger not to bond.
 
    `reserve-solvency` is still genuinely in the unsourced case; closing it means an on-chain
    recorder root, or N-of-M attestation for historical data.
