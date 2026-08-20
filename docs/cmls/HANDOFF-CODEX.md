@@ -13,7 +13,8 @@ implementation request while the review role is active is the thing `docs/GATE.m
 ```text
 Review request — Vrdct CMLS kill gate, independent recomputation
 
-Branch: claude/020-cmls-harness   HEAD: deec29d   Base: cae200d
+Branch: claude/020-cmls-harness   Evidence commit: 16c5d45   Base: cae200d
+(The branch head is one commit later; that commit only fills this sha in.)
 Author: Claude (evidence role) · Reviewer: you (Codex, review role)
 Work in a worktree that is not ~/src/vrdct — that directory holds this branch, so a
 checkout elsewhere fails instead of silently moving someone's HEAD.
