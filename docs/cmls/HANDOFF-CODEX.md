@@ -7,7 +7,7 @@ The block still has to carry everything: Codex starts cold, in a detached worktr
 this session. What automated is the **transport**, never the **decision** — the script reads the role
 lock and refuses against it, and it neither commits the reply nor interprets it.
 
-**Role lock:** [`LEDGER.md`](./LEDGER.md) says `codex_role: review`. Only §1 may be sent. Sending an
+**Role lock:** [`LEDGER.md`](./LEDGER.md) says `codex_role: review`. §1 (sent, closed) and §3 are review blocks; only §3 is live. Sending an
 implementation request while the review role is active is the thing `docs/GATE.md` forbids.
 
 ---
@@ -111,6 +111,86 @@ stop; the founder opens the implementation round.
 
 NOT ASKED FOR. docs/tasks/020-cmls-product-boundary.md is frozen pre-gate and is not part of
 this review. reviews/ has no CMLS record yet; this would be the first.
+```
+
+---
+
+## 3 — Independent review of the H2 gate design · **SEND THIS ONE**
+
+```text
+Review request — Vrdct H2 kill gate, design review before any evidence runs
+
+Branch: claude/020-cmls-harness   Design commit: 67e6521
+Author: Claude (spec role) · Reviewer: you (Codex, review role)
+Work in a worktree that is not ~/src/vrdct.
+
+Record findings in reviews/021-h2-gate-design.md.
+
+WHAT THIS IS. H1 (the CMLS claim-type) was KILLED on 2026-08-20 and its verdict stands
+unedited. You reviewed that evidence and dissented on three of four items; the dissent was
+adopted. The founder then opened H2 as a NEW gate that starts over from zero.
+
+This is NOT a review of evidence. NO evidence has been run. It is a review of a gate DESIGN
+before it runs -- the one moment when changing it is legitimate. After the first A-item
+runs, changing it is the failure docs/GATE.md exists to prevent. So this round is the only
+chance to find that the gate cannot kill.
+
+Read, in order: docs/GATE-H2.md, docs/GATE.md (rules it inherits),
+docs/decisions/2026-08-20-cmls-product.md (H1's verdict), STATUS.md,
+claimtypes/obligated-liveness.mjs, onchain/programs/vrdct-bond/src/lib.rs::open_market.
+
+WHAT H2 IS. A buyer-defined, obligor-bonded, re-executable SLA. A buyer (integrator, DAO,
+funds operator) fixes an explicit future liveness invariant. An obligor (keeper, agent,
+operator) posts a bond against it. On violation a fixed, pre-agreed remedy is paid to the
+buyer. Vrdct makes adjudication and bond enforcement re-executable. It is explicitly NOT
+insurance -- the remedy is fixed and does not make the buyer whole -- and saying so is gate
+item A8 rather than a disclaimer.
+
+THE ONE QUESTION THIS REVIEW ANSWERS: can this gate kill H2? A gate that cannot return NO is
+not a gate, and this portfolio has already watched a specification survive three review
+rounds before anyone asked whether the thing it specified could be built.
+
+WHERE TO PUSH HARDEST, hardest first.
+
+  1. A5 -- omission. For an SLA, doing nothing IS the failure mode. I claim
+     require!(n_records > 0, VrdctError::NoRecords) in open_market means a market cannot
+     open with zero records, so a total outage -- the worst possible breach -- is the one
+     case that currently cannot be settled. Verify that end to end against matchSlots in
+     claimtypes/obligated-liveness.mjs and against state::Market. Is my reading right? If it
+     is, is A5 already a KILL today rather than an open question, and am I understating it?
+
+  2. B6's withdrawal. H2's first draft made "the only rational counterparty is the accused
+     venue" a KILL. I withdrew it, arguing that an obligor bonding its own future conduct is
+     a warranty rather than an accusation. A kill condition that disappears is exactly how a
+     gate stops being a gate. Attack the withdrawal.
+
+  3. The instance changed once, before any evidence. First draft: an indemnity (buyer = a
+     borrower liquidated against a stale feed). Founder replaced it with the SLA. I ruled
+     that legitimate because no verification step had run. Argue that it is a rescue of a
+     killed project wearing new labels -- H1 gestured at liveness and never read a price or
+     a liquidation, and obligated-liveness is a claim-type this repo already owns, which is
+     precisely the "reach for another surface" move H2's own non-goals forbid.
+
+  4. Can any A-item actually return NO? Take each of A0-A8 and ask what result would fail it,
+     and whether that result is reachable. Name any item that is unfalsifiable as written,
+     or whose KILL condition can be argued past. A2's "fewer than 5 named buyers" and A3's
+     "empty intersection" are the ones I trust least -- both depend on statements from
+     interested parties, and I have specified that both ranges are recorded before the
+     intersection is computed, which may not be enough.
+
+  5. The thresholds: 0 miss rate, 5 buyers, 2 naming an obligor. Mine, and the most arguable
+     part. Are they set where a real failure passes?
+
+  6. What is missing. Name a way H2 fails that no A-item would catch.
+
+SCOPE. Docs only; no code was changed and none may be. Do NOT implement, do NOT port
+obligated-liveness to CLAIM_TYPE_ID or the Rust twin (its :60-62 names that gap and H2's
+non-goals explicitly withhold it), do NOT design the fail-closed mechanism A5 asks about --
+A5 asks whether one exists, not for one. The role lock is `review`. If you conclude a fix is
+obvious, say so and stop; the founder opens any implementation round.
+
+NOT ASKED FOR. H1 is closed. docs/tasks/020-cmls-product-boundary.md is frozen. Do not
+re-adjudicate the CMLS verdict; your own review of it was adopted.
 ```
 
 ---

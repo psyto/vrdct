@@ -28,7 +28,8 @@ DRY_RUN=0
 case "$SECTION" in
   1) NEED=review ;;
   2) NEED=impl ;;
-  *) die "unknown section '$SECTION'. Sections are 1 (review) and 2 (impl)." ;;
+  3) NEED=review ;;
+  *) die "unknown section '$SECTION'. Sections are 1 (review), 2 (impl), 3 (review)." ;;
 esac
 LOCK="$(sed -n 's/^codex_role:[[:space:]]*//p' "$LEDGER" | sed -n 1p)"
 [ -n "$LOCK" ] || die "no 'codex_role:' line in $LEDGER. The lock is the mechanism; without it nothing may be sent."
