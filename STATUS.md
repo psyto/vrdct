@@ -1,49 +1,47 @@
 # STATUS — Vrdct
 
-**Phase:** design gate, H3 · **Updated:** 2026-08-21 · **Ref:** `claude/020-cmls-harness`
+# 🗄 HELD ASSET — not active, not discarded
 
-| | |
-| --- | --- |
-| **H1** ([`docs/GATE.md`](./docs/GATE.md), CMLS) | `KILLED`, closed |
-| **H2** ([`docs/GATE-H2.md`](./docs/GATE-H2.md), obligor-bonded SLA) | stopped at design review, zero evidence run. **Does not resume** — founder decision, 2026-08-21 |
-| **H3** ([`docs/GATE-H3.md`](./docs/GATE-H3.md)) | design gate **reviewed, did not pass.** `CHANGES`, three P0s: [`reviews/022-h3-design-gate.md`](./reviews/022-h3-design-gate.md). Unadjudicated |
+**Founder decision, 2026-08-21:** [`docs/decisions/2026-08-21-vrdct-held.md`](./docs/decisions/2026-08-21-vrdct-held.md).
 
-**H3 is restricted, before anything is designed:** obligation, deadline, penalty and verification
-predicate fixed before anyone participates; **only performance evidence** is re-executed;
-**non-performance resolves by timeout state transition, never by chain search.** That shape dissolves
-H2's A5 (omission was unsettleable) by construction. It does **not** dissolve H2's F1 — evidence bound
-to the promised action — which becomes **D3** and is the most likely way H3 dies.
+**Nothing is queued for anyone.** No gate is open, no review is outstanding, no task is half-done.
+A session opening this repo should **stop and ask** — and in particular must **not** write another
+design hypothesis. That is the specific failure this decision exists to prevent: it would turn a good
+re-execution engine into *a project searching for something guarantee-shaped.*
 
-It must show three things before anything else, or KILL: **D1** what it settles that an ordinary
-escrow, SLA bond, HTLC or deadline state-read cannot; **D2** the buyer, named; **D3** the action ↔
-obligation binding.
+| hypothesis | result | the essential problem |
+| --- | --- | --- |
+| **H1** — CMLS ([`GATE.md`](./docs/GATE.md)) | `KILLED` | the answer is already determined when the market opens |
+| **H2** — obligor-bonded SLA ([`GATE-H2.md`](./docs/GATE-H2.md)) | KILL-equivalent, stopped at design review, zero evidence run | omission cannot be settled; obligation/action/evidence not bound |
+| **H3** — timeout guarantee ([`GATE-H3.md`](./docs/GATE-H3.md)) | design review **did not pass** ([`reviews/022`](./reviews/022-h3-design-gate.md)) | false performance evidence, censorship of evidence delivery, self-referential buyer hypothesis |
 
-**The design review returned and H3 did not pass.** Codex's answer to the question it was asked —
-*can this gate kill H3?* — is **no**: it can declare a stipulated candidate dead, but D1, D2, D3 and D5
-have no candidate, measurement or protocol object to return `NO` against. Its disposition is **do not
-pass H3 and do not begin buyer research, implementation or any on-chain work**, and it proposes no
-repair, because proposing one would be the prohibited new mechanism.
+**H3's P0, stated because it is the one that looks fine and is not:** an obligor who genuinely
+performed and was *prevented from delivering the evidence* is slashed identically to one who did
+nothing — and the buyer collects in both cases, so the buyer acquires an incentive to obstruct
+delivery. A timeout alone is not a neutral adjudication.
 
-Three P0s, recorded unadjudicated:
+## The asset
 
-- **F1** — the timeout is fail-closed against the **obligor**, not against a false performance claim.
-  A performing obligor whose evidence is censored or priced out is slashed identically to one who did
-  nothing, and the buyer collects either way, so the buyer has an adversarial incentive rather than a
-  neutral one. Same direction as the expiry race already in `THREAT-MODEL.md:184-197`. The gate's claim
-  that H2's A5 is *"dissolved by construction"* is therefore **too strong**.
-- **F2** — the D1/D3 pincer is not proved as a theorem, but **no candidate obligation surviving both is
-  present**, and under the inherited *not-proven is a KILL* that decides the gate. It also finds that H3
-  **changes the security premise**: obligor-submitted evidence with an automatic timeout, with no public
-  source, completeness rule or independent reconstruction. It **may not inherit** the proven
-  reconstruction result as support.
-- **F3** — D2 cannot return `NO` before the research it forbids. An invented buyer story passes.
+**Two different implementations, written independently, reconstructed the same input set, the same
+hash and the same verdict from a public RPC.** A re-executable adjudication engine, and it is real.
 
-**This is reported, not acted on.** The gate is unchanged, no verdict is set, and nothing has run.
+**It is not, by itself, a product.** Every failure in this repo came from treating a capability as if
+it were a market.
 
-**Not authorised:** buyer research, implementation, any on-chain change. Nothing is running and
-nothing is half-done.
+## H4 — opens on external demand only, never on a design round
 
-## What the first two hypotheses cost and bought
+If Vrdct is retried, **only in this order**, and no step is work an agent can start:
+
+1. **A concrete buyer and one obligation, first** — *this* DAO or integrator needs a guarantee about
+   *this* operation. Not "an SLA anyone can use".
+2. **Performance evidence depending on neither party** — e.g. a publicly verifiable state transition
+   or receipt emitted by the target program itself. **Not** a return to proving omission by searching
+   signature history.
+3. **Vrdct's specific advantage proved first** — if an ordinary escrow, bond, timelock or SLA contract
+   suffices, there is no reason for Vrdct. Re-execution must lower dispute, adjudication or
+   verification cost at one identified point.
+
+## What it cost
 
 Two hypotheses opened, two stopped, **no code written toward either product**, no funds, no deploy.
 H1 died on measured evidence. H2 died at its own design review before a single A-item ran — which is

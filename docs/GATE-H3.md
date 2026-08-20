@@ -1,5 +1,19 @@
 # Design Gate — H3
 
+> ## ⚠ DID NOT PASS — closed, not to be repaired
+>
+> Independent review 2026-08-21: [`../reviews/022-h3-design-gate.md`](../reviews/022-h3-design-gate.md).
+> Its answer to this gate's own question — *can it kill H3?* — is **no**. Three P0s, the decisive one
+> being that a timeout slashes an obligor who performed but was prevented from delivering evidence,
+> identically to one who did nothing, while the buyer collects either way.
+>
+> The claim below that H2's A5 is *"dissolved by construction"* is **too strong**: the omission proof
+> problem is removed, the delivery race is not.
+>
+> Vrdct is now a held asset: [`decisions/2026-08-21-vrdct-held.md`](./decisions/2026-08-21-vrdct-held.md).
+> **Left intact rather than deleted** — it is the record of a design that looked clean and was not.
+
+
 **Status:** OPEN, design only, unreviewed. **Opened:** 2026-08-21 by the founder.
 **H2 does not resume.** H1 is `KILLED` ([`decisions/2026-08-20-cmls-product.md`](./decisions/2026-08-20-cmls-product.md)).
 Rules inherited from [`GATE.md`](./GATE.md): not-proven is a KILL; adding a hypothesis to stay alive is

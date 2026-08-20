@@ -1,15 +1,17 @@
 <!-- KILL-GATE-BANNER -->
-# ⛔ PHASE: KILL GATE ONLY
+# 🗄 HELD ASSET — no gate is open
 
-**Read [`STATUS.md`](./STATUS.md), then [`docs/GATE-H3.md`](docs/GATE-H3.md).** H3 is a **design
-gate**: one page, unreviewed, and it passes on a design rather than on evidence.
+**Read [`STATUS.md`](./STATUS.md), then stop and ask.** Founder decision, 2026-08-21:
+[`docs/decisions/2026-08-21-vrdct-held.md`](docs/decisions/2026-08-21-vrdct-held.md). Vrdct is held,
+not discarded and not active. Nothing is queued for anyone.
 
-- **H1 (CMLS) is `KILLED` and closed** — `docs/decisions/2026-08-20-cmls-product.md`. Not a fallback,
-  not a v2, not to be reopened.
-- **H2 does not resume** (founder, 2026-08-21). Do not run its A-items and do not mine it for scope.
-- **H3 permits design only.** No buyer research, no code, no `CLAIM_TYPE_ID` port, no `open_market`
-  change, no devnet, no mainnet, no funds — until the design review passes. Reaching for H2 or a
-  fourth surface if H3 stalls is the forbidden move.
+- **H1 (CMLS) `KILLED`. H2 KILL-equivalent. H3's design gate did not pass.** All three are closed.
+  Do not reopen, repair, or mine any of them for scope.
+- **Do not write another design hypothesis.** That is the named risk this decision exists to prevent:
+  it would turn a good re-execution engine into *a project searching for something guarantee-shaped.*
+- **H4 opens on external demand only** — a concrete buyer and one obligation, found outside this
+  repository — never on a design round. The order is in `STATUS.md` and no step is agent work.
+- Standing prohibitions remain: no real funds, no mainnet, no devnet, no force push, no secrets.
 
 If a founder asks for work here, the rules below still bind.
 
